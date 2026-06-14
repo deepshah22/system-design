@@ -25,7 +25,7 @@ A 3-month progressive system design course that builds from fundamentals to prin
 | Day | Topic | Status |
 |-----|-------|--------|
 | 01 | System Design Interview Framework | ✅ Published |
-| 02 | Horizontal vs Vertical Scaling | ⏳ Scheduled |
+| 02 | Horizontal vs Vertical Scaling | ✅ Published |
 | 03 | Networking: TCP/IP, HTTP & DNS | ⏳ Scheduled |
 | 04 | Content Delivery Networks (CDN) | ⏳ Scheduled |
 | 05 | Load Balancing: Algorithms & Patterns | ⏳ Scheduled |
@@ -198,6 +198,7 @@ system-design/
 | Date | Days Published | Notes |
 |------|----------------|-------|
 | 2026-06-14 | Day 1 | Initial course launch. Homepage, Day 1: Interview Framework |
+| 2026-06-14 | Day 2 | Day 2: Horizontal vs Vertical Scaling |
 
 ---
 
