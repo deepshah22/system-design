@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>System Design Mastery — Principal Engineer Course</title>
+  <meta name="description" content="A 90-day progressive system design course built for principal engineer interview prep. From fundamentals to distributed systems mastery." />
+  <link rel="stylesheet" href="assets/style.css" />
+  <style>
+    /* ─── INDEX-SPECIFIC STYLES ─── */
+    .hero {
+      padding: 5rem 2rem 4rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 800px;
+      height: 500px;
+      background: radial-gradient(ellipse at center, rgba(99, 102, 241, 0.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--accent-light);
+      background: var(--accent-glow);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      padding: 0.35rem 0.9rem;
+      border-radius: 20px;
+      margin-bottom: 1.5rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .hero h1 {
+      margin-bottom: 1.25rem;
+      max-width: 800px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .hero-sub {
+      font-size: 1.15rem;
+      color: var(--text-secondary);
+      max-width: 600px;
+      margin: 0 auto 2.5rem;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 4rem;
+    }
+
+    .btn-large {
+      padding: 0.85rem 2rem;
+      font-size: 1rem;
+    }
+
+    /* Stats row */
+    .stats-row {
+      display: flex;
+      justify-content: center;
+      gap: 4rem;
+      flex-wrap: wrap;
+      padding: 2rem 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 4rem;
+    }
+
+    .stat-divider {
+      width: 1px;
+      background: var(--border);
+      align-self: stretch;
+    }
+
+    /* Phase overview */
+    .phases-section {
+      padding: 0 2rem 4rem;
+    }
+
+    .phases-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .phase-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .phase-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+    }
+
+    .phase-card.p1::before { background: linear-gradient(90deg, var(--phase1), #60a5fa); }
+    .phase-card.p2::before { background: linear-gradient(90deg, var(--phase2), #a78bfa); }
+    .phase-card.p3::before { background: linear-gradient(90deg, var(--phase3), #fbbf24); }
+
+    .phase-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      margin-bottom: 1rem;
+    }
+
+    .phase-card.p1 .phase-icon { background: var(--phase1-bg); }
+    .phase-card.p2 .phase-icon { background: var(--phase2-bg); }
+    .phase-card.p3 .phase-icon { background: var(--phase3-bg); }
+
+    .phase-days {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .phase-card h3 { margin-bottom: 0.5rem; }
+    .phase-card p { font-size: 0.9rem; margin-bottom: 1rem; }
+
+    .phase-topics {
+      list-style: none;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+
+    .phase-topics li {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin: 0;
+    }
+
+    .phase-topics li::before {
+      content: '›';
+      color: var(--text-secondary);
+    }
+
+    /* Curriculum grid */
+    .curriculum-section {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 2rem 4rem;
+    }
+
+    .curriculum-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .filter-tabs {
+      display: flex;
+      gap: 0.35rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 0.25rem;
+    }
+
+    .filter-tab {
+      padding: 0.35rem 0.85rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: var(--text-muted);
+      transition: all 0.15s;
+    }
+
+    .filter-tab.active {
+      background: var(--accent);
+      color: white;
+    }
+
+    .phase-block { margin-bottom: 3rem; }
+
+    .phase-title-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .phase-title-row h2 { font-size: 1.1rem; font-weight: 700; }
+
+    .days-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 0.65rem;
+    }
+
+    /* Progress tracker widget */
+    .progress-widget {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      max-width: 360px;
+      margin: 0 auto 4rem;
+      text-align: center;
+    }
+
+    .progress-ring-wrapper {
+      position: relative;
+      width: 128px;
+      height: 128px;
+      margin: 0 auto 1.5rem;
+    }
+
+    .progress-center {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--text-primary);
+    }
+
+    .progress-stats {
+      display: flex;
+      justify-content: space-around;
+      margin-top: 1rem;
+    }
+
+    /* Floating CTA */
+    .start-btn-wrapper {
+      position: relative;
+    }
+
+    .pulse-ring {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 100%; height: 100%;
+      border-radius: var(--radius-sm);
+      border: 2px solid var(--accent);
+      animation: pulse 2s ease infinite;
+      pointer-events: none;
+    }
+
+    @keyframes pulse {
+      0%   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(1.3); }
+    }
+
+    /* New chip */
+    .new-chip {
+      position: absolute;
+      top: -8px; right: -8px;
+      background: var(--success);
+      color: white;
+      font-size: 0.6rem;
+      font-weight: 700;
+      padding: 0.15rem 0.4rem;
+      border-radius: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    @media (max-width: 600px) {
+      .stats-row { gap: 2rem; }
+      .stat-divider { display: none; }
+      .days-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─── NAV ─────────────────────────────────────────────────── -->
+<nav class="nav">
+  <div class="nav-inner">
+    <div class="nav-logo">
+      <div class="logo-icon">⚙</div>
+      System Design Mastery
+    </div>
+    <div class="nav-links">
+      <a href="#curriculum">Curriculum</a>
+      <a href="#phases">Phases</a>
+      <a href="days/day-01.html">Start Day 1</a>
+    </div>
+    <div class="nav-progress">
+      <div class="nav-progress-bar">
+        <div class="nav-progress-fill" style="width:0%"></div>
+      </div>
+      <span class="nav-progress-label">0/90</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ─── HERO ──────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="hero-eyebrow">
+    ✦ 90-Day Interview Prep Course
+  </div>
+  <h1 class="fade-in">
+    System Design Mastery<br/>
+    <span class="gradient-text">From Zero to Principal Engineer</span>
+  </h1>
+  <p class="hero-sub fade-in fade-in-delay-1">
+    A structured, progressive course covering every concept you need to confidently ace
+    system design interviews at top tech companies — from fundamentals to advanced distributed systems.
+  </p>
+  <div class="hero-actions fade-in fade-in-delay-2">
+    <div class="start-btn-wrapper">
+      <div class="pulse-ring"></div>
+      <a href="days/day-01.html" class="btn btn-primary btn-large">
+        Begin Day 1 →
+      </a>
+    </div>
+    <a href="#curriculum" class="btn btn-outline btn-large">View Curriculum</a>
+  </div>
+
+  <!-- Stats Row -->
+  <div class="stats-row fade-in fade-in-delay-3">
+    <div class="stat">
+      <div class="stat-value gradient-text">90</div>
+      <div class="stat-label">Daily Lessons</div>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <div class="stat-value gradient-text">~30</div>
+      <div class="stat-label">Min / Day</div>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <div class="stat-value" id="stat-completed" style="color:var(--success)">0</div>
+      <div class="stat-label">Days Done</div>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <div class="stat-value" style="color:var(--phase3)" id="stat-streak">0</div>
+      <div class="stat-label">Day Streak</div>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <div class="stat-value" id="stat-pct" style="color:var(--accent-light)">0%</div>
+      <div class="stat-label">Complete</div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── PROGRESS WIDGET ──────────────────────────────────────── -->
+<div class="container" style="padding-top:0">
+  <div class="progress-widget">
+    <div class="progress-ring-wrapper">
+      <svg width="128" height="128" class="progress-ring">
+        <defs>
+          <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" style="stop-color:var(--accent)" />
+            <stop offset="100%" style="stop-color:var(--phase2)" />
+          </linearGradient>
+        </defs>
+        <circle cx="64" cy="64" r="54" class="progress-ring-bg" />
+        <circle cx="64" cy="64" r="54" class="progress-ring-fill" style="stroke-dasharray:339.3;stroke-dashoffset:339.3;" />
+      </svg>
+      <div class="progress-center" id="stat-pct2">0%</div>
+    </div>
+    <h3>Your Progress</h3>
+    <p style="font-size:0.875rem;margin:0.5rem 0">Track your journey through 90 days of system design mastery</p>
+    <div class="progress-stats">
+      <div class="stat">
+        <div class="stat-value" id="stat-completed2" style="font-size:1.5rem;color:var(--success)">0</div>
+        <div class="stat-label">Completed</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="stat-remaining" style="font-size:1.5rem;color:var(--phase3)">90</div>
+        <div class="stat-label">Remaining</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── PHASES ────────────────────────────────────────────────── -->
+<section class="phases-section" id="phases">
+  <div class="container" style="padding-bottom:2rem">
+    <div class="section-header">
+      <h2>Three Phases to Mastery</h2>
+      <span class="section-number">COURSE STRUCTURE</span>
+    </div>
+  </div>
+  <div class="phases-grid container">
+    <!-- Phase 1 -->
+    <div class="phase-card p1 fade-in">
+      <div class="phase-icon">🏗</div>
+      <div class="phase-days">Days 1–30</div>
+      <h3>Phase 1: Fundamentals</h3>
+      <p>Build a rock-solid foundation in distributed systems, networking, storage, and reliability patterns.</p>
+      <ul class="phase-topics">
+        <li>Scalability &amp; Load Balancing</li>
+        <li>Caching Strategies</li>
+        <li>SQL vs NoSQL &amp; CAP Theorem</li>
+        <li>Replication &amp; Sharding</li>
+        <li>Messaging &amp; Event-Driven Architecture</li>
+        <li>Fault Tolerance &amp; Observability</li>
+        <li>Authentication, Security &amp; Rate Limiting</li>
+      </ul>
+    </div>
+    <!-- Phase 2 -->
+    <div class="phase-card p2 fade-in fade-in-delay-1">
+      <div class="phase-icon">⚡</div>
+      <div class="phase-days">Days 31–60</div>
+      <h3>Phase 2: Intermediate Systems</h3>
+      <p>Master distributed algorithms and design 20+ classic systems that appear in real interviews.</p>
+      <ul class="phase-topics">
+        <li>Consensus: Paxos &amp; Raft</li>
+        <li>Distributed Transactions &amp; Sagas</li>
+        <li>Design URL Shortener, Chat, Feed</li>
+        <li>Design YouTube, Dropbox, Twitter</li>
+        <li>Cassandra, Kafka, Elasticsearch</li>
+        <li>Stream &amp; Batch Processing</li>
+        <li>Advanced Storage Systems</li>
+      </ul>
+    </div>
+    <!-- Phase 3 -->
+    <div class="phase-card p3 fade-in fade-in-delay-2">
+      <div class="phase-icon">🚀</div>
+      <div class="phase-days">Days 61–90</div>
+      <h3>Phase 3: Principal Level</h3>
+      <p>Advanced architecture patterns, infrastructure mastery, and structured interview preparation.</p>
+      <ul class="phase-topics">
+        <li>Kubernetes &amp; Multi-Region Architecture</li>
+        <li>Design Uber, Google Maps, Snowflake</li>
+        <li>CQRS, Event Sourcing, DDD</li>
+        <li>Capacity Planning &amp; Cost Optimization</li>
+        <li>Interview Framework &amp; Estimation</li>
+        <li>Mock Interviews &amp; Practice</li>
+        <li>Common Mistakes &amp; Final Review</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ─── CURRICULUM ────────────────────────────────────────────── -->
+<section class="curriculum-section" id="curriculum">
+  <div class="curriculum-header">
+    <div>
+      <h2>Complete 90-Day Curriculum</h2>
+      <p style="font-size:0.875rem;margin-top:0.25rem">Click any day to read the lesson. Check off days as you complete them.</p>
+    </div>
+    <div class="filter-tabs" id="filter-tabs">
+      <button class="filter-tab active" data-filter="all">All Phases</button>
+      <button class="filter-tab" data-filter="1" style="color:var(--phase1)">Phase 1</button>
+      <button class="filter-tab" data-filter="2" style="color:var(--phase2)">Phase 2</button>
+      <button class="filter-tab" data-filter="3" style="color:var(--phase3)">Phase 3</button>
+    </div>
+  </div>
+
+  <!-- PHASE 1 -->
+  <div class="phase-block" data-phase="1">
+    <div class="phase-title-row">
+      <span class="phase-badge phase-1">Phase 1</span>
+      <h2>Fundamentals — Days 1–30</h2>
+    </div>
+
+    <div class="week-header"><span class="week-label">Week 1 — Core Concepts</span><div class="week-line"></div></div>
+    <div class="days-grid">
+      <a href="days/day-01.html" class="day-card phase-1-card" data-day="1">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span class="day-num">DAY 01</span>
+          <span class="day-check" style="font-size:0.75rem;color:var(--text-muted)"></span>
+        </div>
+        <div class="day-title">System Design Interview Framework</div>
+        <div class="tags"><span class="tag">Intro</span></div>
+      </a>
+      <a href="days/day-02.html" class="day-card phase-1-card coming-soon" data-day="2">
+        <span class="day-num">DAY 02</span>
+        <div class="day-title">Horizontal vs Vertical Scaling</div>
+        <div class="tags"><span class="tag">Scalability</span></div>
+      </a>
+      <a href="days/day-03.html" class="day-card phase-1-card coming-soon" data-day="3">
+        <span class="day-num">DAY 03</span>
+        <div class="day-title">Networking: TCP/IP, HTTP &amp; DNS</div>
+        <div class="tags"><span class="tag">Networking</span></div>
+      </a>
+      <a href="days/day-04.html" class="day-card phase-1-card coming-soon" data-day="4">
+        <span class="day-num">DAY 04</span>
+        <div class="day-title">Content Delivery Networks (CDN)</div>
+        <div class="tags"><span class="tag">CDN</span></div>
+      </a>
+      <a href="days/day-05.html" class="day-card phase-1-card coming-soon" data-day="5">
+        <span class="day-num">DAY 05</span>
+        <div class="day-title">Load Balancing: Algorithms &amp; Patterns</div>
+        <div class="tags"><span class="tag">LB</span></div>
+      </a>
+      <a href="days/day-06.html" class="day-card phase-1-card coming-soon" data-day="6">
+        <span class="day-num">DAY 06</span>
+        <div class="day-title">Caching Strategies &amp; Patterns</div>
+        <div class="tags"><span class="tag">Cache</span></div>
+      </a>
+      <a href="days/day-07.html" class="day-card phase-1-card coming-soon" data-day="7">
+        <span class="day-num">DAY 07</span>
+        <div class="day-title">Redis &amp; Memcached Deep Dive</div>
+        <div class="tags"><span class="tag">Cache</span></div>
+      </a>
+    </div>
+
+    <div class="week-header"><span class="week-label">Week 2 — Storage Fundamentals</span><div class="week-line"></div></div>
+    <div class="days-grid">
+      <a href="days/day-08.html" class="day-card phase-1-card coming-soon" data-day="8"><span class="day-num">DAY 08</span><div class="day-title">SQL vs NoSQL: When to Use What</div><div class="tags"><span class="tag">DB</span></div></a>
+      <a href="days/day-09.html" class="day-card phase-1-card coming-soon" data-day="9"><span class="day-num">DAY 09</span><div class="day-title">ACID Properties &amp; Transactions</div><div class="tags"><span class="tag">DB</span></div></a>
+      <a href="days/day-10.html" class="day-card phase-1-card coming-soon" data-day="10"><span class="day-num">DAY 10</span><div class="day-title">CAP Theorem &amp; PACELC</div><div class="tags"><span class="tag">Theory</span></div></a>
+      <a href="days/day-11.html" class="day-card phase-1-card coming-soon" data-day="11"><span class="day-num">DAY 11</span><div class="day-title">Database Indexing Strategies</div><div class="tags"><span class="tag">DB</span></div></a>
+      <a href="days/day-12.html" class="day-card phase-1-card coming-soon" data-day="12"><span class="day-num">DAY 12</span><div class="day-title">Database Replication</div><div class="tags"><span class="tag">DB</span></div></a>
+      <a href="days/day-13.html" class="day-card phase-1-card coming-soon" data-day="13"><span class="day-num">DAY 13</span><div class="day-title">Data Partitioning &amp; Sharding</div><div class="tags"><span class="tag">DB</span></div></a>
+      <a href="days/day-14.html" class="day-card phase-1-card coming-soon" data-day="14"><span class="day-num">DAY 14</span><div class="day-title">Consistent Hashing</div><div class="tags"><span class="tag">Algorithm</span></div></a>
+    </div>
+
+    <div class="week-header"><span class="week-label">Week 3 — Communication Patterns</span><div class="week-line"></div></div>
+    <div class="days-grid">
+      <a href="days/day-15.html" class="day-card phase-1-card coming-soon" data-day="15"><span class="day-num">DAY 15</span><div class="day-title">REST API Design Best Practices</div><div class="tags"><span class="tag">API</span></div></a>
+      <a href="days/day-16.html" class="day-card phase-1-card coming-soon" data-day="16"><span class="day-num">DAY 16</span><div class="day-title">GraphQL Architecture</div><div class="tags"><span class="tag">API</span></div></a>
+      <a href="days/day-17.html" class="day-card phase-1-card coming-soon" data-day="17"><span class="day-num">DAY 17</span><div class="day-title">gRPC &amp; Protocol Buffers</div><div class="tags"><span class="tag">API</span></div></a>
+      <a href="days/day-18.html" class="day-card phase-1-card coming-soon" data-day="18"><span class="day-num">DAY 18</span><div class="day-title">Message Queues &amp; Pub/Sub</div><div class="tags"><span class="tag">Messaging</span></div></a>
+      <a href="days/day-19.html" class="day-card phase-1-card coming-soon" data-day="19"><span class="day-num">DAY 19</span><div class="day-title">Apache Kafka Deep Dive</div><div class="tags"><span class="tag">Kafka</span></div></a>
+      <a href="days/day-20.html" class="day-card phase-1-card coming-soon" data-day="20"><span class="day-num">DAY 20</span><div class="day-title">WebSockets &amp; Server-Sent Events</div><div class="tags"><span class="tag">Realtime</span></div></a>
+      <a href="days/day-21.html" class="day-card phase-1-card coming-soon" data-day="21"><span class="day-num">DAY 21</span><div class="day-title">Event-Driven Architecture</div><div class="tags"><span class="tag">EDA</span></div></a>
+    </div>
+
+    <div class="week-header"><span class="week-label">Week 4 — Reliability &amp; Security</span><div class="week-line"></div></div>
+    <div class="days-grid">
+      <a href="days/day-22.html" class="day-card phase-1-card coming-soon" data-day="22"><span class="day-num">DAY 22</span><div class="day-title">Fault Tolerance &amp; High Availability</div><div class="tags"><span class="tag">Reliability</span></div></a>
+      <a href="days/day-23.html" class="day-card phase-1-card coming-soon" data-day="23"><span class="day-num">DAY 23</span><div class="day-title">Circuit Breaker Pattern</div><div class="tags"><span class="tag">Pattern</span></div></a>
+      <a href="days/day-24.html" class="day-card phase-1-card coming-soon" data-day="24"><span class="day-num">DAY 24</span><div class="day-title">Rate Limiting &amp; Throttling</div><div class="tags"><span class="tag">Reliability</span></div></a>
+      <a href="days/day-25.html" class="day-card phase-1-card coming-soon" data-day="25"><span class="day-num">DAY 25</span><div class="day-title">Distributed System Failures</div><div class="tags"><span class="tag">Reliability</span></div></a>
+      <a href="days/day-26.html" class="day-card phase-1-card coming-soon" data-day="26"><span class="day-num">DAY 26</span><div class="day-title">Observability: Logs, Metrics &amp; Traces</div><div class="tags"><span class="tag">Ops</span></div></a>
+      <a href="days/day-27.html" class="day-card phase-1-card coming-soon" data-day="27"><span class="day-num">DAY 27</span><div class="day-title">API Gateway &amp; Service Mesh</div><div class="tags"><span class="tag">Infra</span></div></a>
+      <a href="days/day-28.html" class="day-card phase-1-card coming-soon" data-day="28"><span class="day-num">DAY 28</span><div class="day-title">Security Fundamentals</div><div class="tags"><span class="tag">Security</span></div></a>
+      <a href="days/day-29.html" class="day-card phase-1-card coming-soon" data-day="29"><span class="day-num">DAY 29</span><div class="day-title">Auth: OAuth 2.0 &amp; JWT</div><div class="tags"><span class="tag">Security</span></div></a>
+      <a href="days/day-30.html" class="day-card phase-1-card coming-soon" data-day="30"><span class="day-num">DAY 30</span><div class="day-title">Back-of-Envelope Estimation</div><div class="tags"><span class="tag">Interview</span></div></a>
+    </div>
+  </div>
+
+  <!-- PHASE 2 -->
+  <div class="phase-block" data-phase="2">
+    <div class="phase-title-row">
+      <span class="phase-badge phase-2">Phase 2</span>
+      <h2>Intermediate Systems — Days 31–60</h2>
+    </div>
+
+    <div class="week-header"><span class="week-label">Week 5 — Distributed Algorithms</span><div class="week-line"></div></div>
+    <div class="days-grid">
+      <a href="days/day-31.html" class="day-card phase-2-card coming-soon" data-day="31"><span class="day-num">DAY 31</span><div class="day-title">Consensus: Paxos Algorithm</div><div class="tags"><span class="tag">Algorithm</span></div></a>
+      <a href="days/day-32.html" class="day-card phase-2-card coming-soon" data-day="32"><span class="day-num">DAY 32</span><div class="day-title">Consensus: Raft Algorithm</div><div class="tags"><span class="tag">Algorithm</span></div></a>
+      <a href="days/day-33.html" class="day-card phase-2-card coming-soon" data-day="33"><span class="day-num">DAY 33</span><div class="day-title">Distributed Transactions: 2PC &amp; 3PC</div><div class="tags"><span class="tag">Distributed</span></div></a>
+      <a href="days/day-34.html" class="day-card phase-2-card coming-soon" data-day="34"><span class="day-num">DAY 34</span><div class="day-title">Saga Pattern</div><div class="tags"><span class="tag">Pattern</span></div></a>
+      <a href="days/day-35.html" class="day-card phase-2-card coming-soon" data-day="35"><span class="day-num">DAY 35</span><div class="day-title">Vector Clocks &amp; Causality</div><div class="tags"><span class="tag">Theory</span></div></a>
+      <a href="days/day-36.html" class="day-card phase-2-card coming-soon" data-day="36"><span class="day-num">DAY 36</span><div class="day-title">Bloom Filters &amp; HyperLogLog</div><div class="tags"><span class="tag">Data Struct</span></div></a>
+      <a href="days/day-37.html" class="day-card phase-2-card coming-soon" data-day="37"><span class="day-num">DAY 37</span><div class="day-title">Merkle Trees &amp; Gossip Protocol</div><div class="tags"><span class="tag">Protocol</span></div></a>
+    </div>
+
+    <div class="week-header"><span class="week-label">Week 6 — Classic Designs (Part 1)</span><div class="week-line"></div></div>
+    <div class="days-grid">
+      <a href="days/day-38.html" class="day-card phase-2-card coming-soon" data-day="38"><span class="day-num">DAY 38</span><div class="day-title">Design: URL Shortener</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-39.html" class="day-card phase-2-card coming-soon" data-day="39"><span class="day-num">DAY 39</span><div class="day-title">Design: Key-Value Store</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-40.html" class="day-card phase-2-card coming-soon" data-day="40"><span class="day-num">DAY 40</span><div class="day-title">Design: Distributed Cache</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-41.html" class="day-card phase-2-card coming-soon" data-day="41"><span class="day-num">DAY 41</span><div class="day-title">Design: Web Crawler</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-42.html" class="day-card phase-2-card coming-soon" data-day="42"><span class="day-num">DAY 42</span><div class="day-title">Design: Rate Limiter Service</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-43.html" class="day-card phase-2-card coming-soon" data-day="43"><span class="day-num">DAY 43</span><div class="day-title">Design: Pastebin / Code Sharing</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-44.html" class="day-card phase-2-card coming-soon" data-day="44"><span class="day-num">DAY 44</span><div class="day-title">Design: Type-Ahead Search</div><div class="tags"><span class="tag">Design</span></div></a>
+    </div>
+
+    <div class="week-header"><span class="week-label">Week 7 — Classic Designs (Part 2)</span><div class="week-line"></div></div>
+    <div class="days-grid">
+      <a href="days/day-45.html" class="day-card phase-2-card coming-soon" data-day="45"><span class="day-num">DAY 45</span><div class="day-title">Design: Social Media Feed</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-46.html" class="day-card phase-2-card coming-soon" data-day="46"><span class="day-num">DAY 46</span><div class="day-title">Design: Twitter-like System</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-47.html" class="day-card phase-2-card coming-soon" data-day="47"><span class="day-num">DAY 47</span><div class="day-title">Design: WhatsApp / Chat System</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-48.html" class="day-card phase-2-card coming-soon" data-day="48"><span class="day-num">DAY 48</span><div class="day-title">Design: YouTube / Video Platform</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-49.html" class="day-card phase-2-card coming-soon" data-day="49"><span class="day-num">DAY 49</span><div class="day-title">Design: Dropbox / File Storage</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-50.html" class="day-card phase-2-card coming-soon" data-day="50"><span class="day-num">DAY 50</span><div class="day-title">Design: Notification System</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-51.html" class="day-card phase-2-card coming-soon" data-day="51"><span class="day-num">DAY 51</span><div class="day-title">Design: E-commerce Platform</div><div class="tags"><span class="tag">Design</span></div></a>
+    </div>
+
+    <div class="week-header"><span class="week-label">Week 8 — Advanced Storage</span><div class="week-line"></div></div>
+    <div class="days-grid">
+      <a href="days/day-52.html" class="day-card phase-2-card coming-soon" data-day="52"><span class="day-num">DAY 52</span><div class="day-title">Cassandra Deep Dive</div><div class="tags"><span class="tag">NoSQL</span></div></a>
+      <a href="days/day-53.html" class="day-card phase-2-card coming-soon" data-day="53"><span class="day-num">DAY 53</span><div class="day-title">MongoDB Deep Dive</div><div class="tags"><span class="tag">NoSQL</span></div></a>
+      <a href="days/day-54.html" class="day-card phase-2-card coming-soon" data-day="54"><span class="day-num">DAY 54</span><div class="day-title">Time Series Databases</div><div class="tags"><span class="tag">DB</span></div></a>
+      <a href="days/day-55.html" class="day-card phase-2-card coming-soon" data-day="55"><span class="day-num">DAY 55</span><div class="day-title">Elasticsearch Deep Dive</div><div class="tags"><span class="tag">Search</span></div></a>
+      <a href="days/day-56.html" class="day-card phase-2-card coming-soon" data-day="56"><span class="day-num">DAY 56</span><div class="day-title">Graph Databases: Neo4j</div><div class="tags"><span class="tag">Graph DB</span></div></a>
+      <a href="days/day-57.html" class="day-card phase-2-card coming-soon" data-day="57"><span class="day-num">DAY 57</span><div class="day-title">Data Warehouses: Redshift &amp; BigQuery</div><div class="tags"><span class="tag">DW</span></div></a>
+      <a href="days/day-58.html" class="day-card phase-2-card coming-soon" data-day="58"><span class="day-num">DAY 58</span><div class="day-title">OLAP vs OLTP Systems</div><div class="tags"><span class="tag">DB</span></div></a>
+      <a href="days/day-59.html" class="day-card phase-2-card coming-soon" data-day="59"><span class="day-num">DAY 59</span><div class="day-title">Stream Processing: Kafka Streams &amp; Flink</div><div class="tags"><span class="tag">Streaming</span></div></a>
+      <a href="days/day-60.html" class="day-card phase-2-card coming-soon" data-day="60"><span class="day-num">DAY 60</span><div class="day-title">Batch Processing: MapReduce &amp; Spark</div><div class="tags"><span class="tag">Batch</span></div></a>
+    </div>
+  </div>
+
+  <!-- PHASE 3 -->
+  <div class="phase-block" data-phase="3">
+    <div class="phase-title-row">
+      <span class="phase-badge phase-3">Phase 3</span>
+      <h2>Principal Engineer Level — Days 61–90</h2>
+    </div>
+
+    <div class="week-header"><span class="week-label">Week 9 — Infrastructure &amp; Operations</span><div class="week-line"></div></div>
+    <div class="days-grid">
+      <a href="days/day-61.html" class="day-card phase-3-card coming-soon" data-day="61"><span class="day-num">DAY 61</span><div class="day-title">Containerization &amp; Docker</div><div class="tags"><span class="tag">Infra</span></div></a>
+      <a href="days/day-62.html" class="day-card phase-3-card coming-soon" data-day="62"><span class="day-num">DAY 62</span><div class="day-title">Kubernetes Deep Dive</div><div class="tags"><span class="tag">K8s</span></div></a>
+      <a href="days/day-63.html" class="day-card phase-3-card coming-soon" data-day="63"><span class="day-num">DAY 63</span><div class="day-title">Service Discovery &amp; Config Management</div><div class="tags"><span class="tag">Infra</span></div></a>
+      <a href="days/day-64.html" class="day-card phase-3-card coming-soon" data-day="64"><span class="day-num">DAY 64</span><div class="day-title">Multi-Region Architecture</div><div class="tags"><span class="tag">Global</span></div></a>
+      <a href="days/day-65.html" class="day-card phase-3-card coming-soon" data-day="65"><span class="day-num">DAY 65</span><div class="day-title">Disaster Recovery Strategies</div><div class="tags"><span class="tag">DR</span></div></a>
+      <a href="days/day-66.html" class="day-card phase-3-card coming-soon" data-day="66"><span class="day-num">DAY 66</span><div class="day-title">Zero-Downtime Deployments</div><div class="tags"><span class="tag">Deploy</span></div></a>
+      <a href="days/day-67.html" class="day-card phase-3-card coming-soon" data-day="67"><span class="day-num">DAY 67</span><div class="day-title">Chaos Engineering</div><div class="tags"><span class="tag">Reliability</span></div></a>
+    </div>
+
+    <div class="week-header"><span class="week-label">Week 10 — Advanced System Design</span><div class="week-line"></div></div>
+    <div class="days-grid">
+      <a href="days/day-68.html" class="day-card phase-3-card coming-soon" data-day="68"><span class="day-num">DAY 68</span><div class="day-title">Design: Distributed ID Generator (Snowflake)</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-69.html" class="day-card phase-3-card coming-soon" data-day="69"><span class="day-num">DAY 69</span><div class="day-title">Design: Google Maps / Location Services</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-70.html" class="day-card phase-3-card coming-soon" data-day="70"><span class="day-num">DAY 70</span><div class="day-title">Design: Uber / Ride-Sharing System</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-71.html" class="day-card phase-3-card coming-soon" data-day="71"><span class="day-num">DAY 71</span><div class="day-title">Design: Payment Processing System</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-72.html" class="day-card phase-3-card coming-soon" data-day="72"><span class="day-num">DAY 72</span><div class="day-title">Design: Distributed Job Scheduler</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-73.html" class="day-card phase-3-card coming-soon" data-day="73"><span class="day-num">DAY 73</span><div class="day-title">Design: Metrics &amp; Monitoring System</div><div class="tags"><span class="tag">Design</span></div></a>
+      <a href="days/day-74.html" class="day-card phase-3-card coming-soon" data-day="74"><span class="day-num">DAY 74</span><div class="day-title">Design: Recommendation Engine</div><div class="tags"><span class="tag">Design</span></div></a>
+    </div>
+
+    <div class="week-header"><span class="week-label">Week 11 — Architecture Patterns</span><div class="week-line"></div></div>
+    <div class="days-grid">
+      <a href="days/day-75.html" class="day-card phase-3-card coming-soon" data-day="75"><span class="day-num">DAY 75</span><div class="day-title">CQRS Pattern</div><div class="tags"><span class="tag">Pattern</span></div></a>
+      <a href="days/day-76.html" class="day-card phase-3-card coming-soon" data-day="76"><span class="day-num">DAY 76</span><div class="day-title">Event Sourcing</div><div class="tags"><span class="tag">Pattern</span></div></a>
+      <a href="days/day-77.html" class="day-card phase-3-card coming-soon" data-day="77"><span class="day-num">DAY 77</span><div class="day-title">Microservices vs Monolith</div><div class="tags"><span class="tag">Architecture</span></div></a>
+      <a href="days/day-78.html" class="day-card phase-3-card coming-soon" data-day="78"><span class="day-num">DAY 78</span><div class="day-title">Domain-Driven Design</div><div class="tags"><span class="tag">DDD</span></div></a>
+      <a href="days/day-79.html" class="day-card phase-3-card coming-soon" data-day="79"><span class="day-num">DAY 79</span><div class="day-title">API Versioning &amp; Evolution</div><div class="tags"><span class="tag">API</span></div></a>
+      <a href="days/day-80.html" class="day-card phase-3-card coming-soon" data-day="80"><span class="day-num">DAY 80</span><div class="day-title">Data Migration Strategies</div><div class="tags"><span class="tag">Data</span></div></a>
+      <a href="days/day-81.html" class="day-card phase-3-card coming-soon" data-day="81"><span class="day-num">DAY 81</span><div class="day-title">Multi-Tenancy Patterns</div><div class="tags"><span class="tag">Architecture</span></div></a>
+    </div>
+
+    <div class="week-header"><span class="week-label">Week 12 — Interview Mastery</span><div class="week-line"></div></div>
+    <div class="days-grid">
+      <a href="days/day-82.html" class="day-card phase-3-card coming-soon" data-day="82"><span class="day-num">DAY 82</span><div class="day-title">Capacity Planning &amp; Cost Optimization</div><div class="tags"><span class="tag">Interview</span></div></a>
+      <a href="days/day-83.html" class="day-card phase-3-card coming-soon" data-day="83"><span class="day-num">DAY 83</span><div class="day-title">Technical Debt Management</div><div class="tags"><span class="tag">Architecture</span></div></a>
+      <a href="days/day-84.html" class="day-card phase-3-card coming-soon" data-day="84"><span class="day-num">DAY 84</span><div class="day-title">Architecture Decision Records (ADRs)</div><div class="tags"><span class="tag">Docs</span></div></a>
+      <a href="days/day-85.html" class="day-card phase-3-card coming-soon" data-day="85"><span class="day-num">DAY 85</span><div class="day-title">Interview: Clarifying Questions</div><div class="tags"><span class="tag">Interview</span></div></a>
+      <a href="days/day-86.html" class="day-card phase-3-card coming-soon" data-day="86"><span class="day-num">DAY 86</span><div class="day-title">Advanced Estimation Techniques</div><div class="tags"><span class="tag">Interview</span></div></a>
+      <a href="days/day-87.html" class="day-card phase-3-card coming-soon" data-day="87"><span class="day-num">DAY 87</span><div class="day-title">Common Interview Mistakes</div><div class="tags"><span class="tag">Interview</span></div></a>
+      <a href="days/day-88.html" class="day-card phase-3-card coming-soon" data-day="88"><span class="day-num">DAY 88</span><div class="day-title">Mock Interview: Social Media System</div><div class="tags"><span class="tag">Mock</span></div></a>
+      <a href="days/day-89.html" class="day-card phase-3-card coming-soon" data-day="89"><span class="day-num">DAY 89</span><div class="day-title">Mock Interview: Financial System</div><div class="tags"><span class="tag">Mock</span></div></a>
+      <a href="days/day-90.html" class="day-card phase-3-card coming-soon" data-day="90"><span class="day-num">DAY 90</span><div class="day-title">Final Review &amp; Resources</div><div class="tags"><span class="tag">Review</span></div></a>
+    </div>
+  </div>
+</section>
+
+<!-- ─── FOOTER ────────────────────────────────────────────────── -->
+<footer>
+  <p>System Design Mastery — 90-Day Principal Engineer Course &nbsp;·&nbsp;
+  Built for serious interview prep &nbsp;·&nbsp;
+  <a href="https://github.com/deepshah22/system-design">GitHub</a>
+  </p>
+</footer>
+
+<script src="assets/progress.js"></script>
+<script>
+  // Filter tabs
+  document.querySelectorAll('.filter-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const filter = tab.dataset.filter;
+      document.querySelectorAll('.phase-block').forEach(block => {
+        if (filter === 'all' || block.dataset.phase === filter) {
+          block.style.display = 'block';
+        } else {
+          block.style.display = 'none';
+        }
+      });
+    });
+  });
+
+  // Sync both stat elements
+  function syncStats() {
+    const count = getCompletedCount ? getCompletedCount() : 0;
+    const pct = Math.round((count / 90) * 100);
+    const el2 = document.getElementById('stat-completed2');
+    const el3 = document.getElementById('stat-remaining');
+    const el4 = document.getElementById('stat-pct2');
+    if (el2) el2.textContent = count;
+    if (el3) el3.textContent = 90 - count;
+    if (el4) el4.textContent = pct + '%';
+    // Ring
+    const ring = document.querySelector('.progress-ring-fill');
+    if (ring) {
+      const r = 54, circ = 2 * Math.PI * r;
+      ring.style.strokeDasharray = circ;
+      ring.style.strokeDashoffset = circ - (pct / 100) * circ;
+    }
+  }
+
+  // Init
+  document.addEventListener('DOMContentLoaded', () => {
+    initIndexPage();
+    syncStats();
+  });
+</script>
+</body>
+</html>
