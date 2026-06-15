@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 04: Content Delivery Networks (CDN) | System Design Mastery</title>
+  <meta name="description" content="Understand how CDNs slash latency by serving content from edge nodes close to users, their caching models, cache invalidation strategies, and when to pick a CDN vs origin in system design interviews." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    /* ─── DAY PAGE STYLES ─── */
+    .day-hero {
+      padding: 3rem 0 2rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0;
+    }
+
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .breadcrumb a { color: var(--text-muted); }
+    .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: 0.4; }
+
+    .day-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .meta-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 0.25rem 0.65rem;
+      border-radius: 20px;
+    }
+
+    .day-hero h1 {
+      font-size: clamp(1.7rem, 4vw, 2.8rem);
+      margin-bottom: 1rem;
+    }
+
+    .day-hero .lead {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      max-width: 700px;
+      margin-bottom: 1.75rem;
+    }
+
+    .day-hero-actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    /* ─── LAYOUT: TOC + CONTENT ─── */
+    .page-layout {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 3rem;
+      align-items: start;
+      margin-top: 2.5rem;
+    }
+
+    @media (max-width: 900px) {
+      .page-layout { grid-template-columns: 1fr; }
+      .toc-sidebar { display: none; }
+    }
+
+    .toc-sidebar {
+      position: sticky;
+      top: 80px;
+    }
+
+    .toc {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+    }
+
+    .toc-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .toc a {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      padding: 0.3rem 0;
+      border-left: 2px solid transparent;
+      padding-left: 0.75rem;
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+
+    .toc a:hover, .toc a.active {
+      color: var(--accent-light);
+      border-left-color: var(--accent);
+    }
+
+    /* ─── OBJECTIVES ─── */
+    .objectives {
+      background: rgba(99, 102, 241, 0.06);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .objectives-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent-light);
+      margin-bottom: 0.75rem;
+    }
+
+    .objectives ul { padding-left: 1.25rem; margin: 0; }
+    .objectives li { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.3rem; }
+
+    /* ─── CONTENT SECTIONS ─── */
+    .content-section { margin-bottom: 3rem; }
+
+    .content-section h2 {
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .content-section h3 {
+      margin-top: 1.75rem;
+      margin-bottom: 0.75rem;
+      color: var(--text-primary);
+    }
+
+    .content-section p { margin-bottom: 1rem; }
+    .content-section ul, .content-section ol { margin-bottom: 1rem; }
+    .content-section li { margin-bottom: 0.3rem; }
+
+    /* ─── COMPARISON TABLE ─── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      margin: 1.25rem 0;
+    }
+
+    th {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      font-weight: 600;
+      padding: 0.65rem 0.9rem;
+      text-align: left;
+      border: 1px solid var(--border);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    td {
+      padding: 0.65rem 0.9rem;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      vertical-align: top;
+    }
+
+    tr:nth-child(even) td { background: rgba(0,0,0,0.015); }
+    td strong { color: var(--text-primary); }
+
+    /* ─── CALLOUTS ─── */
+    .callout {
+      border-radius: var(--radius);
+      padding: 1.1rem 1.25rem;
+      margin: 1.5rem 0;
+      border-left: 3px solid;
+      font-size: 0.9rem;
+    }
+
+    .callout-title {
+      font-weight: 700;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.4rem;
+    }
+
+    .callout-info   { background: #eff6ff; border-color: #3b82f6; color: #1e3a5f; }
+    .callout-info .callout-title { color: #1d4ed8; }
+    .callout-warning { background: #fffbeb; border-color: #f59e0b; color: #78350f; }
+    .callout-warning .callout-title { color: #b45309; }
+    .callout-success { background: #f0fdf4; border-color: #22c55e; color: #14532d; }
+    .callout-success .callout-title { color: #15803d; }
+    .callout-danger  { background: #fef2f2; border-color: #ef4444; color: #7f1d1d; }
+    .callout-danger .callout-title  { color: #b91c1c; }
+
+    /* ─── NUMBER STEPS ─── */
+    .steps { counter-reset: step; list-style: none; padding: 0; margin: 1rem 0; }
+    .steps li {
+      counter-increment: step;
+      display: flex;
+      gap: 0.85rem;
+      align-items: flex-start;
+      margin-bottom: 0.75rem;
+    }
+    .steps li::before {
+      content: counter(step);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 1.6rem;
+      height: 1.6rem;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 700;
+      border-radius: 50%;
+      margin-top: 0.1rem;
+    }
+
+    /* ─── KEY-VALUE GRID ─── */
+    .kv-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1rem;
+      margin: 1.25rem 0;
+    }
+
+    .kv-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.1rem;
+    }
+
+    .kv-card-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+    }
+
+    .kv-card-value {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .kv-card-desc {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.2rem;
+    }
+
+    /* ─── PRACTICE QUESTIONS ─── */
+    .practice {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-top: 2rem;
+    }
+
+    .practice-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+
+    .practice ol { padding-left: 1.5rem; margin: 0; }
+    .practice li {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.75rem;
+      line-height: 1.6;
+    }
+
+    /* ─── PAGE NAV ─── */
+    .page-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      gap: 1rem;
+    }
+
+    .page-nav a {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 0.5rem 0.85rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-card);
+      transition: all 0.15s;
+    }
+
+    .page-nav a:hover {
+      color: var(--accent-light);
+      border-color: var(--accent);
+    }
+
+    .page-nav .coming-soon-link {
+      color: var(--text-muted);
+      opacity: 0.45;
+      pointer-events: none;
+      cursor: default;
+    }
+
+    /* ─── CDN SPECIFIC STYLES ─── */
+    .cdn-flow {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin: 1.5rem 0;
+      overflow-x: auto;
+      padding: 0.5rem 0;
+    }
+
+    .cdn-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.75rem 1rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      min-width: 90px;
+      text-align: center;
+    }
+
+    .cdn-node-icon { font-size: 1.5rem; }
+    .cdn-node-label { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); }
+    .cdn-node-sub { font-size: 0.65rem; color: var(--text-muted); opacity: 0.7; }
+
+    .cdn-arrow {
+      padding: 0 0.5rem;
+      color: var(--accent);
+      font-size: 1.1rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .cdn-arrow.miss { color: #f59e0b; }
+    .cdn-arrow.hit  { color: #22c55e; }
+
+    .hit-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.15rem 0.45rem;
+      border-radius: 10px;
+    }
+
+    .hit-badge.hit  { background: #dcfce7; color: #166534; }
+    .hit-badge.miss { background: #fef3c7; color: #92400e; }
+
+    .cache-strategy-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 1rem;
+      margin: 1.25rem 0;
+    }
+
+    .cache-strategy-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.1rem;
+    }
+
+    .cache-strategy-card h4 {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.4rem;
+    }
+
+    .cache-strategy-card p {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin: 0 0 0.5rem;
+    }
+
+    .pro-con {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .pro, .con {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 10px;
+    }
+
+    .pro { background: #dcfce7; color: #166534; }
+    .con { background: #fee2e2; color: #991b1b; }
+
+    .vendor-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1rem;
+      margin: 1.25rem 0;
+    }
+
+    .vendor-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+    }
+
+    .vendor-card h4 {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+
+    .vendor-card ul {
+      padding-left: 1.1rem;
+      margin: 0;
+    }
+
+    .vendor-card li {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.25rem;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─── NAV ─── -->
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo">
+      <span class="nav-logo-icon">⚙</span>
+      System Design Mastery
+    </a>
+    <div class="nav-center">
+      <div class="nav-progress-bar">
+        <div class="nav-progress-fill"></div>
+      </div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions">
+      <a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ─── HERO ─── -->
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a>
+      <span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a>
+      <span class="breadcrumb-sep">/</span>
+      <span>Day 04</span>
+    </div>
+
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 04 of 90</span>
+      <span class="meta-pill">⏱ ~30 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 1 — Core Concepts</span>
+    </div>
+
+    <h1>Content Delivery Networks<br><span style="color:var(--accent)">How the Internet Goes Fast</span></h1>
+
+    <p class="lead">
+      A CDN is one of the first scaling solutions any large system deploys. Understanding how
+      edge caching works — and crucially, how it <em>fails</em> — is essential knowledge for
+      every system design interview.
+    </p>
+
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MAIN LAYOUT ─── -->
+<div class="container">
+  <div class="page-layout">
+
+    <!-- TOC -->
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#why-cdn">Why CDNs Exist</a>
+        <a href="#how-it-works">How a CDN Works</a>
+        <a href="#cdn-architecture">CDN Architecture</a>
+        <a href="#cache-control">Cache-Control Headers</a>
+        <a href="#cache-strategies">Caching Strategies</a>
+        <a href="#invalidation">Cache Invalidation</a>
+        <a href="#cdn-types">Types of CDN Content</a>
+        <a href="#cdn-vendors">CDN Vendors</a>
+        <a href="#design-decisions">System Design Decisions</a>
+        <a href="#failure-modes">Failure Modes</a>
+        <a href="#practice">Practice Questions</a>
+      </nav>
+    </aside>
+
+    <!-- CONTENT -->
+    <main>
+
+      <!-- OBJECTIVES -->
+      <div class="objectives">
+        <div class="objectives-title">Learning Objectives</div>
+        <ul>
+          <li>Explain exactly what happens when a user requests a CDN-cached asset</li>
+          <li>Distinguish push CDN from pull CDN and when to choose each</li>
+          <li>Use <code>Cache-Control</code> headers fluently in design discussions</li>
+          <li>Articulate cache invalidation tradeoffs (TTL vs purge vs versioning)</li>
+          <li>Know when NOT to use a CDN</li>
+          <li>Apply CDN reasoning to common interview questions (YouTube, Netflix, Twitter)</li>
+        </ul>
+      </div>
+
+      <!-- WHY CDNS EXIST -->
+      <section class="content-section" id="why-cdn">
+        <h2>1. Why CDNs Exist</h2>
+        <p>
+          The speed of light is ~200,000 km/s through fiber (refractive index ≈ 1.5).
+          A round-trip from New York to London is roughly 5,600 km of cable — that's
+          <strong>~28 ms of pure propagation delay</strong>, before any server processing.
+          A user in Mumbai querying a server in Virginia adds ~140 ms per request.
+        </p>
+
+        <div class="kv-grid">
+          <div class="kv-card">
+            <div class="kv-card-label">NYC → London RTT</div>
+            <div class="kv-card-value">~75ms</div>
+            <div class="kv-card-desc">Real-world fiber + routing overhead</div>
+          </div>
+          <div class="kv-card">
+            <div class="kv-card-label">Mumbai → US-East RTT</div>
+            <div class="kv-card-value">~200ms</div>
+            <div class="kv-card-desc">Without a CDN edge in Asia</div>
+          </div>
+          <div class="kv-card">
+            <div class="kv-card-label">Typical CDN Edge Hit</div>
+            <div class="kv-card-value">&lt;5ms</div>
+            <div class="kv-card-desc">From a nearby PoP</div>
+          </div>
+          <div class="kv-card">
+            <div class="kv-card-label">P99 Cache Hit Ratio</div>
+            <div class="kv-card-value">85–95%</div>
+            <div class="kv-card-desc">For well-configured static assets</div>
+          </div>
+        </div>
+
+        <p>CDNs solve three distinct problems:</p>
+        <ul>
+          <li><strong>Latency</strong> — serve bytes from a server physically close to the user</li>
+          <li><strong>Throughput</strong> — distribute traffic across hundreds of edge servers, reducing origin load</li>
+          <li><strong>Availability</strong> — edge nodes absorb traffic spikes; if origin goes down, stale cache keeps serving</li>
+        </ul>
+
+        <div class="callout callout-info">
+          <div class="callout-title">Interview framing</div>
+          When an interviewer asks "how do you serve a billion users?", CDN is almost always
+          your first tool. Justify it with latency numbers — examiners want to see you
+          reason about physics, not just name-drop Cloudflare.
+        </div>
+      </section>
+
+      <!-- HOW A CDN WORKS -->
+      <section class="content-section" id="how-it-works">
+        <h2>2. How a CDN Works — The Request Flow</h2>
+
+        <p>Every CDN request follows one of two paths: <strong>cache hit</strong> or <strong>cache miss</strong>.</p>
+
+        <h3>Cache Hit Path</h3>
+        <div class="cdn-flow">
+          <div class="cdn-node"><div class="cdn-node-icon">💻</div><div class="cdn-node-label">User</div><div class="cdn-node-sub">Mumbai</div></div>
+          <div class="cdn-arrow">→</div>
+          <div class="cdn-node"><div class="cdn-node-icon">📡</div><div class="cdn-node-label">DNS</div><div class="cdn-node-sub">Anycast</div></div>
+          <div class="cdn-arrow hit">→</div>
+          <div class="cdn-node"><div class="cdn-node-icon">🏪</div><div class="cdn-node-label">Edge PoP</div><div class="cdn-node-sub">Mumbai</div></div>
+          <div class="cdn-arrow hit">→</div>
+          <div class="cdn-node"><div class="cdn-node-icon">📦</div><div class="cdn-node-label">Cached Asset</div><div class="cdn-node-sub"><span class="hit-badge hit">HIT</span></div></div>
+          <div class="cdn-arrow hit">→</div>
+          <div class="cdn-node"><div class="cdn-node-icon">💻</div><div class="cdn-node-label">User</div><div class="cdn-node-sub">&lt;5ms</div></div>
+        </div>
+
+        <h3>Cache Miss Path</h3>
+        <div class="cdn-flow">
+          <div class="cdn-node"><div class="cdn-node-icon">💻</div><div class="cdn-node-label">User</div><div class="cdn-node-sub">Mumbai</div></div>
+          <div class="cdn-arrow">→</div>
+          <div class="cdn-node"><div class="cdn-node-icon">🏪</div><div class="cdn-node-label">Edge PoP</div><div class="cdn-node-sub">Mumbai</div></div>
+          <div class="cdn-arrow miss">→</div>
+          <div class="cdn-node"><div class="cdn-node-icon">🏢</div><div class="cdn-node-label">Origin Server</div><div class="cdn-node-sub">Virginia</div></div>
+          <div class="cdn-arrow miss">←</div>
+          <div class="cdn-node"><div class="cdn-node-icon">📦</div><div class="cdn-node-label">Response</div><div class="cdn-node-sub"><span class="hit-badge miss">MISS</span></div></div>
+        </div>
+
+        <p>On a miss, the edge fetches from origin, stores the response, and serves the user — subsequent requests from that PoP are served from cache.</p>
+
+        <h3>Anycast DNS — How the Nearest Edge is Selected</h3>
+        <p>
+          CDN providers announce the same IP block from every PoP using <strong>BGP Anycast</strong>.
+          When you query <code>img.example.com</code>, the CDN's authoritative DNS returns
+          an IP that your ISP routes to the topographically nearest PoP automatically — no
+          geolocation database lookup needed.
+        </p>
+
+        <div class="callout callout-info">
+          <div class="callout-title">Why Anycast matters</div>
+          Anycast is also how <strong>DDoS mitigation</strong> works at scale. An attack targeting
+          one IP is spread across every PoP in the anycast group, diluting the traffic.
+          Cloudflare absorbs terabit-scale attacks this way.
+        </div>
+      </section>
+
+      <!-- CDN ARCHITECTURE -->
+      <section class="content-section" id="cdn-architecture">
+        <h2>3. CDN Architecture — PoPs and Tiers</h2>
+
+        <!-- DIAGRAM -->
+        <div class="diagram-container">
+          <canvas id="cdn-diagram" width="720" height="360"></canvas>
+        </div>
+
+        <h3>Points of Presence (PoPs)</h3>
+        <p>
+          A PoP is a physical data center the CDN operator owns or leases, typically colocated
+          in large IXPs (Internet Exchange Points) like Equinix. Major CDNs have 200–300+ PoPs
+          globally. Each PoP contains:
+        </p>
+        <ul>
+          <li><strong>Edge servers</strong> — HTTP servers with large NVMe SSD caches</li>
+          <li><strong>Reverse proxy</strong> — terminates TLS, evaluates cache rules</li>
+          <li><strong>Load balancer</strong> — spreads requests across edge servers in the PoP</li>
+        </ul>
+
+        <h3>Tiered Caching (Shield / Mid-Tier)</h3>
+        <p>
+          Large CDNs add a "shield" tier — a regional cluster sitting between edge PoPs and
+          origin. If 50 PoPs all miss on the same URL simultaneously, without a shield each
+          sends a separate request to origin (50 requests). With a shield, all 50 forward to
+          one shield node, which fetches once from origin.
+        </p>
+
+        <table>
+          <thead>
+            <tr><th>Tier</th><th>Location</th><th>Cache Size</th><th>Role</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Edge PoP</strong></td><td>200+ cities</td><td>1–10 TB SSD</td><td>First hop for users</td></tr>
+            <tr><td><strong>Shield / Mid-Tier</strong></td><td>10–20 regions</td><td>50–500 TB</td><td>Collapse origin requests</td></tr>
+            <tr><td><strong>Origin</strong></td><td>1–3 DCs</td><td>Source of truth</td><td>Serves only misses through shield</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- CACHE-CONTROL HEADERS -->
+      <section class="content-section" id="cache-control">
+        <h2>4. Cache-Control Headers</h2>
+        <p>
+          The CDN reads HTTP response headers from your origin to decide how (and whether) to
+          cache. Getting these right is as important as any CDN architecture decision.
+        </p>
+
+        <h3>Key Directives</h3>
+        <pre><code># Cache publicly for 1 year, allow stale for 1 hour if origin is unreachable
+Cache-Control: public, max-age=31536000, stale-while-revalidate=3600
+
+# Private — never cache (user-specific data, auth responses)
+Cache-Control: private, no-store
+
+# Cache but revalidate before serving (ETag / Last-Modified check)
+Cache-Control: public, no-cache, max-age=0
+
+# CDN-specific: cache at edge for 1 day, but tell browser only 1 hour
+Cache-Control: public, s-maxage=86400, max-age=3600
+
+# Surrogate headers (Varnish / Fastly)
+Surrogate-Control: max-age=86400</code></pre>
+
+        <table>
+          <thead>
+            <tr><th>Directive</th><th>Who It Affects</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>public</code></td><td>CDN + browser</td><td>Response may be cached by shared caches</td></tr>
+            <tr><td><code>private</code></td><td>Browser only</td><td>Only the end user's browser may cache it</td></tr>
+            <tr><td><code>max-age=N</code></td><td>Browser</td><td>Treat as fresh for N seconds</td></tr>
+            <tr><td><code>s-maxage=N</code></td><td>CDN only</td><td>Overrides max-age for shared caches</td></tr>
+            <tr><td><code>no-cache</code></td><td>Both</td><td>Must revalidate with origin before use</td></tr>
+            <tr><td><code>no-store</code></td><td>Both</td><td>Never cache at all (auth tokens, PII)</td></tr>
+            <tr><td><code>stale-while-revalidate</code></td><td>Both</td><td>Serve stale while fetching fresh in background</td></tr>
+            <tr><td><code>stale-if-error</code></td><td>Both</td><td>Serve stale if origin returns 5xx</td></tr>
+          </tbody>
+        </table>
+
+        <div class="callout callout-warning">
+          <div class="callout-title">Common mistake</div>
+          Setting <code>Cache-Control: no-cache</code> does NOT mean "don't cache." It means
+          "always revalidate before serving." Use <code>no-store</code> if you genuinely want
+          nothing cached. Confusing these two costs precious interview points.
+        </div>
+
+        <h3>Cache Vary</h3>
+        <p>
+          The <code>Vary</code> header tells the CDN to cache separate versions based on
+          request headers. <code>Vary: Accept-Encoding</code> caches separate gzip and br
+          versions. <code>Vary: Accept-Language</code> caches per locale.
+        </p>
+
+        <div class="callout callout-danger">
+          <div class="callout-title">Avoid Vary: Cookie or Vary: Authorization</div>
+          These fragment your cache into millions of unique entries, destroying hit ratios.
+          Instead, separate personalized content into API calls and cache only the static shell.
+        </div>
+      </section>
+
+      <!-- CACHING STRATEGIES -->
+      <section class="content-section" id="cache-strategies">
+        <h2>5. Pull CDN vs Push CDN</h2>
+
+        <div class="cache-strategy-grid">
+          <div class="cache-strategy-card">
+            <h4>Pull CDN (Lazy / On-Demand)</h4>
+            <p>
+              Origin is the source. CDN fetches and caches content on the first request
+              (cache miss). All major CDNs default to this.
+            </p>
+            <div class="pro-con">
+              <span class="pro">Simple setup</span>
+              <span class="pro">No pre-warming needed</span>
+              <span class="con">First user after miss is slow</span>
+              <span class="con">Cold cache on deploy</span>
+            </div>
+          </div>
+
+          <div class="cache-strategy-card">
+            <h4>Push CDN (Pre-Population)</h4>
+            <p>
+              You proactively upload assets to edge nodes before any user requests them.
+              Common for large media files (video, software downloads).
+            </p>
+            <div class="pro-con">
+              <span class="pro">Zero cold-start misses</span>
+              <span class="pro">Predictable latency</span>
+              <span class="con">Complex pipeline</span>
+              <span class="con">Costs storage at rest</span>
+            </div>
+          </div>
+
+          <div class="cache-strategy-card">
+            <h4>Write-Through (Dynamic)</h4>
+            <p>
+              Application writes to CDN and origin simultaneously. Used for semi-dynamic
+              content (sports scores, stock quotes with 30s TTL).
+            </p>
+            <div class="pro-con">
+              <span class="pro">Consistent</span>
+              <span class="con">Higher write complexity</span>
+              <span class="con">Stale risk on failure</span>
+            </div>
+          </div>
+
+          <div class="cache-strategy-card">
+            <h4>Stale-While-Revalidate</h4>
+            <p>
+              Serve cached content immediately, refresh in background. Best of both
+              worlds for content that changes occasionally (blogs, product pages).
+            </p>
+            <div class="pro-con">
+              <span class="pro">Fast always</span>
+              <span class="pro">No thundering herd</span>
+              <span class="con">Briefly stale</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-success">
+          <div class="callout-title">90% of interview cases</div>
+          Use <strong>pull CDN + stale-while-revalidate</strong> for static assets, and
+          <strong>push CDN</strong> for large media files (video segments, software installers).
+          State this explicitly and interviewers will be impressed.
+        </div>
+      </section>
+
+      <!-- CACHE INVALIDATION -->
+      <section class="content-section" id="invalidation">
+        <h2>6. Cache Invalidation — The Hard Problem</h2>
+
+        <p>
+          Phil Karlton famously said: "There are only two hard things in Computer Science:
+          cache invalidation and naming things." CDN invalidation is where systems get
+          messy in interviews.
+        </p>
+
+        <h3>Strategy 1: TTL-Based Expiry</h3>
+        <p>
+          Let cache entries expire via <code>max-age</code>. Simple, predictable, no API
+          calls needed. Problem: stale content lives for up to TTL after a change.
+        </p>
+        <ul>
+          <li>Best for: frequently changing content where some staleness is acceptable</li>
+          <li>Risk: bugs deployed to CDN can't be recalled quickly if TTL is long</li>
+        </ul>
+
+        <h3>Strategy 2: URL Versioning (Cache Busting)</h3>
+        <p>
+          Embed a hash or version in the URL: <code>/assets/app.a3f2b9.js</code>.
+          Old URL still cached forever (TTL = 1 year). New deploy = new URL = new cache entry.
+        </p>
+        <pre><code>&lt;!-- Bad: filename never changes, stale for TTL duration --&gt;
+&lt;script src="/assets/app.js"&gt;&lt;/script&gt;
+
+&lt;!-- Good: hash changes with content, old URL safely cached forever --&gt;
+&lt;script src="/assets/app.a3f2b9c1.js"&gt;&lt;/script&gt;</code></pre>
+
+        <div class="callout callout-success">
+          <div class="callout-title">Best practice</div>
+          Use URL versioning for all static assets. Set <code>max-age=31536000</code>
+          (1 year) on versioned URLs and let your build pipeline update them. This is how
+          webpack, Vite, and Next.js work by default.
+        </div>
+
+        <h3>Strategy 3: Purge / Instant Invalidation</h3>
+        <p>
+          Most CDNs expose a purge API (Cloudflare Purge, CloudFront Invalidation, Fastly
+          Instant Purge). You call it after a deploy to immediately evict stale entries.
+        </p>
+
+        <table>
+          <thead>
+            <tr><th>CDN</th><th>Purge API</th><th>Propagation Time</th><th>Cost</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Cloudflare</strong></td>
+              <td>Cache Purge API</td>
+              <td>~150ms globally</td>
+              <td>Free (rate limited)</td>
+            </tr>
+            <tr>
+              <td><strong>AWS CloudFront</strong></td>
+              <td>CreateInvalidation</td>
+              <td>5–15 min</td>
+              <td>$0.005 per path after 1,000/month</td>
+            </tr>
+            <tr>
+              <td><strong>Fastly</strong></td>
+              <td>Instant Purge + Surrogate-Keys</td>
+              <td>&lt;150ms globally</td>
+              <td>Included</td>
+            </tr>
+            <tr>
+              <td><strong>Akamai</strong></td>
+              <td>Fast Purge</td>
+              <td>~5 seconds</td>
+              <td>Per purge</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Surrogate Keys / Cache Tags (Advanced)</h3>
+        <p>
+          Fastly and Cloudflare Enterprise support tagging cached responses with arbitrary
+          keys. You purge by tag rather than URL — one API call clears all pages that
+          contain a specific product, user, or article.
+        </p>
+        <pre><code># Origin sets tag header
+Surrogate-Key: product-42 category-electronics homepage
+
+# Later, purge all pages containing product 42
+curl -X POST https://api.fastly.com/service/SVC_ID/purge/product-42</code></pre>
+
+        <div class="callout callout-info">
+          <div class="callout-title">Interview application</div>
+          If asked "how do you update a cached product page when inventory changes?",
+          answer: surrogate keys + purge by tag. This is how large e-commerce sites
+          (Shopify, Wayfair) maintain CDN caching with dynamic data.
+        </div>
+      </section>
+
+      <!-- TYPES OF CDN CONTENT -->
+      <section class="content-section" id="cdn-types">
+        <h2>7. What Can a CDN Cache?</h2>
+
+        <table>
+          <thead>
+            <tr><th>Content Type</th><th>Cacheability</th><th>Typical TTL</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Static assets</strong></td>
+              <td>✅ Perfect</td>
+              <td>1 year</td>
+              <td>JS, CSS, images — use URL versioning</td>
+            </tr>
+            <tr>
+              <td><strong>Video segments (HLS/DASH)</strong></td>
+              <td>✅ Perfect</td>
+              <td>Permanent</td>
+              <td>Immutable .ts/.m4s chunks; use push CDN</td>
+            </tr>
+            <tr>
+              <td><strong>API responses (public)</strong></td>
+              <td>✅ Good</td>
+              <td>10s–5min</td>
+              <td>Sports scores, weather, product lists</td>
+            </tr>
+            <tr>
+              <td><strong>HTML (static pages)</strong></td>
+              <td>✅ Good</td>
+              <td>1–60 min</td>
+              <td>Use stale-while-revalidate</td>
+            </tr>
+            <tr>
+              <td><strong>Dynamic HTML (personalized)</strong></td>
+              <td>⚠️ Partial</td>
+              <td>0s</td>
+              <td>Cache the shell, fetch personalization via JS</td>
+            </tr>
+            <tr>
+              <td><strong>User auth responses</strong></td>
+              <td>❌ Never</td>
+              <td>no-store</td>
+              <td>Tokens, session data must not be shared</td>
+            </tr>
+            <tr>
+              <td><strong>POST / PUT / DELETE</strong></td>
+              <td>❌ Never</td>
+              <td>—</td>
+              <td>Non-idempotent writes always bypass cache</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Edge-Side Rendering (Modern CDN Compute)</h3>
+        <p>
+          Modern CDNs (Cloudflare Workers, Fastly Compute, Lambda@Edge) let you run
+          JavaScript at the edge. This enables:
+        </p>
+        <ul>
+          <li><strong>A/B testing at the edge</strong> — no origin round-trip to decide variant</li>
+          <li><strong>Edge authentication</strong> — validate JWT before request reaches origin</li>
+          <li><strong>Personalized caching</strong> — vary cache by user segment, not individual cookie</li>
+          <li><strong>Partial page caching</strong> — assemble page from cached fragments at edge</li>
+        </ul>
+      </section>
+
+      <!-- VENDORS -->
+      <section class="content-section" id="cdn-vendors">
+        <h2>8. CDN Vendors — Which to Name in Interviews</h2>
+
+        <div class="vendor-grid">
+          <div class="vendor-card">
+            <h4>Cloudflare</h4>
+            <ul>
+              <li>300+ PoPs globally</li>
+              <li>Generous free tier</li>
+              <li>Workers (edge compute)</li>
+              <li>R2 storage + CDN integration</li>
+              <li>Best-in-class DDoS mitigation</li>
+            </ul>
+          </div>
+          <div class="vendor-card">
+            <h4>AWS CloudFront</h4>
+            <ul>
+              <li>410+ PoPs</li>
+              <li>Deep AWS integration</li>
+              <li>Lambda@Edge compute</li>
+              <li>Signed URLs for private content</li>
+              <li>Best for AWS-native stacks</li>
+            </ul>
+          </div>
+          <div class="vendor-card">
+            <h4>Fastly</h4>
+            <ul>
+              <li>Enterprise focus</li>
+              <li>Sub-150ms instant purge</li>
+              <li>Surrogate key tagging</li>
+              <li>VCL configuration language</li>
+              <li>Used by GitHub, Spotify</li>
+            </ul>
+          </div>
+          <div class="vendor-card">
+            <h4>Akamai</h4>
+            <ul>
+              <li>Largest PoP count (~4,100)</li>
+              <li>Media delivery pioneer</li>
+              <li>Edge computing (EdgeWorkers)</li>
+              <li>Enterprise contracts only</li>
+              <li>Used by broadcasters, banks</li>
+            </ul>
+          </div>
+          <div class="vendor-card">
+            <h4>GCP Cloud CDN</h4>
+            <ul>
+              <li>Google backbone network</li>
+              <li>Tight GCS / GKE integration</li>
+              <li>Signed cookies support</li>
+              <li>Best for GCP-native stacks</li>
+            </ul>
+          </div>
+          <div class="vendor-card">
+            <h4>Azure CDN / Front Door</h4>
+            <ul>
+              <li>192 PoPs</li>
+              <li>Built into Azure networking</li>
+              <li>WAF + CDN combined</li>
+              <li>Best for .NET / Azure stacks</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-title">Interview tip</div>
+          Don't just say "use Cloudflare." Name the <em>specific feature</em> you need:
+          instant purge → Fastly, Lambda@Edge → CloudFront, DDoS + Workers → Cloudflare.
+          Vendor selection based on feature requirements signals senior-level thinking.
+        </div>
+      </section>
+
+      <!-- SYSTEM DESIGN DECISIONS -->
+      <section class="content-section" id="design-decisions">
+        <h2>9. CDN in System Design Interviews</h2>
+
+        <h3>When to Introduce a CDN</h3>
+        <p>Mention a CDN immediately when the problem involves any of these:</p>
+        <ul>
+          <li>Serving users in multiple geographic regions</li>
+          <li>Static assets (JS, CSS, images)</li>
+          <li>Video streaming (YouTube, Netflix)</li>
+          <li>Scale &gt; 1M DAU (origin bandwidth cost alone justifies it)</li>
+          <li>High availability requirements (CDN can serve stale during origin downtime)</li>
+        </ul>
+
+        <h3>How to Structure a CDN Section in Your Answer</h3>
+        <ol class="steps">
+          <li>State the goal: "To reduce latency for global users and offload origin bandwidth"</li>
+          <li>Choose pull vs push based on content type</li>
+          <li>Define Cache-Control policy for each content category</li>
+          <li>Define invalidation strategy for mutable content</li>
+          <li>Address failure mode: what happens if CDN goes down?</li>
+        </ol>
+
+        <h3>YouTube / Video Platform Example</h3>
+        <p>
+          YouTube video segments are immutable blobs (.mp4 chunks). After upload,
+          they never change. This is a perfect push CDN case:
+        </p>
+        <ul>
+          <li>Transcoding pipeline outputs segments to object storage (GCS/S3)</li>
+          <li>CDN pre-warms popular videos from regional distribution servers</li>
+          <li>Segments have <code>Cache-Control: public, max-age=31536000, immutable</code></li>
+          <li>Cache hit ratio approaches 99% for popular content</li>
+          <li>Origin bandwidth: only new/unpopular videos; CDN absorbs the rest</li>
+        </ul>
+
+        <h3>Twitter / Social Feed Example</h3>
+        <p>
+          Tweets are dynamic (likes, retweets update in real-time), but profile images
+          and media attachments are static. Split the concern:
+        </p>
+        <ul>
+          <li>Tweet text/metadata: never cache (or short TTL + surrogate keys)</li>
+          <li>Profile photos, banners: CDN with <code>max-age=3600</code>, URL versioning on upload</li>
+          <li>Embedded images: CDN with immutable URLs (hash in path)</li>
+          <li>JavaScript bundles: <code>max-age=31536000</code> with content hash</li>
+        </ul>
+      </section>
+
+      <!-- FAILURE MODES -->
+      <section class="content-section" id="failure-modes">
+        <h2>10. CDN Failure Modes</h2>
+
+        <table>
+          <thead>
+            <tr><th>Failure</th><th>Impact</th><th>Mitigation</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>CDN PoP outage</strong></td>
+              <td>Users in affected region get origin latency</td>
+              <td>Multi-CDN routing; origin must handle full load</td>
+            </tr>
+            <tr>
+              <td><strong>Thundering herd on miss</strong></td>
+              <td>New content: hundreds of PoPs all miss simultaneously, stampeding origin</td>
+              <td>Request coalescing (only one upstream per edge); shield tier</td>
+            </tr>
+            <tr>
+              <td><strong>Cache poisoning</strong></td>
+              <td>Attacker injects malicious content via request smuggling</td>
+              <td>Strict header validation; cache only GET/HEAD; no Vary: Cookie</td>
+            </tr>
+            <tr>
+              <td><strong>Stale content after deploy</strong></td>
+              <td>Users see old JS/CSS, breaking the app</td>
+              <td>URL versioning (hash) + purge API on deploy</td>
+            </tr>
+            <tr>
+              <td><strong>CDN provider outage</strong></td>
+              <td>Cloudflare/Fastly outages have taken down large portions of internet</td>
+              <td>Multi-CDN (Cloudflare + CloudFront); DNS failover to origin</td>
+            </tr>
+            <tr>
+              <td><strong>Origin overload during CDN miss storm</strong></td>
+              <td>Warm cache + deploy = millions of simultaneous misses</td>
+              <td>Staggered deploys; blue/green with pre-warming; CDN cache warm scripts</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout callout-warning">
+          <div class="callout-title">The Fastly Outage (June 2021)</div>
+          A misconfiguration in Fastly's CDN software took down Reddit, Twitch, GitHub,
+          CNN, The Guardian, and hundreds of others simultaneously for ~1 hour. The incident
+          demonstrated why multi-CDN is worth the complexity for tier-1 services.
+        </div>
+
+        <h3>Multi-CDN Architecture</h3>
+        <p>
+          Large players (Netflix, Apple, Shopify) route traffic across multiple CDN providers
+          simultaneously using DNS-based load balancing and real-time performance monitoring
+          (Real User Monitoring — RUM). If Fastly P99 latency spikes, traffic shifts to CloudFront.
+        </p>
+      </section>
+
+      <!-- PRACTICE QUESTIONS -->
+      <section class="content-section" id="practice">
+        <div class="practice">
+          <div class="practice-title">Practice Questions — CDN</div>
+          <ol>
+            <li>
+              <strong>Netflix cache warm:</strong> Netflix releases a new season of a show at
+              midnight. Hundreds of millions of users will hit play in the first 10 minutes.
+              How do you ensure the CDN can serve this without overwhelming your origin?
+              Walk through the content pipeline from upload to first user request.
+            </li>
+            <li>
+              <strong>Cache invalidation:</strong> Your e-commerce site caches product pages
+              with a 24-hour TTL. A product goes out of stock. Users are still seeing
+              "Add to Cart" for 24 hours. How would you redesign the caching strategy
+              to handle real-time inventory changes without sacrificing cache performance?
+            </li>
+            <li>
+              <strong>Personalization dilemma:</strong> Your news homepage is different for
+              each user (personalized recommendations). You want to cache it at the CDN.
+              How would you architect this so most of the page is cached while the
+              personalized section is still dynamic?
+            </li>
+            <li>
+              <strong>Multi-CDN:</strong> Your system uses only Cloudflare. An interviewer
+              asks how you'd handle a Cloudflare outage (which happens ~1–2 times/year).
+              Design a multi-CDN failover system. What are the tradeoffs?
+            </li>
+            <li>
+              <strong>Security:</strong> Your CDN serves a banking application's static
+              assets. A penetration tester finds that injecting a specific <code>Host</code>
+              header causes the CDN to cache a different user's account page under a shared key.
+              What is this attack called, how did it happen, and how do you fix it?
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- PAGE NAV -->
+      <div class="page-nav">
+        <a href="day-03.html">← Day 03: Networking (TCP/IP, HTTP & DNS)</a>
+        <a href="day-05.html" class="coming-soon-link">Day 05: Load Balancing →</a>
+      </div>
+
+    </main>
+  </div><!-- end .page-layout -->
+</div><!-- end .container -->
+
+<!-- ─── FOOTER ─── -->
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 04 of 90 — Content Delivery Networks</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- ─── SCRIPTS ─── -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script>
+/* ─── CDN ARCHITECTURE DIAGRAM ─── */
+(function() {
+  const canvas = document.getElementById('cdn-diagram');
+  if (!canvas) return;
+  const rc = rough.canvas(canvas);
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  /* colour palette (dark bg) */
+  const C = {
+    origin:  '#6366f1',
+    shield:  '#8b5cf6',
+    edge:    '#0ea5e9',
+    user:    '#22c55e',
+    line:    '#94a3b8',
+    text:    '#f1f5f9',
+    muted:   '#94a3b8',
+  };
+
+  const opts = (color) => ({
+    stroke: color,
+    strokeWidth: 1.8,
+    roughness: 1.3,
+    fill: color,
+    fillStyle: 'solid',
+    fillWeight: 1,
+  });
+
+  /* ─── ORIGIN ─── */
+  rc.rectangle(W/2 - 60, 20, 120, 50, { ...opts(C.origin), fillStyle: 'hachure', fillWeight: 1, hachureAngle: -45, hachureGap: 6 });
+  ctx.fillStyle = C.text; ctx.font = 'bold 13px Inter, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('Origin Server', W/2, 49);
+  ctx.fillStyle = C.muted; ctx.font = '10px Inter, sans-serif';
+  ctx.fillText('Virginia, US', W/2, 62);
+
+  /* ─── SHIELD TIER ─── */
+  const shields = [
+    { x: W * 0.25, label: 'Shield', sub: 'US-East' },
+    { x: W * 0.75, label: 'Shield', sub: 'EU-West' },
+  ];
+
+  shields.forEach(s => {
+    rc.rectangle(s.x - 50, 110, 100, 45, { ...opts(C.shield), fillStyle: 'hachure', fillWeight: 1, hachureAngle: -45, hachureGap: 7 });
+    ctx.fillStyle = C.text; ctx.font = 'bold 12px Inter, sans-serif';
+    ctx.fillText(s.label, s.x, 135);
+    ctx.fillStyle = C.muted; ctx.font = '10px Inter, sans-serif';
+    ctx.fillText(s.sub, s.x, 149);
+    /* line to origin */
+    rc.line(W/2 - (s.x < W/2 ? 50 : -50), 45, s.x + (s.x < W/2 ? 45 : -45), 115,
+      { stroke: C.line, strokeWidth: 1.4, roughness: 1 });
+  });
+
+  /* ─── EDGE PoPs ─── */
+  const pops = [
+    { x: W * 0.1,  sy: 0,   label: 'NY',      parent: 0 },
+    { x: W * 0.3,  sy: 0,   label: 'Chicago',  parent: 0 },
+    { x: W * 0.55, sy: 0,   label: 'London',   parent: 1 },
+    { x: W * 0.72, sy: 0,   label: 'Paris',    parent: 1 },
+    { x: W * 0.9,  sy: 0,   label: 'Mumbai',   parent: 1 },
+  ];
+
+  pops.forEach((p, i) => {
+    const py = 215;
+    rc.rectangle(p.x - 40, py, 80, 40, { ...opts(C.edge), fillStyle: 'hachure', fillWeight: 1, hachureAngle: -45, hachureGap: 8 });
+    ctx.fillStyle = C.text; ctx.font = 'bold 11px Inter, sans-serif';
+    ctx.fillText('PoP', p.x, py + 16);
+    ctx.fillStyle = C.muted; ctx.font = '10px Inter, sans-serif';
+    ctx.fillText(p.label, p.x, py + 30);
+    /* line to shield */
+    const sh = shields[p.parent];
+    rc.line(sh.x, 155, p.x, py,
+      { stroke: C.line, strokeWidth: 1.2, roughness: 1.2 });
+  });
+
+  /* ─── USERS ─── */
+  const users = [
+    { x: W * 0.1,  pop: 0 },
+    { x: W * 0.3,  pop: 1 },
+    { x: W * 0.55, pop: 2 },
+    { x: W * 0.72, pop: 3 },
+    { x: W * 0.9,  pop: 4 },
+  ];
+
+  users.forEach((u, i) => {
+    const uy = 310;
+    rc.circle(u.x, uy, 28, { stroke: C.user, strokeWidth: 1.6, roughness: 1.2, fill: 'none' });
+    ctx.fillStyle = C.user; ctx.font = '16px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('👤', u.x, uy + 6);
+    const pop = pops[u.pop];
+    rc.line(u.x, uy - 14, u.x, 255,
+      { stroke: C.user, strokeWidth: 1.2, roughness: 1.1 });
+  });
+
+  /* ─── LEGEND ─── */
+  const lx = 10, ly = H - 28;
+  ctx.fillStyle = C.origin; ctx.fillRect(lx, ly, 12, 12);
+  ctx.fillStyle = C.shield; ctx.fillRect(lx + 80, ly, 12, 12);
+  ctx.fillStyle = C.edge;   ctx.fillRect(lx + 160, ly, 12, 12);
+  ctx.fillStyle = C.user;   ctx.fillRect(lx + 240, ly, 12, 12);
+  ctx.fillStyle = C.muted; ctx.font = '10px Inter, sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('Origin', lx + 16, ly + 10);
+  ctx.fillText('Shield Tier', lx + 96, ly + 10);
+  ctx.fillText('Edge PoP', lx + 176, ly + 10);
+  ctx.fillText('Users', lx + 256, ly + 10);
+})();
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => initDayPage(4));
+</script>
+</body>
+</html>
