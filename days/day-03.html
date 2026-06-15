@@ -1,0 +1,1539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 03: Networking — TCP/IP, HTTP &amp; DNS | System Design Mastery</title>
+  <meta name="description" content="Master the networking fundamentals every system designer needs: TCP vs UDP, the DNS resolution pipeline, HTTP/1.1 vs HTTP/2 vs HTTP/3, TLS handshake, and how it all connects to architecture decisions." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    /* ─── DAY PAGE STYLES ─── */
+    .day-hero {
+      padding: 3rem 0 2rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0;
+    }
+
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .breadcrumb a { color: var(--text-muted); }
+    .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: 0.4; }
+
+    .day-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .meta-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 0.25rem 0.65rem;
+      border-radius: 20px;
+    }
+
+    .day-hero h1 {
+      font-size: clamp(1.7rem, 4vw, 2.8rem);
+      margin-bottom: 1rem;
+    }
+
+    .day-hero .lead {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      max-width: 700px;
+      margin-bottom: 1.75rem;
+    }
+
+    .day-hero-actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    /* ─── LAYOUT: TOC + CONTENT ─── */
+    .page-layout {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 3rem;
+      align-items: start;
+      margin-top: 2.5rem;
+    }
+
+    @media (max-width: 900px) {
+      .page-layout { grid-template-columns: 1fr; }
+      .toc-sidebar { display: none; }
+    }
+
+    .toc-sidebar {
+      position: sticky;
+      top: 80px;
+    }
+
+    .toc {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+    }
+
+    .toc-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .toc a {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      padding: 0.3rem 0;
+      border-left: 2px solid transparent;
+      padding-left: 0.75rem;
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+
+    .toc a:hover, .toc a.active {
+      color: var(--accent-light);
+      border-left-color: var(--accent);
+    }
+
+    /* ─── OBJECTIVES ─── */
+    .objectives {
+      background: rgba(99, 102, 241, 0.06);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .objectives-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent-light);
+      margin-bottom: 0.75rem;
+    }
+
+    .objectives ul { padding-left: 1.25rem; margin: 0; }
+    .objectives li { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.3rem; }
+
+    /* ─── CONTENT SECTIONS ─── */
+    .content-section { margin-bottom: 3rem; }
+
+    .content-section h2 {
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .content-section h3 {
+      margin-top: 1.75rem;
+      margin-bottom: 0.75rem;
+      color: var(--text-primary);
+    }
+
+    .content-section p { margin-bottom: 1rem; }
+    .content-section ul, .content-section ol { margin-bottom: 1rem; }
+    .content-section li { margin-bottom: 0.3rem; }
+
+    /* ─── COMPARISON TABLE ─── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      margin: 1.25rem 0;
+    }
+
+    th {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      font-weight: 600;
+      padding: 0.65rem 0.9rem;
+      text-align: left;
+      border: 1px solid var(--border);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    td {
+      padding: 0.65rem 0.9rem;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      vertical-align: top;
+    }
+
+    tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+
+    td strong { color: var(--text-primary); }
+
+    /* ─── LAYER STACK ─── */
+    .layer-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin: 1.5rem 0;
+    }
+
+    .layer {
+      display: grid;
+      grid-template-columns: 40px 150px 1fr;
+      gap: 1rem;
+      align-items: center;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 0.75rem 1rem;
+      transition: border-color 0.2s;
+    }
+
+    .layer:hover { border-color: var(--accent); }
+
+    .layer-num {
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .layer-name {
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+    }
+
+    .layer-name small {
+      display: block;
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-top: 0.15rem;
+    }
+
+    .layer-detail {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .layer-detail code {
+      font-size: 0.75rem;
+    }
+
+    .layer-4 { border-left: 3px solid #f59e0b; }
+    .layer-3 { border-left: 3px solid #8b5cf6; }
+    .layer-2 { border-left: 3px solid #3b82f6; }
+    .layer-1 { border-left: 3px solid #10b981; }
+
+    /* ─── DNS STEP FLOW ─── */
+    .dns-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      margin: 1.5rem 0;
+    }
+
+    .dns-step {
+      display: flex;
+      gap: 1.25rem;
+      position: relative;
+    }
+
+    .dns-step::before {
+      content: '';
+      position: absolute;
+      left: 17px;
+      top: 40px;
+      bottom: -10px;
+      width: 2px;
+      background: var(--border);
+    }
+
+    .dns-step:last-child::before { display: none; }
+
+    .dns-step-num {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 2px solid var(--phase2);
+      background: var(--phase2-bg);
+      color: var(--phase2);
+      font-size: 0.8rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 0.15rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .dns-step-body {
+      padding-bottom: 1.25rem;
+    }
+
+    .dns-step-body h4 {
+      color: var(--text-primary);
+      margin-bottom: 0.25rem;
+      font-size: 0.95rem;
+    }
+
+    .dns-step-body p {
+      font-size: 0.875rem;
+      margin: 0;
+      color: var(--text-muted);
+    }
+
+    /* ─── HTTP VERSION CARDS ─── */
+    .version-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+
+    .version-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      transition: border-color 0.2s;
+    }
+
+    .version-card:hover { border-color: var(--border-hover); }
+
+    .version-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .version-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .v11 .version-badge { background: rgba(100,116,139,0.2); color: #94a3b8; }
+    .v2  .version-badge { background: var(--phase2-bg); color: var(--phase2); }
+    .v3  .version-badge { background: rgba(245,158,11,0.12); color: var(--phase3); }
+
+    .version-year { font-size: 0.75rem; color: var(--text-muted); }
+    .version-card h4 { margin: 0; font-size: 0.9rem; }
+    .version-card ul { margin: 0; padding-left: 1.1rem; }
+    .version-card li { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem; }
+    .version-card p { font-size: 0.8rem; margin-top: 0.6rem; margin-bottom: 0; color: var(--text-secondary); }
+
+    /* ─── STATUS CODE GROUPS ─── */
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.75rem;
+      margin: 1.25rem 0;
+    }
+
+    .status-group {
+      background: var(--bg-card);
+      border-radius: var(--radius-sm);
+      padding: 1rem;
+      border: 1px solid var(--border);
+    }
+
+    .status-range {
+      font-size: 1.1rem;
+      font-weight: 800;
+      margin-bottom: 0.25rem;
+    }
+
+    .status-group-name {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.6rem;
+    }
+
+    .status-group ul { padding-left: 1.1rem; margin: 0; }
+    .status-group li { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem; }
+
+    .s2xx .status-range { color: #10b981; }
+    .s3xx .status-range { color: #3b82f6; }
+    .s4xx .status-range { color: #f59e0b; }
+    .s5xx .status-range { color: #ef4444; }
+
+    /* ─── TAKEAWAYS ─── */
+    .takeaways {
+      background: var(--success-bg);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin: 2rem 0;
+    }
+
+    .takeaways h3 { color: #34d399; margin-top: 0; margin-bottom: 0.75rem; }
+    .takeaways ul { padding-left: 1.25rem; margin: 0; }
+    .takeaways li { color: #a7f3d0; font-size: 0.9rem; margin-bottom: 0.4rem; }
+
+    /* ─── PRACTICE QUESTIONS ─── */
+    .practice-questions {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin: 2rem 0;
+    }
+
+    .practice-questions h3 { margin-top: 0; color: var(--phase3); margin-bottom: 1rem; }
+
+    .question-item {
+      display: flex;
+      gap: 0.75rem;
+      padding: 0.9rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .question-item:last-child { border-bottom: none; padding-bottom: 0; }
+
+    .question-num {
+      width: 2rem;
+      height: 2rem;
+      background: var(--accent-glow);
+      border: 1px solid rgba(99,102,241,0.3);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--accent-light);
+      flex-shrink: 0;
+    }
+
+    .question-text { color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 0.4rem; }
+    .question-hint { font-size: 0.8rem; color: var(--text-muted); font-style: italic; }
+
+    /* ─── DAY NAV FOOTER ─── */
+    .day-nav-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 2rem 0;
+      margin-top: 2rem;
+      border-top: 1px solid var(--border);
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .day-nav-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.65rem 1.25rem;
+      border-radius: var(--radius);
+      font-size: 0.9rem;
+      font-weight: 600;
+      text-decoration: none;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      transition: all 0.2s;
+    }
+
+    .day-nav-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent-light);
+    }
+
+    .day-nav-btn.next {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .day-nav-btn.next:hover {
+      background: var(--accent-light);
+      border-color: var(--accent-light);
+      color: white;
+    }
+
+    @media (max-width: 640px) {
+      .layer { grid-template-columns: 30px 130px 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─── NAV ─────────────────────────────────────────────────── -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="../index.html" class="nav-logo" style="text-decoration:none">
+      <div class="logo-icon">⚙</div>
+      System Design Mastery
+    </a>
+    <div class="nav-links">
+      <a href="../index.html">← Course Home</a>
+      <a href="day-04.html">Day 4 →</a>
+    </div>
+    <div class="nav-progress">
+      <div class="nav-progress-bar">
+        <div class="nav-progress-fill" style="width:0%"></div>
+      </div>
+      <span class="nav-progress-label">0/90</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ─── MAIN ─────────────────────────────────────────────────── -->
+<main>
+  <div class="container-narrow">
+
+    <!-- Hero -->
+    <div class="day-hero">
+      <div class="breadcrumb">
+        <a href="../index.html">Course Home</a>
+        <span class="breadcrumb-sep">›</span>
+        <span style="color:var(--phase1)">Phase 1: Fundamentals</span>
+        <span class="breadcrumb-sep">›</span>
+        <span>Day 03</span>
+      </div>
+
+      <div class="day-meta">
+        <span class="phase-badge phase-1">Phase 1 — Fundamentals</span>
+        <span class="meta-pill">📅 Day 3 of 90</span>
+        <span class="meta-pill">⏱ ~30 min read</span>
+        <span class="meta-pill">🌐 Networking</span>
+      </div>
+
+      <h1>Networking: TCP/IP, HTTP &amp; DNS</h1>
+      <p class="lead">
+        Every distributed system is built on a network. Understanding how data moves — and why it sometimes
+        doesn't — is non-negotiable for system design. Today you'll build an accurate mental model of the
+        internet stack, from how bytes travel across wire to how browsers resolve domain names to how
+        HTTP/3 eliminates head-of-line blocking.
+      </p>
+
+      <div class="day-hero-actions">
+        <button id="mark-complete-btn" class="btn btn-outline" style="border-color:var(--success);color:var(--success)">
+          Mark as Complete
+        </button>
+        <a href="../index.html#curriculum" class="btn btn-outline">View All 90 Days</a>
+      </div>
+    </div>
+
+    <!-- Learning Objectives -->
+    <div class="objectives" style="margin-top:2rem">
+      <div class="objectives-title">🎯 What You'll Learn Today</div>
+      <ul>
+        <li>The 4-layer TCP/IP model and what each layer does — with real protocols at each layer</li>
+        <li>TCP vs UDP: connection model, reliability guarantees, and when to use each</li>
+        <li>The full DNS resolution chain from browser cache to authoritative nameserver</li>
+        <li>HTTP/1.1 vs HTTP/2 vs HTTP/3: the evolution that removed bottlenecks</li>
+        <li>TLS handshake: how HTTPS establishes a secure channel and why latency matters</li>
+        <li>How all of this connects to load balancers, CDNs, and API design decisions</li>
+      </ul>
+    </div>
+
+    <div class="page-layout">
+
+      <!-- TOC Sidebar -->
+      <aside class="toc-sidebar">
+        <nav class="toc">
+          <div class="toc-title">On this page</div>
+          <a href="#why-networking">Why networking matters</a>
+          <a href="#tcp-ip-model">TCP/IP Model</a>
+          <a href="#tcp-vs-udp">TCP vs UDP</a>
+          <a href="#dns">DNS Resolution</a>
+          <a href="#http-evolution">HTTP Evolution</a>
+          <a href="#tls">TLS &amp; HTTPS</a>
+          <a href="#status-codes">HTTP Status Codes</a>
+          <a href="#system-design-impact">System design impact</a>
+          <a href="#takeaways">Key Takeaways</a>
+          <a href="#practice">Practice Questions</a>
+        </nav>
+      </aside>
+
+      <!-- Main Content -->
+      <div class="main-content">
+
+        <!-- SECTION 1 -->
+        <div class="content-section">
+          <h2 id="why-networking">Why System Designers Must Understand Networking</h2>
+
+          <p>
+            At first glance, networking seems like ops or infrastructure territory. But every architectural
+            decision you make as a system designer — choosing between REST and gRPC, deciding whether to use
+            long-polling or WebSockets, deciding where to place a CDN — is a networking decision in disguise.
+          </p>
+
+          <p>
+            Here's what networking knowledge buys you in an interview:
+          </p>
+
+          <ul>
+            <li><strong>Latency intuition:</strong> Know that a round trip from US East to US West is ~60ms, and that a TLS handshake adds 1–2 round trips — so connection setup alone is 60–120ms</li>
+            <li><strong>Protocol selection:</strong> Know why video streaming uses UDP, why file transfer uses TCP, and why modern apps use HTTP/2</li>
+            <li><strong>Failure modes:</strong> Know what happens when packets are dropped, when DNS entries are stale, or when a TCP connection silently dies</li>
+            <li><strong>Optimization opportunities:</strong> Know that connection pooling exists because TCP setup has overhead, that HTTP/2 multiplexing eliminates the cost of multiple connections, that DNS TTL controls cache staleness</li>
+          </ul>
+
+          <div class="callout callout-info">
+            <div class="callout-title">💡 Interview Tip</div>
+            <p>
+              When asked "how would you reduce latency?" — the best answers always start at the network layer.
+              Moving computation closer to users (CDN, edge), reducing round trips (HTTP/2), keeping connections alive
+              (connection pooling) — these are all network-layer wins that outperform any amount of application optimization.
+            </p>
+          </div>
+        </div>
+
+        <!-- SECTION 2 -->
+        <div class="content-section">
+          <h2 id="tcp-ip-model">The TCP/IP Model (4 Layers)</h2>
+
+          <p>
+            The internet is built on a layered model. Each layer has a specific job and communicates only
+            with the layers directly above and below it. This abstraction is what makes the internet work
+            across wildly different hardware and software.
+          </p>
+
+          <!-- Diagram -->
+          <div class="diagram-container" style="margin: 1.5rem 0;">
+            <div class="diagram-label">Excalidraw — TCP/IP Stack with Protocols</div>
+            <svg id="tcpip-diagram" width="100%" height="320" viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" style="max-width:760px;display:block;margin:0 auto"></svg>
+          </div>
+
+          <div class="layer-stack">
+            <div class="layer layer-4">
+              <div class="layer-num">4</div>
+              <div class="layer-name">
+                Application
+                <small>Layer 4</small>
+              </div>
+              <div class="layer-detail">
+                HTTP, HTTPS, DNS, FTP, SMTP, WebSocket, gRPC —
+                protocols that applications speak directly.
+                Data unit: <code>message</code>
+              </div>
+            </div>
+
+            <div class="layer layer-3">
+              <div class="layer-num">3</div>
+              <div class="layer-name">
+                Transport
+                <small>Layer 3</small>
+              </div>
+              <div class="layer-detail">
+                TCP, UDP — handles end-to-end delivery, ports,
+                reliability and flow control.
+                Data unit: <code>segment</code> (TCP) / <code>datagram</code> (UDP)
+              </div>
+            </div>
+
+            <div class="layer layer-2">
+              <div class="layer-num">2</div>
+              <div class="layer-name">
+                Internet
+                <small>Layer 2</small>
+              </div>
+              <div class="layer-detail">
+                IP (IPv4/IPv6), ICMP — routes packets between networks
+                using IP addresses. Data unit: <code>packet</code>
+              </div>
+            </div>
+
+            <div class="layer layer-1">
+              <div class="layer-num">1</div>
+              <div class="layer-name">
+                Network Access
+                <small>Layer 1</small>
+              </div>
+              <div class="layer-detail">
+                Ethernet, Wi-Fi, fiber — physical transmission of
+                bits on a medium. Data unit: <code>frame</code>
+              </div>
+            </div>
+          </div>
+
+          <p>
+            The key insight is that <strong>each layer adds a header</strong> as data travels down the stack
+            (encapsulation), and <strong>strips that header</strong> as data travels up on the receiving end (decapsulation).
+            A web server's HTTP response is wrapped in a TCP segment, which is wrapped in an IP packet,
+            which is wrapped in an Ethernet frame. The router only cares about the IP layer. The NIC only
+            cares about the frame. The application only cares about the HTTP message.
+          </p>
+
+          <div class="callout callout-info">
+            <div class="callout-title">💡 Why Layer Thinking Matters for System Design</div>
+            <p>
+              Load balancers operate at different layers: Layer 4 (transport) LBs route by TCP/UDP without
+              looking at content — extremely fast. Layer 7 (application) LBs inspect HTTP headers and can route
+              by path, cookie, or header value — more flexible but more expensive. When you say "I'd put an
+              L7 load balancer in front of the API tier," you're making a networking-informed decision.
+            </p>
+          </div>
+        </div>
+
+        <!-- SECTION 3 -->
+        <div class="content-section">
+          <h2 id="tcp-vs-udp">TCP vs UDP: The Core Transport Choice</h2>
+
+          <p>
+            Nearly everything you build runs on either TCP or UDP. Understanding the tradeoffs is not optional —
+            it determines the protocol you choose for every internal and external communication.
+          </p>
+
+          <h3>TCP: The Reliable Protocol</h3>
+          <p>
+            TCP (Transmission Control Protocol) guarantees that every byte sent is received, in order,
+            exactly once. It achieves this through:
+          </p>
+
+          <ul>
+            <li><strong>3-way handshake:</strong> SYN → SYN-ACK → ACK before any data flows. ~1 RTT overhead.</li>
+            <li><strong>Acknowledgments (ACKs):</strong> Receiver confirms each segment; sender retransmits on timeout</li>
+            <li><strong>Ordered delivery:</strong> Sequence numbers ensure bytes arrive in the right order</li>
+            <li><strong>Flow control:</strong> Receiver advertises a window size to prevent buffer overflow</li>
+            <li><strong>Congestion control:</strong> TCP slows down when the network is congested (slow start, AIMD)</li>
+          </ul>
+
+          <pre><code>TCP 3-Way Handshake:
+Client                    Server
+  |  ── SYN (seq=x) ──→   |    "I want to connect"
+  |  ←── SYN-ACK ─────    |    "OK, I'm ready"
+  |  ── ACK ────────→     |    "Let's go"
+  |                        |
+  |  ── DATA ───────→     |    Now data can flow
+  |  ←── ACK ─────────    |    Receiver confirms
+</code></pre>
+
+          <h3>UDP: The Fast, Unreliable Protocol</h3>
+          <p>
+            UDP (User Datagram Protocol) is deliberately minimal. It sends packets and forgets them.
+            No handshake, no acknowledgments, no ordering guarantees. It does have checksums for
+            corruption detection, but it drops corrupted packets silently.
+          </p>
+
+          <p>Why would you ever want this? Because <strong>overhead is latency</strong>. UDP is ideal when:</p>
+          <ul>
+            <li>Speed matters more than completeness (video calls — a dropped frame is better than a late frame)</li>
+            <li>The application handles retransmission at a higher level</li>
+            <li>Messages are independent and short (DNS queries — a 100-byte question, not a stream)</li>
+            <li>Multicast/broadcast is needed (UDP supports one-to-many; TCP does not)</li>
+          </ul>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Property</th>
+                <th>TCP</th>
+                <th>UDP</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Connection</strong></td>
+                <td>Connection-oriented (handshake)</td>
+                <td>Connectionless (fire-and-forget)</td>
+              </tr>
+              <tr>
+                <td><strong>Reliability</strong></td>
+                <td>Guaranteed delivery + retransmit</td>
+                <td>Best-effort, no retransmit</td>
+              </tr>
+              <tr>
+                <td><strong>Ordering</strong></td>
+                <td>In-order delivery</td>
+                <td>Out-of-order possible</td>
+              </tr>
+              <tr>
+                <td><strong>Speed</strong></td>
+                <td>Slower (overhead)</td>
+                <td>Faster (minimal overhead)</td>
+              </tr>
+              <tr>
+                <td><strong>Use cases</strong></td>
+                <td>HTTP, SSH, file transfer, databases</td>
+                <td>DNS, video/audio streaming, gaming, QUIC</td>
+              </tr>
+              <tr>
+                <td><strong>Header size</strong></td>
+                <td>20–60 bytes</td>
+                <td>8 bytes</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="callout callout-warning">
+            <div class="callout-title">⚠️ TCP Head-of-Line Blocking</div>
+            <p>
+              TCP's ordered delivery creates a subtle problem: if packet #5 is lost, packets #6–100 must
+              wait in the receive buffer until #5 is retransmitted and received. This is called
+              <strong>head-of-line blocking</strong> and is why HTTP/2 (running over TCP) still suffers from
+              it at the transport layer. HTTP/3 solves this by moving to QUIC (UDP-based), where stream
+              blocking is per-stream, not connection-wide.
+            </p>
+          </div>
+        </div>
+
+        <!-- SECTION 4 -->
+        <div class="content-section">
+          <h2 id="dns">DNS: The Internet's Phone Book</h2>
+
+          <p>
+            DNS (Domain Name System) translates human-readable domain names like <code>api.stripe.com</code>
+            into IP addresses like <code>34.149.212.105</code> that routers use to deliver packets.
+            It's a massively distributed, hierarchical, eventually-consistent database — and it's
+            often the hidden bottleneck or single point of failure in systems that don't account for it.
+          </p>
+
+          <!-- DNS Diagram -->
+          <div class="diagram-container" style="margin: 1.5rem 0;">
+            <div class="diagram-label">Excalidraw — DNS Resolution Pipeline</div>
+            <svg id="dns-diagram" width="100%" height="260" viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" style="max-width:760px;display:block;margin:0 auto"></svg>
+          </div>
+
+          <h3>The DNS Resolution Chain</h3>
+          <p>When you type <code>www.stripe.com</code> and hit Enter, here's what happens:</p>
+
+          <div class="dns-steps">
+            <div class="dns-step">
+              <div class="dns-step-num">1</div>
+              <div class="dns-step-body">
+                <h4>Browser &amp; OS Cache Check</h4>
+                <p>Your browser checks its own DNS cache first, then the OS cache (e.g., <code>/etc/hosts</code>
+                on Linux). If found and TTL hasn't expired, done immediately — zero network hops.</p>
+              </div>
+            </div>
+
+            <div class="dns-step">
+              <div class="dns-step-num">2</div>
+              <div class="dns-step-body">
+                <h4>Recursive Resolver (ISP / 8.8.8.8)</h4>
+                <p>If not cached locally, the OS asks your configured recursive resolver (your ISP's
+                DNS or a public one like Google's <code>8.8.8.8</code> or Cloudflare's <code>1.1.1.1</code>).
+                The resolver also has a cache.</p>
+              </div>
+            </div>
+
+            <div class="dns-step">
+              <div class="dns-step-num">3</div>
+              <div class="dns-step-body">
+                <h4>Root Nameserver</h4>
+                <p>If the resolver has no cache hit, it asks one of the 13 root nameserver clusters (like
+                <code>a.root-servers.net</code>). The root doesn't know the IP — it returns the address of
+                the TLD nameserver for <code>.com</code>.</p>
+              </div>
+            </div>
+
+            <div class="dns-step">
+              <div class="dns-step-num">4</div>
+              <div class="dns-step-body">
+                <h4>TLD Nameserver (<code>.com</code>)</h4>
+                <p>The TLD nameserver for <code>.com</code> (operated by Verisign) doesn't know the final IP either.
+                It returns the address of Stripe's <strong>authoritative nameserver</strong>.</p>
+              </div>
+            </div>
+
+            <div class="dns-step">
+              <div class="dns-step-num">5</div>
+              <div class="dns-step-body">
+                <h4>Authoritative Nameserver (Stripe's)</h4>
+                <p>Stripe's authoritative nameserver (e.g., running on Route 53 or Cloudflare) has the
+                definitive answer. It returns an <code>A</code> record with the IP address and a TTL.
+                The resolver caches this for TTL seconds, then returns it to your browser.</p>
+              </div>
+            </div>
+          </div>
+
+          <h3>Key DNS Record Types</h3>
+
+          <table>
+            <thead>
+              <tr><th>Record</th><th>Maps</th><th>Example</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>A</code></td>
+                <td>Hostname → IPv4 address</td>
+                <td><code>api.stripe.com → 34.149.212.105</code></td>
+              </tr>
+              <tr>
+                <td><code>AAAA</code></td>
+                <td>Hostname → IPv6 address</td>
+                <td><code>api.stripe.com → 2600:1f18::1</code></td>
+              </tr>
+              <tr>
+                <td><code>CNAME</code></td>
+                <td>Alias → canonical hostname</td>
+                <td><code>www.stripe.com → stripe.com</code></td>
+              </tr>
+              <tr>
+                <td><code>MX</code></td>
+                <td>Domain → mail server</td>
+                <td><code>stripe.com → aspmx.l.google.com</code></td>
+              </tr>
+              <tr>
+                <td><code>TXT</code></td>
+                <td>Domain → arbitrary text</td>
+                <td>SPF, DKIM, ownership verification</td>
+              </tr>
+              <tr>
+                <td><code>NS</code></td>
+                <td>Domain → authoritative nameserver</td>
+                <td><code>stripe.com → ns1.p23.dynect.net</code></td>
+              </tr>
+              <tr>
+                <td><code>SRV</code></td>
+                <td>Service → host + port</td>
+                <td><code>_http._tcp.example.com → host:port</code></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3>TTL: The DNS Knob That Controls Freshness</h3>
+          <p>
+            Every DNS record has a TTL (Time to Live) in seconds. Caches hold the record until TTL expires,
+            then re-query. This creates a system design tradeoff:
+          </p>
+
+          <ul>
+            <li><strong>Short TTL (30–300s):</strong> Changes propagate quickly. Good for failover (update DNS to redirect traffic). High resolver query load and slightly higher latency.</li>
+            <li><strong>Long TTL (3600–86400s):</strong> Low query load, fast resolution. Bad for failover — old IPs remain cached for hours.</li>
+          </ul>
+
+          <div class="callout callout-warning">
+            <div class="callout-title">⚠️ Common Interview Trap: DNS in Failover Scenarios</div>
+            <p>
+              If you design a system that fails over by "changing the DNS record," make sure you account
+              for TTL propagation time. If your TTL is 3600s, it can take up to an hour for all resolvers
+              to get the new IP. In practice, you pre-lower the TTL before a planned cutover (set it to 60s
+              a day in advance), then raise it again after the migration is stable.
+            </p>
+          </div>
+        </div>
+
+        <!-- SECTION 5 -->
+        <div class="content-section">
+          <h2 id="http-evolution">HTTP: The Evolution from 1.1 to 3</h2>
+
+          <p>
+            HTTP is the application protocol that the web runs on. Understanding its evolution
+            is essential because each version was designed to solve specific performance problems —
+            and those solutions show up directly in CDN configuration, load balancer settings,
+            and API design decisions.
+          </p>
+
+          <div class="version-grid">
+            <div class="version-card v11">
+              <div class="version-header">
+                <span class="version-badge">HTTP/1.1</span>
+                <span class="version-year">1997</span>
+              </div>
+              <h4>The Foundation</h4>
+              <ul>
+                <li>Persistent connections (Keep-Alive)</li>
+                <li>Pipelining (rarely used — buggy)</li>
+                <li>Chunked transfer encoding</li>
+                <li>Virtual hosting (<code>Host</code> header)</li>
+              </ul>
+              <p><strong>Problem:</strong> One request at a time per connection. Browsers open 6 parallel connections per domain as a workaround. Still head-of-line blocked.</p>
+            </div>
+
+            <div class="version-card v2">
+              <div class="version-header">
+                <span class="version-badge">HTTP/2</span>
+                <span class="version-year">2015</span>
+              </div>
+              <h4>Multiplexing</h4>
+              <ul>
+                <li>Binary framing (not text)</li>
+                <li>Multiplexing: multiple streams over 1 TCP connection</li>
+                <li>Header compression (HPACK)</li>
+                <li>Server push (server sends resources proactively)</li>
+                <li>Stream prioritization</li>
+              </ul>
+              <p><strong>Problem:</strong> Still TCP — single dropped packet blocks all streams (transport-layer HOL blocking).</p>
+            </div>
+
+            <div class="version-card v3">
+              <div class="version-header">
+                <span class="version-badge">HTTP/3</span>
+                <span class="version-year">2022</span>
+              </div>
+              <h4>QUIC Transport</h4>
+              <ul>
+                <li>Runs on QUIC (UDP-based)</li>
+                <li>0-RTT connection resumption</li>
+                <li>Per-stream loss recovery — no HOL blocking</li>
+                <li>Built-in TLS 1.3</li>
+                <li>Connection migration (IP changes)</li>
+              </ul>
+              <p><strong>Win:</strong> Mobile-friendly. Connection survives switching from WiFi to LTE without reconnecting.</p>
+            </div>
+          </div>
+
+          <h3>HTTP/2 Multiplexing: Why It Matters</h3>
+          <p>
+            The single biggest HTTP/1.1 problem was that each response had to complete before the next request
+            could be sent on that connection. HTTP/2 introduces the concept of <strong>streams</strong> —
+            independent, bidirectional sequences of frames multiplexed over a single TCP connection.
+          </p>
+
+          <pre><code>HTTP/1.1 (1 request at a time per connection):
+  Request A ──→ Response A
+                            Request B ──→ Response B
+                                                      Request C ──→ Response C
+
+HTTP/2 (all streams interleaved on 1 TCP connection):
+  Stream 1:  ─Request─────────────Response─────
+  Stream 2:    ─Request────Response─────────────
+  Stream 3:      ─Request───────────────Response─
+  (All happening concurrently on a single connection)
+</code></pre>
+
+          <p>
+            This eliminates the "6 parallel connections" hack browsers needed with HTTP/1.1 and
+            dramatically reduces server load and connection overhead.
+          </p>
+        </div>
+
+        <!-- SECTION 6 -->
+        <div class="content-section">
+          <h2 id="tls">TLS &amp; HTTPS: Secure Connections</h2>
+
+          <p>
+            TLS (Transport Layer Security) wraps TCP to provide three properties: <strong>confidentiality</strong>
+            (encryption), <strong>integrity</strong> (tamper detection via MACs), and <strong>authenticity</strong>
+            (server identity via certificates). HTTPS = HTTP over TLS.
+          </p>
+
+          <h3>TLS 1.2 Handshake (the old way — 2 RTTs)</h3>
+
+          <pre><code>Client                              Server
+  ── ClientHello ──────────────────→   (cipher suites, random)
+  ←── ServerHello + Certificate ─────  (chosen cipher, cert)
+  ── ClientKeyExchange + ChangeCipher→ (encrypted pre-master)
+  ←── ChangeCipherSpec + Finished ───  (both sides derive same key)
+
+  ── Encrypted HTTP Request ──────→
+  ←── Encrypted HTTP Response ───────
+
+  Cost: 2 RTTs before first byte of data
+</code></pre>
+
+          <h3>TLS 1.3 Handshake (current — 1 RTT)</h3>
+
+          <pre><code>Client                              Server
+  ── ClientHello + key_share ──────→  (includes DH parameters upfront)
+  ←── ServerHello + key_share + cert─ (server can derive key immediately)
+  ── Finished ─────────────────────→
+
+  ── Encrypted HTTP Request ──────→   (1 RTT to first data!)
+  ←── Encrypted HTTP Response ───────
+</code></pre>
+
+          <p>
+            TLS 1.3 also supports <strong>0-RTT session resumption</strong> for repeated connections,
+            where a returning client can send encrypted data in the very first packet using a previously
+            negotiated session key. HTTP/3 (QUIC) bakes TLS 1.3 in at the transport layer.
+          </p>
+
+          <div class="callout callout-info">
+            <div class="callout-title">💡 Why TLS Latency Matters for Architecture</div>
+            <p>
+              Each TLS handshake adds 1–2 RTTs. For a US→Europe connection (~100ms RTT), that's
+              100–200ms of overhead before any data flows. This is exactly why <strong>connection pooling</strong>
+              (keep connections alive and reuse them), <strong>TLS session resumption</strong>, and <strong>CDN edge
+              nodes</strong> (terminate TLS close to the user) are so important. Moving the TLS endpoint from a
+              datacenter 100ms away to a CDN node 5ms away saves 190ms per new connection.
+            </p>
+          </div>
+        </div>
+
+        <!-- SECTION 7 -->
+        <div class="content-section">
+          <h2 id="status-codes">HTTP Status Codes: The Vocabulary You Must Know</h2>
+
+          <p>
+            Status codes communicate the result of an HTTP request. In system design, they determine
+            how clients behave: when to retry, when to cache, when to redirect. Using the wrong status
+            code is a real API design bug.
+          </p>
+
+          <div class="status-grid">
+            <div class="status-group s2xx">
+              <div class="status-range">2xx</div>
+              <div class="status-group-name">Success</div>
+              <ul>
+                <li><strong>200</strong> OK</li>
+                <li><strong>201</strong> Created</li>
+                <li><strong>204</strong> No Content</li>
+                <li><strong>206</strong> Partial Content</li>
+              </ul>
+            </div>
+            <div class="status-group s3xx">
+              <div class="status-range">3xx</div>
+              <div class="status-group-name">Redirect</div>
+              <ul>
+                <li><strong>301</strong> Moved Permanently</li>
+                <li><strong>302</strong> Found (temp)</li>
+                <li><strong>304</strong> Not Modified</li>
+                <li><strong>307</strong> Temporary Redirect</li>
+              </ul>
+            </div>
+            <div class="status-group s4xx">
+              <div class="status-range">4xx</div>
+              <div class="status-group-name">Client Error</div>
+              <ul>
+                <li><strong>400</strong> Bad Request</li>
+                <li><strong>401</strong> Unauthorized</li>
+                <li><strong>403</strong> Forbidden</li>
+                <li><strong>404</strong> Not Found</li>
+                <li><strong>409</strong> Conflict</li>
+                <li><strong>429</strong> Too Many Requests</li>
+              </ul>
+            </div>
+            <div class="status-group s5xx">
+              <div class="status-range">5xx</div>
+              <div class="status-group-name">Server Error</div>
+              <ul>
+                <li><strong>500</strong> Internal Server Error</li>
+                <li><strong>502</strong> Bad Gateway</li>
+                <li><strong>503</strong> Service Unavailable</li>
+                <li><strong>504</strong> Gateway Timeout</li>
+              </ul>
+            </div>
+          </div>
+
+          <p>
+            The distinction between <strong>401 vs 403</strong> is subtle but important:
+            401 means "you're not authenticated — please log in." 403 means "you're authenticated but
+            not authorized — you don't have permission." Using the wrong one leaks information or
+            breaks client retry logic.
+          </p>
+
+          <p>
+            <strong>502 vs 503 vs 504</strong>: 503 means the server is overwhelmed or in maintenance
+            (correct for rate limiting and shutdowns). 502 means a gateway received an invalid response
+            from an upstream server. 504 means the gateway timed out waiting for upstream. These codes
+            are what your load balancer/API gateway returns — your servers return 500 for their own errors.
+          </p>
+        </div>
+
+        <!-- SECTION 8 -->
+        <div class="content-section">
+          <h2 id="system-design-impact">Connecting Networking to System Design Decisions</h2>
+
+          <p>
+            Here's how today's networking concepts map directly to architecture decisions you'll make in interviews:
+          </p>
+
+          <table>
+            <thead>
+              <tr><th>Concept</th><th>Architecture Impact</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>TCP connection overhead</strong></td>
+                <td>Use connection pools for databases and internal services. Don't open a new connection per request.</td>
+              </tr>
+              <tr>
+                <td><strong>DNS TTL</strong></td>
+                <td>Lower TTL before migrations/failovers. Use short TTLs for services that need fast failover (Route 53 health checks).</td>
+              </tr>
+              <tr>
+                <td><strong>HTTP/2 multiplexing</strong></td>
+                <td>Enable HTTP/2 on API gateways. Eliminates the need for domain sharding (HTTP/1.1 workaround). Use for gRPC (always HTTP/2).</td>
+              </tr>
+              <tr>
+                <td><strong>TLS termination</strong></td>
+                <td>Terminate TLS at the load balancer or CDN edge (closest to user). Backend services can communicate over HTTP internally (on trusted network).</td>
+              </tr>
+              <tr>
+                <td><strong>UDP for latency-sensitive</strong></td>
+                <td>Games, video calls, IoT telemetry. Also QUIC/HTTP/3 — which CDNs increasingly support.</td>
+              </tr>
+              <tr>
+                <td><strong>Head-of-line blocking</strong></td>
+                <td>Motivates HTTP/2 (application-level), HTTP/3/QUIC (transport-level). Also motivates keeping payloads small so blocking duration is minimal.</td>
+              </tr>
+              <tr>
+                <td><strong>TCP 4-tuple</strong></td>
+                <td>(src IP, src port, dst IP, dst port) uniquely identifies a connection. A single server can handle ~65k concurrent connections to a single destination IP:port. For more, use connection multiplexing or multiple IPs.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3>Real-World Example: How Stripe handles API connections</h3>
+          <p>
+            Stripe's API serves millions of requests per day. Their architecture illustrates these principles:
+          </p>
+          <ul>
+            <li><strong>TLS terminated at Cloudflare edge</strong> — TLS handshake happens within ~20ms for most users, regardless of where Stripe's servers are</li>
+            <li><strong>HTTP/2</strong> on their API — mobile SDK clients can pipeline multiple requests over a single connection</li>
+            <li><strong>Short DNS TTL (60s)</strong> — allows fast failover between datacenters during incidents</li>
+            <li><strong>Connection pooling</strong> to databases — a fleet of app servers each maintains a pool of ~20 PostgreSQL connections, rather than opening a new connection per request</li>
+          </ul>
+        </div>
+
+        <!-- Takeaways -->
+        <div class="takeaways" id="takeaways">
+          <h3>✅ Key Takeaways for Day 3</h3>
+          <ul>
+            <li>The 4-layer TCP/IP model: Application (HTTP), Transport (TCP/UDP), Internet (IP), Network Access (Ethernet). Each layer adds/strips headers.</li>
+            <li>TCP guarantees reliable, ordered delivery via handshake + ACKs — use for anything where correctness matters. UDP is fast but unreliable — use for latency-sensitive, loss-tolerant workloads.</li>
+            <li>DNS resolves names through a hierarchy: local cache → recursive resolver → root NS → TLD NS → authoritative NS. TTL controls staleness — lower it before planned failovers.</li>
+            <li>HTTP/1.1 is text-based, one-request-at-a-time per connection. HTTP/2 adds binary multiplexing over one TCP connection. HTTP/3 moves to QUIC (UDP) to eliminate transport-layer HOL blocking.</li>
+            <li>TLS 1.3 costs 1 RTT (vs 2 RTTs for TLS 1.2). Terminate TLS at the CDN edge to minimize handshake latency for users. Reuse connections via pooling to amortize this cost.</li>
+            <li>Every interview answer about "reducing latency" should consider: fewer round trips (HTTP/2, connection reuse), closer endpoints (CDN, edge), and reduced DNS lookup time.</li>
+          </ul>
+        </div>
+
+        <!-- Practice Questions -->
+        <div class="practice-questions" id="practice">
+          <h3>🧠 Practice Questions</h3>
+
+          <div class="question-item">
+            <div class="question-num">1</div>
+            <div>
+              <div class="question-text">
+                A client reports that the first API call after a period of inactivity is always slow (~200ms), but subsequent calls in the same session are fast (~5ms). What networking concepts explain this, and how would you fix it?
+              </div>
+              <div class="question-hint">Hint: Think about what happens the first time vs subsequent times — connection setup, TLS, DNS caching</div>
+            </div>
+          </div>
+
+          <div class="question-item">
+            <div class="question-num">2</div>
+            <div>
+              <div class="question-text">
+                Your team deploys an update to production by changing a DNS A record to point to new servers. An hour later, some users still see the old version. Why, and how would you architect the next migration to avoid this?
+              </div>
+              <div class="question-hint">Hint: TTL — what value was it set to, and what's the propagation timeline?</div>
+            </div>
+          </div>
+
+          <div class="question-item">
+            <div class="question-num">3</div>
+            <div>
+              <div class="question-text">
+                You're designing a live video streaming platform (like Twitch). Should the video data stream use TCP or UDP? What about the chat messages? Justify both decisions.
+              </div>
+              <div class="question-hint">Hint: Latency vs correctness — a frozen frame vs a dropped frame in live video has different impact than missing a chat message</div>
+            </div>
+          </div>
+
+          <div class="question-item">
+            <div class="question-num">4</div>
+            <div>
+              <div class="question-text">
+                An API returns HTTP 200 with <code>{"error": "user not found"}</code> in the body. What's wrong with this pattern, and what should the correct response be? Why does it matter for distributed systems?
+              </div>
+              <div class="question-hint">Hint: How do load balancers, monitoring systems, and retry logic use HTTP status codes?</div>
+            </div>
+          </div>
+
+          <div class="question-item">
+            <div class="question-num">5</div>
+            <div>
+              <div class="question-text">
+                Explain why enabling HTTP/2 on your API gateway might let you reduce the number of TCP connections your mobile app maintains. How does this reduce battery usage on mobile devices?
+              </div>
+              <div class="question-hint">Hint: HTTP/1.1 requires multiple connections for parallelism; each idle TCP connection keeps a radio alive on mobile</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Day Nav Footer -->
+        <div class="day-nav-footer">
+          <a href="day-02.html" class="day-nav-btn">← Day 02: Scaling</a>
+          <a href="../index.html" class="btn btn-outline">🏠 Course Home</a>
+          <a href="day-04.html" class="day-nav-btn next">Day 04: CDN →</a>
+        </div>
+
+      </div><!-- /main-content -->
+    </div><!-- /page-layout -->
+
+  </div>
+</main>
+
+<footer>
+  <p>System Design Mastery · Day 3 of 90 ·
+    <a href="../index.html">Course Home</a> ·
+    <a href="https://github.com/deepshah22/system-design">GitHub</a>
+  </p>
+</footer>
+
+<!-- roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script>
+/* ─── TCP/IP Stack Diagram ─────────────────────────────── */
+function drawTCPIPDiagram() {
+  const svg = document.getElementById('tcpip-diagram');
+  if (!svg || typeof rough === 'undefined') return;
+  const rs = rough.svg(svg);
+  const W = 760, H = 320;
+
+  const layers = [
+    { num: '4', name: 'Application', protocols: 'HTTP · HTTPS · DNS · SMTP · FTP · WebSocket', color: '#f59e0b', y: 30 },
+    { num: '3', name: 'Transport',   protocols: 'TCP  (reliable)              UDP  (fast)',      color: '#8b5cf6', y: 100 },
+    { num: '2', name: 'Internet',    protocols: 'IPv4  ·  IPv6  ·  ICMP',                        color: '#3b82f6', y: 170 },
+    { num: '1', name: 'Network',     protocols: 'Ethernet  ·  Wi-Fi  ·  Fiber',                  color: '#10b981', y: 240 },
+  ];
+
+  layers.forEach(layer => {
+    const x = 80, w = 580, h = 55;
+
+    const rect = rs.rectangle(x, layer.y, w, h, {
+      stroke: layer.color,
+      strokeWidth: 1.8,
+      roughness: 1.2,
+      fill: layer.color + '14',
+      fillStyle: 'solid',
+    });
+    svg.appendChild(rect);
+
+    // Layer number
+    const numTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    numTxt.setAttribute('x', x + 22);
+    numTxt.setAttribute('y', layer.y + 35);
+    numTxt.setAttribute('text-anchor', 'middle');
+    numTxt.setAttribute('fill', layer.color);
+    numTxt.setAttribute('font-family', 'Inter, sans-serif');
+    numTxt.setAttribute('font-size', '18');
+    numTxt.setAttribute('font-weight', '800');
+    numTxt.textContent = layer.num;
+    svg.appendChild(numTxt);
+
+    // Layer name
+    const nameTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    nameTxt.setAttribute('x', x + 110);
+    nameTxt.setAttribute('y', layer.y + 26);
+    nameTxt.setAttribute('text-anchor', 'middle');
+    nameTxt.setAttribute('fill', '#f1f5f9');
+    nameTxt.setAttribute('font-family', 'Inter, sans-serif');
+    nameTxt.setAttribute('font-size', '13');
+    nameTxt.setAttribute('font-weight', '700');
+    nameTxt.textContent = layer.name;
+    svg.appendChild(nameTxt);
+
+    // Protocols
+    const protoTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    protoTxt.setAttribute('x', x + 110);
+    protoTxt.setAttribute('y', layer.y + 44);
+    protoTxt.setAttribute('text-anchor', 'middle');
+    protoTxt.setAttribute('fill', '#64748b');
+    protoTxt.setAttribute('font-family', 'JetBrains Mono, monospace');
+    protoTxt.setAttribute('font-size', '10');
+    protoTxt.textContent = layer.name === 'Application' ? 'HTTP · HTTPS · DNS · SMTP · WebSocket' : layer.protocols;
+    svg.appendChild(protoTxt);
+
+    // Data unit label on right
+    const units = ['message', 'segment/datagram', 'packet', 'frame'];
+    const idx = layers.indexOf(layer);
+    const unitTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    unitTxt.setAttribute('x', x + w - 12);
+    unitTxt.setAttribute('y', layer.y + 35);
+    unitTxt.setAttribute('text-anchor', 'end');
+    unitTxt.setAttribute('fill', layer.color + 'cc');
+    unitTxt.setAttribute('font-family', 'JetBrains Mono, monospace');
+    unitTxt.setAttribute('font-size', '10');
+    unitTxt.setAttribute('font-weight', '600');
+    unitTxt.textContent = units[idx];
+    svg.appendChild(unitTxt);
+  });
+
+  // Left label: "Encapsulation →"
+  const encapTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  encapTxt.setAttribute('x', 30);
+  encapTxt.setAttribute('y', 170);
+  encapTxt.setAttribute('text-anchor', 'middle');
+  encapTxt.setAttribute('fill', '#475569');
+  encapTxt.setAttribute('font-family', 'Inter, sans-serif');
+  encapTxt.setAttribute('font-size', '10');
+  encapTxt.setAttribute('font-weight', '600');
+  encapTxt.setAttribute('transform', 'rotate(-90, 30, 170)');
+  encapTxt.textContent = 'SENDER — adds headers down ↓';
+  svg.appendChild(encapTxt);
+
+  // Right label
+  const decapTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  decapTxt.setAttribute('x', 730);
+  decapTxt.setAttribute('y', 170);
+  decapTxt.setAttribute('text-anchor', 'middle');
+  decapTxt.setAttribute('fill', '#475569');
+  decapTxt.setAttribute('font-family', 'Inter, sans-serif');
+  decapTxt.setAttribute('font-size', '10');
+  decapTxt.setAttribute('font-weight', '600');
+  decapTxt.setAttribute('transform', 'rotate(90, 730, 170)');
+  decapTxt.textContent = 'RECEIVER — strips headers up ↑';
+  svg.appendChild(decapTxt);
+
+  // Title
+  const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  title.setAttribute('x', W / 2);
+  title.setAttribute('y', 305);
+  title.setAttribute('text-anchor', 'middle');
+  title.setAttribute('fill', '#475569');
+  title.setAttribute('font-family', 'Inter, sans-serif');
+  title.setAttribute('font-size', '11');
+  title.setAttribute('font-weight', '600');
+  title.setAttribute('letter-spacing', '0.06em');
+  title.textContent = 'TCP/IP 4-LAYER MODEL';
+  svg.appendChild(title);
+}
+
+/* ─── DNS Resolution Diagram ─────────────────────────────── */
+function drawDNSDiagram() {
+  const svg = document.getElementById('dns-diagram');
+  if (!svg || typeof rough === 'undefined') return;
+  const rs = rough.svg(svg);
+  const W = 760, H = 260;
+
+  const nodes = [
+    { label: 'Browser /\nOS Cache', x: 60,  y: 100, color: '#10b981' },
+    { label: 'Recursive\nResolver', x: 210, y: 100, color: '#3b82f6' },
+    { label: 'Root\nNameserver', x: 360, y: 30,  color: '#8b5cf6' },
+    { label: 'TLD NS\n(.com)',     x: 360, y: 160, color: '#6366f1' },
+    { label: 'Authoritative\nNameserver', x: 560, y: 100, color: '#f59e0b' },
+    { label: 'Your\nApp Server',  x: 700, y: 100, color: '#ef4444' },
+  ];
+
+  const boxW = 100, boxH = 50;
+
+  nodes.forEach(node => {
+    const rect = rs.rectangle(node.x - boxW/2, node.y - boxH/2, boxW, boxH, {
+      stroke: node.color,
+      strokeWidth: 1.6,
+      roughness: 1.3,
+      fill: node.color + '18',
+      fillStyle: 'solid',
+    });
+    svg.appendChild(rect);
+
+    const lines = node.label.split('\n');
+    lines.forEach((line, i) => {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', node.x);
+      t.setAttribute('y', node.y + (i - (lines.length - 1) / 2) * 15 + 5);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('fill', '#f1f5f9');
+      t.setAttribute('font-family', 'Inter, sans-serif');
+      t.setAttribute('font-size', '10');
+      t.setAttribute('font-weight', i === 0 ? '700' : '400');
+      t.textContent = line;
+      svg.appendChild(t);
+    });
+  });
+
+  // Draw arrows with step numbers
+  const connections = [
+    { from: nodes[0], to: nodes[1], label: '① miss', side: 'top' },
+    { from: nodes[1], to: nodes[2], label: '② ask root', side: 'top' },
+    { from: nodes[2], to: nodes[3], label: '③ TLD ref', side: 'right' },
+    { from: nodes[3], to: nodes[4], label: '④ auth ref', side: 'top' },
+    { from: nodes[4], to: nodes[1], label: '⑤ IP + TTL', side: 'bottom', reverse: true },
+    { from: nodes[1], to: nodes[5], label: '⑥ answer', side: 'top' },
+  ];
+
+  connections.forEach(conn => {
+    const x1 = conn.from.x + (conn.to.x > conn.from.x ? boxW/2 : -boxW/2);
+    const y1 = conn.from.y;
+    const x2 = conn.to.x + (conn.to.x > conn.from.x ? -boxW/2 : boxW/2);
+    const y2 = conn.to.y;
+
+    if (conn.from === nodes[2] && conn.to === nodes[3]) {
+      // Vertical arrow
+      const line = rs.line(nodes[2].x, nodes[2].y + boxH/2, nodes[3].x, nodes[3].y - boxH/2, {
+        stroke: '#475569', strokeWidth: 1.3, roughness: 0.8
+      });
+      svg.appendChild(line);
+      const lt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      lt.setAttribute('x', nodes[2].x + 6);
+      lt.setAttribute('y', (nodes[2].y + nodes[3].y) / 2 + 4);
+      lt.setAttribute('fill', '#64748b');
+      lt.setAttribute('font-family', 'Inter, sans-serif');
+      lt.setAttribute('font-size', '9');
+      lt.textContent = '③ refers to TLD';
+      svg.appendChild(lt);
+      return;
+    }
+
+    const line = rs.line(x1, y1, x2, y2, {
+      stroke: '#475569', strokeWidth: 1.3, roughness: 0.8
+    });
+    svg.appendChild(line);
+
+    // Arrowhead
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    const ux = dx/len, uy = dy/len;
+    const ah = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    const tip = [x2, y2];
+    const b1 = [x2 - ux*8 - uy*4, y2 - uy*8 + ux*4];
+    const b2 = [x2 - ux*8 + uy*4, y2 - uy*8 - ux*4];
+    ah.setAttribute('points', `${tip[0]},${tip[1]} ${b1[0]},${b1[1]} ${b2[0]},${b2[1]}`);
+    ah.setAttribute('fill', '#475569');
+    svg.appendChild(ah);
+
+    // Label
+    const lx = (x1 + x2) / 2;
+    const ly = conn.side === 'bottom' ? (y1 + y2) / 2 + 14 : (y1 + y2) / 2 - 5;
+    const lt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    lt.setAttribute('x', lx);
+    lt.setAttribute('y', ly);
+    lt.setAttribute('text-anchor', 'middle');
+    lt.setAttribute('fill', '#64748b');
+    lt.setAttribute('font-family', 'Inter, sans-serif');
+    lt.setAttribute('font-size', '9');
+    lt.textContent = conn.label;
+    svg.appendChild(lt);
+  });
+
+  // Title
+  const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  title.setAttribute('x', W / 2);
+  title.setAttribute('y', 245);
+  title.setAttribute('text-anchor', 'middle');
+  title.setAttribute('fill', '#475569');
+  title.setAttribute('font-family', 'Inter, sans-serif');
+  title.setAttribute('font-size', '11');
+  title.setAttribute('font-weight', '600');
+  title.setAttribute('letter-spacing', '0.06em');
+  title.textContent = 'DNS RESOLUTION PIPELINE (uncached)';
+  svg.appendChild(title);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  drawTCPIPDiagram();
+  drawDNSDiagram();
+  initDayPage(3);
+});
+</script>
+</body>
+</html>

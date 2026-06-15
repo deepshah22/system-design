@@ -1,0 +1,1498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 02: Horizontal vs Vertical Scaling | System Design Mastery</title>
+  <meta name="description" content="Master horizontal and vertical scaling strategies. Learn when to scale up vs scale out, how statelessness enables horizontal growth, and the real-world tradeoffs that shape architecture decisions at scale." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    /* ─── DAY PAGE STYLES ─── */
+    .day-hero {
+      padding: 3rem 0 2rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0;
+    }
+
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .breadcrumb a { color: var(--text-muted); }
+    .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: 0.4; }
+
+    .day-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .meta-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 0.25rem 0.65rem;
+      border-radius: 20px;
+    }
+
+    .day-hero h1 {
+      font-size: clamp(1.7rem, 4vw, 2.8rem);
+      margin-bottom: 1rem;
+    }
+
+    .day-hero .lead {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      max-width: 700px;
+      margin-bottom: 1.75rem;
+    }
+
+    .day-hero-actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    /* ─── LEARNING OBJECTIVES ─── */
+    .objectives {
+      background: rgba(99, 102, 241, 0.06);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin: 2rem 0;
+    }
+
+    .objectives-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent-light);
+      margin-bottom: 0.75rem;
+    }
+
+    .objectives ul { margin: 0; padding-left: 1.25rem; }
+    .objectives li { margin-bottom: 0.5rem; color: var(--text-secondary); }
+
+    /* ─── CONTENT SECTIONS ─── */
+    .content-section {
+      padding: 2.5rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .content-section:last-child { border-bottom: none; }
+
+    .content-section h2 {
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+      color: var(--text-primary);
+    }
+
+    .content-section h3 {
+      font-size: 1.1rem;
+      margin: 1.5rem 0 0.75rem;
+      color: var(--text-primary);
+    }
+
+    .content-section p { color: var(--text-secondary); margin-bottom: 1rem; }
+    .content-section ul, .content-section ol {
+      color: var(--text-secondary);
+      padding-left: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .content-section li { margin-bottom: 0.4rem; }
+
+    /* ─── COMPARISON GRID ─── */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin: 2rem 0;
+    }
+
+    .compare-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .compare-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+    }
+
+    .compare-card.vertical::before { background: var(--phase2); }
+    .compare-card.horizontal::before { background: var(--success); }
+
+    .compare-card-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+    }
+
+    .compare-card.vertical .compare-card-title { color: var(--phase2); }
+    .compare-card.horizontal .compare-card-title { color: var(--success); }
+
+    .compare-card h3 {
+      font-size: 1.2rem;
+      margin: 0 0 0.5rem;
+      color: var(--text-primary);
+    }
+
+    .compare-card p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 1rem;
+    }
+
+    .compare-pros, .compare-cons {
+      font-size: 0.85rem;
+    }
+
+    .compare-pros-title, .compare-cons-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 0.4rem;
+      color: var(--text-muted);
+    }
+
+    .compare-pros li::marker { color: var(--success); }
+    .compare-cons li::marker { color: #ef4444; }
+
+    .compare-pros ul, .compare-cons ul {
+      padding-left: 1.2rem;
+      margin: 0 0 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    .compare-pros li, .compare-cons li { margin-bottom: 0.3rem; }
+
+    /* ─── TABLE ─── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+      font-size: 0.9rem;
+    }
+
+    th {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      color: var(--text-secondary);
+    }
+
+    tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+    td:first-child { color: var(--text-primary); font-weight: 600; }
+
+    /* ─── CALLOUTS ─── */
+    .callout {
+      border-radius: var(--radius);
+      padding: 1.25rem 1.5rem;
+      margin: 1.5rem 0;
+      border-left: 3px solid;
+    }
+
+    .callout-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+    }
+
+    .callout p { margin: 0; font-size: 0.925rem; }
+
+    .callout-info {
+      background: rgba(99,102,241,0.06);
+      border-color: var(--accent);
+    }
+    .callout-info .callout-title { color: var(--accent-light); }
+
+    .callout-warning {
+      background: rgba(245,158,11,0.06);
+      border-color: var(--phase3);
+    }
+    .callout-warning .callout-title { color: var(--phase3); }
+
+    .callout-success {
+      background: rgba(16,185,129,0.06);
+      border-color: var(--success);
+    }
+    .callout-success .callout-title { color: var(--success); }
+
+    .callout-danger {
+      background: rgba(239,68,68,0.06);
+      border-color: #ef4444;
+    }
+    .callout-danger .callout-title { color: #ef4444; }
+
+    /* ─── DECISION MATRIX ─── */
+    .decision-matrix {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin: 1.5rem 0;
+    }
+
+    .decision-matrix h4 {
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+
+    .decision-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 1rem;
+      align-items: center;
+      padding: 0.6rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .decision-row:last-child { border-bottom: none; }
+
+    .decision-scenario { font-size: 0.9rem; color: var(--text-secondary); }
+    .decision-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.25rem 0.65rem;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+    .badge-vertical { background: rgba(139,92,246,0.2); color: var(--phase2); }
+    .badge-horizontal { background: rgba(16,185,129,0.2); color: var(--success); }
+    .badge-both { background: rgba(99,102,241,0.2); color: var(--accent-light); }
+
+    /* ─── REAL WORLD EXAMPLES ─── */
+    .example-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .example-company {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent-light);
+      margin-bottom: 0.5rem;
+    }
+
+    .example-card p { margin: 0; font-size: 0.9rem; color: var(--text-secondary); }
+
+    /* ─── TAKEAWAYS ─── */
+    .takeaways {
+      background: rgba(16, 185, 129, 0.05);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin: 2rem 0;
+    }
+
+    .takeaways h3 { color: var(--success); margin: 0 0 1rem; }
+    .takeaways ul { padding-left: 1.25rem; margin: 0; }
+    .takeaways li { color: var(--text-secondary); margin-bottom: 0.5rem; }
+
+    /* ─── PRACTICE QUESTIONS ─── */
+    .practice-questions {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin: 2rem 0;
+    }
+
+    .practice-questions h3 { color: var(--text-primary); margin: 0 0 1.25rem; }
+
+    .question-item {
+      display: grid;
+      grid-template-columns: 2rem 1fr;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .question-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+    .question-num {
+      width: 2rem;
+      height: 2rem;
+      background: var(--accent-glow);
+      border: 1px solid rgba(99,102,241,0.3);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--accent-light);
+      flex-shrink: 0;
+    }
+
+    .question-text { color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 0.4rem; }
+    .question-hint { font-size: 0.8rem; color: var(--text-muted); font-style: italic; }
+
+    /* ─── DAY NAV FOOTER ─── */
+    .day-nav-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 2rem 0;
+      margin-top: 2rem;
+      border-top: 1px solid var(--border);
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .day-nav-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.65rem 1.25rem;
+      border-radius: var(--radius);
+      font-size: 0.9rem;
+      font-weight: 600;
+      text-decoration: none;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      transition: all 0.2s;
+    }
+
+    .day-nav-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent-light);
+    }
+
+    .day-nav-btn.next {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    .day-nav-btn.next:hover { background: var(--accent-light); }
+
+    /* ─── STAT BOXES ─── */
+    .stat-boxes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+
+    .stat-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+      text-align: center;
+    }
+
+    .stat-box-value {
+      font-size: 1.5rem;
+      font-weight: 800;
+      margin-bottom: 0.25rem;
+    }
+
+    .stat-box-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    /* ─── TIER LADDER ─── */
+    .tier-ladder {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin: 1.5rem 0;
+    }
+
+    .tier-rung {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem 1rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      position: relative;
+    }
+
+    .tier-rung::before {
+      content: '';
+      position: absolute;
+      left: 1.75rem;
+      top: 100%;
+      width: 2px;
+      height: 0.5rem;
+      background: var(--border);
+    }
+
+    .tier-rung:last-child::before { display: none; }
+
+    .tier-spec {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--phase3);
+      min-width: 130px;
+    }
+
+    .tier-label { font-size: 0.875rem; color: var(--text-secondary); }
+    .tier-limit {
+      margin-left: auto;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      background: rgba(255,255,255,0.04);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    /* btn-flash */
+    .btn-flash { transform: scale(0.95); }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .comparison-grid { grid-template-columns: 1fr; }
+      .stat-boxes { grid-template-columns: 1fr; }
+      .decision-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─── NAV ─────────────────────────────────────────────────── -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="../index.html" class="nav-logo" style="text-decoration:none">
+      <div class="logo-icon">⚙</div>
+      System Design Mastery
+    </a>
+    <div class="nav-links">
+      <a href="day-01.html">← Day 1</a>
+      <a href="../index.html">Course Home</a>
+      <a href="day-03.html">Day 3 →</a>
+    </div>
+    <div class="nav-progress">
+      <div class="nav-progress-bar">
+        <div class="nav-progress-fill" style="width:0%"></div>
+      </div>
+      <span class="nav-progress-label">0/90</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ─── MAIN CONTENT ──────────────────────────────────────────── -->
+<main>
+  <div class="container-narrow">
+
+    <!-- Hero -->
+    <div class="day-hero">
+      <div class="breadcrumb">
+        <a href="../index.html">Course Home</a>
+        <span class="breadcrumb-sep">›</span>
+        <span style="color:var(--phase1)">Phase 1: Fundamentals</span>
+        <span class="breadcrumb-sep">›</span>
+        <span>Day 02</span>
+      </div>
+
+      <div class="day-meta">
+        <span class="phase-badge phase-1">Phase 1 — Fundamentals</span>
+        <span class="meta-pill">📅 Day 2 of 90</span>
+        <span class="meta-pill">⏱ ~30 min read</span>
+        <span class="meta-pill">📈 Scalability</span>
+      </div>
+
+      <h1>Horizontal vs Vertical Scaling</h1>
+      <p class="lead">
+        Every system eventually hits a wall. Traffic grows, queries slow down, servers buckle.
+        How you respond to that wall — by making your single machine bigger, or by adding more machines —
+        is one of the most consequential architectural decisions you'll make. Today you'll learn to
+        make that choice deliberately and defend it in any interview.
+      </p>
+
+      <div class="day-hero-actions">
+        <button id="mark-complete-btn" class="btn btn-outline" style="border-color:var(--success);color:var(--success)">
+          Mark as Complete
+        </button>
+        <a href="../index.html#curriculum" class="btn btn-outline">View All 90 Days</a>
+      </div>
+    </div>
+
+    <!-- Learning Objectives -->
+    <div class="objectives">
+      <div class="objectives-title">🎯 What You'll Learn Today</div>
+      <ul>
+        <li>The precise definitions of vertical (scale up) and horizontal (scale out) scaling</li>
+        <li>The hardware ceiling problem and why vertical scaling has a hard limit</li>
+        <li>Why statelessness is the key to unlocking horizontal scaling</li>
+        <li>How to scale databases independently from application servers</li>
+        <li>Real-world decision framework: when to use each approach</li>
+        <li>How top companies like Netflix, Twitter, and Amazon scaled their systems</li>
+      </ul>
+    </div>
+
+    <!-- Diagram -->
+    <div class="diagram-container">
+      <div class="diagram-label">Excalidraw — Vertical vs Horizontal Scaling</div>
+      <svg id="scaling-diagram" width="100%" height="260" viewBox="0 0 860 260"
+           xmlns="http://www.w3.org/2000/svg" style="max-width:860px;display:block;margin:0 auto"></svg>
+    </div>
+
+    <!-- SECTION 1: The Core Problem -->
+    <div class="content-section">
+      <h2 id="core-problem">The Core Problem: Systems Under Load</h2>
+
+      <p>
+        When a system receives more traffic than it can handle, performance degrades. Response times
+        increase, queues back up, and eventually the system fails entirely. This isn't a hypothetical —
+        it's a predictable engineering challenge that every production system faces as it grows.
+      </p>
+
+      <p>
+        The question isn't <em>if</em> you'll need to scale — it's <em>how</em>. And the answer
+        depends on what's actually bottlenecking your system.
+      </p>
+
+      <h3>The Four Classic Bottlenecks</h3>
+      <p>Before you can scale, you need to identify what's limiting you:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Resource</th>
+            <th>Symptom</th>
+            <th>Measurement Tool</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>CPU</td>
+            <td>High processing time, timeouts on compute-heavy operations</td>
+            <td><code>top</code>, <code>htop</code>, CloudWatch CPU metrics</td>
+          </tr>
+          <tr>
+            <td>Memory</td>
+            <td>Swapping to disk, OOM kills, GC pressure</td>
+            <td><code>free -h</code>, heap profilers, memory dashboards</td>
+          </tr>
+          <tr>
+            <td>Disk I/O</td>
+            <td>Slow database queries, write queuing, high iowait</td>
+            <td><code>iostat</code>, DB slow query logs, IOPS metrics</td>
+          </tr>
+          <tr>
+            <td>Network</td>
+            <td>Packet loss, high latency, bandwidth saturation</td>
+            <td><code>netstat</code>, <code>iperf</code>, VPC flow logs</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout callout-info">
+        <div class="callout-title">💡 Interview Insight</div>
+        <p>
+          In interviews, when asked how you'd handle increased load, always start by identifying the bottleneck.
+          "It depends on the bottleneck — CPU-bound vs memory-bound vs I/O-bound problems call for different solutions."
+          This demonstrates senior-level thinking immediately.
+        </p>
+      </div>
+    </div>
+
+    <!-- SECTION 2: Vertical Scaling -->
+    <div class="content-section">
+      <h2 id="vertical-scaling">Vertical Scaling (Scale Up)</h2>
+
+      <p>
+        Vertical scaling means making your existing machine more powerful. You replace
+        the server with a bigger one — more CPU cores, more RAM, faster SSDs, higher-throughput network cards.
+        The application doesn't change at all. You just throw more hardware at the problem.
+      </p>
+
+      <h3>The Hardware Upgrade Ladder</h3>
+      <p>A typical vertical scaling progression for an application server:</p>
+
+      <div class="tier-ladder">
+        <div class="tier-rung">
+          <span class="tier-spec">t3.micro</span>
+          <span class="tier-label">2 vCPU, 1 GB RAM — startup MVP</span>
+          <span class="tier-limit">~100 req/s</span>
+        </div>
+        <div class="tier-rung">
+          <span class="tier-spec">t3.large</span>
+          <span class="tier-label">2 vCPU, 8 GB RAM — early traction</span>
+          <span class="tier-limit">~500 req/s</span>
+        </div>
+        <div class="tier-rung">
+          <span class="tier-spec">c6i.4xlarge</span>
+          <span class="tier-label">16 vCPU, 32 GB RAM — growing product</span>
+          <span class="tier-limit">~3,000 req/s</span>
+        </div>
+        <div class="tier-rung">
+          <span class="tier-spec">c6i.32xlarge</span>
+          <span class="tier-label">128 vCPU, 256 GB RAM — serious scale</span>
+          <span class="tier-limit">~25,000 req/s</span>
+        </div>
+        <div class="tier-rung">
+          <span class="tier-spec">u-24tb1.metal</span>
+          <span class="tier-label">448 vCPU, 24 TB RAM — AWS maximum</span>
+          <span class="tier-limit">Hard ceiling ⚠️</span>
+        </div>
+      </div>
+
+      <div class="callout callout-warning">
+        <div class="callout-title">⚠️ The Hard Ceiling Problem</div>
+        <p>
+          There's a physical limit to how large a single machine can be. Once you hit the largest
+          available instance type (or the limit of your on-premises hardware budget), vertical
+          scaling stops being an option. You're forced to either live with the constraint or shift
+          to horizontal scaling — which is much harder to bolt on after the fact.
+        </p>
+      </div>
+
+      <h3>Advantages</h3>
+      <ul>
+        <li><strong>Zero code changes required.</strong> Your application doesn't need to know it's on bigger hardware.</li>
+        <li><strong>Simpler operations.</strong> No distributed systems complexity — one server, one database connection, no coordination.</li>
+        <li><strong>Better for stateful workloads.</strong> In-memory caches, session state, and local locks just work.</li>
+        <li><strong>Lower latency.</strong> No network hops between components — everything runs on the same machine.</li>
+        <li><strong>ACID guarantees preserved.</strong> Single-machine databases maintain full transaction semantics without distributed coordination.</li>
+      </ul>
+
+      <h3>Disadvantages</h3>
+      <ul>
+        <li><strong>Single point of failure.</strong> When the machine goes down, the entire service is down.</li>
+        <li><strong>Hard ceiling.</strong> You cannot scale beyond the largest available machine size.</li>
+        <li><strong>Expensive at the top end.</strong> The largest instances cost dramatically more per unit of compute than mid-range ones.</li>
+        <li><strong>Downtime during upgrades.</strong> Resizing typically requires a restart, causing a service interruption.</li>
+        <li><strong>Can't scale globally.</strong> You're stuck in one region, one datacenter, one machine.</li>
+      </ul>
+    </div>
+
+    <!-- SECTION 3: Horizontal Scaling -->
+    <div class="content-section">
+      <h2 id="horizontal-scaling">Horizontal Scaling (Scale Out)</h2>
+
+      <p>
+        Horizontal scaling means adding more machines to your system. Instead of one powerful server,
+        you have many smaller servers working in parallel. Traffic is distributed across all of them —
+        typically via a load balancer sitting in front of your fleet.
+      </p>
+
+      <p>
+        This is the scaling model used by every major internet company. Netflix runs on tens of thousands
+        of AWS instances. Google operates custom server farms with millions of commodity machines.
+        Twitter's timeline service runs across hundreds of servers simultaneously.
+      </p>
+
+      <div class="stat-boxes">
+        <div class="stat-box">
+          <div class="stat-box-value gradient-text">∞</div>
+          <div class="stat-box-label">Theoretical scale ceiling</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-box-value" style="color:var(--success)">N+1</div>
+          <div class="stat-box-label">Redundancy (no SPOF)</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-box-value" style="color:var(--phase3)">↑↑</div>
+          <div class="stat-box-label">Ops complexity</div>
+        </div>
+      </div>
+
+      <h3>How It Works</h3>
+      <p>
+        In a horizontally scaled system, a <strong>load balancer</strong> receives all incoming requests
+        and distributes them across the server pool. Each server handles a subset of total traffic.
+        When load increases, you add more servers. When it decreases, you remove them.
+        (We'll cover load balancing algorithms in depth on Day 5.)
+      </p>
+
+      <div class="callout callout-info">
+        <div class="callout-title">🔑 The Key Insight: Auto-Scaling</div>
+        <p>
+          Horizontal scaling enables <strong>auto-scaling</strong> — automatically adding or removing servers
+          based on real-time load. AWS Auto Scaling, Kubernetes Horizontal Pod Autoscaler (HPA), and GCP
+          Managed Instance Groups all do this. When CPU hits 70%, spin up 2 more nodes. When it drops to 20%,
+          scale back down. This is essentially impossible with vertical scaling.
+        </p>
+      </div>
+
+      <h3>Advantages</h3>
+      <ul>
+        <li><strong>No hard ceiling.</strong> In theory, you can keep adding machines indefinitely.</li>
+        <li><strong>High availability by default.</strong> When one server fails, others continue serving traffic.</li>
+        <li><strong>Auto-scaling.</strong> Cloud platforms can add capacity in response to real-time demand.</li>
+        <li><strong>Geographic distribution.</strong> You can deploy across multiple regions for global low-latency access.</li>
+        <li><strong>Cost-efficient at scale.</strong> Many cheap commodity servers can be more cost-effective than one massive machine.</li>
+        <li><strong>Rolling deployments.</strong> Update servers one at a time without downtime.</li>
+      </ul>
+
+      <h3>Disadvantages</h3>
+      <ul>
+        <li><strong>Statelessness is required.</strong> If one server stores session data locally, other servers can't access it. (More on this below.)</li>
+        <li><strong>Distributed systems complexity.</strong> Consistency, consensus, and coordination become hard problems.</li>
+        <li><strong>Harder debugging.</strong> Logs are spread across many machines; tracing a request requires distributed tracing.</li>
+        <li><strong>Network overhead.</strong> Inter-service communication adds latency that doesn't exist in a single machine.</li>
+        <li><strong>More infrastructure to manage.</strong> Load balancers, service discovery, health checks, deployment pipelines — the ops burden is higher.</li>
+      </ul>
+    </div>
+
+    <!-- SECTION 4: The Stateless Requirement -->
+    <div class="content-section">
+      <h2 id="stateless">The Stateless Requirement</h2>
+
+      <p>
+        This is the most important concept for understanding why horizontal scaling is hard in practice.
+        <strong>Horizontal scaling requires stateless application servers.</strong> If you don't understand
+        statelessness, you can't design scalable systems.
+      </p>
+
+      <h3>What Is State?</h3>
+      <p>
+        "State" is any data that persists between requests. In a simple web application, this includes:
+      </p>
+      <ul>
+        <li><strong>User sessions</strong> — who is logged in, what's in their cart</li>
+        <li><strong>In-memory caches</strong> — data loaded from the database and held in RAM</li>
+        <li><strong>Request context</strong> — ongoing file uploads, streaming connections</li>
+        <li><strong>Local files</strong> — uploaded images stored on the server's local disk</li>
+      </ul>
+
+      <h3>The "Sticky Session" Anti-Pattern</h3>
+      <p>
+        Suppose a user logs in and their session is stored in Server A's memory. On their next request,
+        the load balancer routes them to Server B. Server B has no knowledge of the session — the user
+        appears logged out. This is the sticky session problem.
+      </p>
+
+      <p>
+        The naive "fix" is sticky sessions — the load balancer always routes the same user to the same server.
+        This breaks horizontal scaling: one server now has more load than others, and if that server dies,
+        all users on it lose their sessions.
+      </p>
+
+      <div class="callout callout-danger">
+        <div class="callout-title">🚫 The Sticky Session Anti-Pattern</div>
+        <p>
+          Sticky sessions tie user traffic to specific servers. This defeats load balancing, prevents
+          proper failover, and creates hot spots. It's a Band-Aid that makes the real problem worse.
+          Never design a new system that relies on sticky sessions.
+        </p>
+      </div>
+
+      <h3>The Right Solution: Externalize State</h3>
+      <p>
+        The correct approach is to move all state out of the application servers and into a shared,
+        externalized store. Application servers become <strong>stateless workers</strong> — any server can
+        handle any request because all persistent data lives outside them.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>State Type</th>
+            <th>Bad (Local)</th>
+            <th>Good (Externalized)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>User sessions</td>
+            <td>In-memory HashMap on the server</td>
+            <td>Redis / Memcached cluster</td>
+          </tr>
+          <tr>
+            <td>Uploaded files</td>
+            <td>Server local disk at <code>/uploads/</code></td>
+            <td>S3, GCS, or Azure Blob Storage</td>
+          </tr>
+          <tr>
+            <td>Application data</td>
+            <td>SQLite file on the server</td>
+            <td>RDS, Aurora, or Cloud Spanner</td>
+          </tr>
+          <tr>
+            <td>Feature flags</td>
+            <td>Config file on each server</td>
+            <td>LaunchDarkly, AWS AppConfig</td>
+          </tr>
+          <tr>
+            <td>Computed results</td>
+            <td>Local in-process cache</td>
+            <td>Redis with TTL</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>
+        Once state is externalized, any server in your fleet can serve any request. The load balancer can
+        distribute traffic freely. Servers can be added or removed without affecting users.
+        This is what "cloud-native" actually means in practice.
+      </p>
+    </div>
+
+    <!-- SECTION 5: Database Scaling -->
+    <div class="content-section">
+      <h2 id="database-scaling">Database Scaling: The Hard Part</h2>
+
+      <p>
+        Application servers are easy to scale horizontally because they can be made stateless.
+        Databases are fundamentally stateful — they store data. This is why database scaling is
+        the hard part of every system design, and why it gets dedicated attention on Days 11–14.
+      </p>
+
+      <p>For now, understand the two primary approaches:</p>
+
+      <div class="comparison-grid">
+        <div class="compare-card vertical">
+          <div class="compare-card-title">Scale Up</div>
+          <h3>Vertical DB Scaling</h3>
+          <p>Upgrade to a more powerful database server. More RAM means more data fits in buffer pool.
+          Faster CPUs handle more concurrent queries. Better SSDs reduce I/O latency.</p>
+          <div class="compare-pros">
+            <div class="compare-pros-title">✓ Works for</div>
+            <ul>
+              <li>Early-stage systems</li>
+              <li>Write-heavy workloads</li>
+              <li>Strong consistency needs</li>
+            </ul>
+          </div>
+          <div class="compare-cons">
+            <div class="compare-cons-title">✗ Limits</div>
+            <ul>
+              <li>Hard hardware ceiling</li>
+              <li>Expensive at top end</li>
+              <li>Single point of failure</li>
+            </ul>
+          </div>
+        </div>
+        <div class="compare-card horizontal">
+          <div class="compare-card-title">Scale Out</div>
+          <h3>Horizontal DB Scaling</h3>
+          <p>Split data across multiple database nodes. Read replicas for read-heavy workloads.
+          Sharding for massive write-heavy workloads. Dramatically increases complexity.</p>
+          <div class="compare-pros">
+            <div class="compare-pros-title">✓ Works for</div>
+            <ul>
+              <li>Read-heavy workloads</li>
+              <li>Massive data volumes</li>
+              <li>High write throughput</li>
+            </ul>
+          </div>
+          <div class="compare-cons">
+            <div class="compare-cons-title">✗ Limits</div>
+            <ul>
+              <li>Cross-shard queries are hard</li>
+              <li>Replication lag</li>
+              <li>Much harder to manage</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <h3>Read Replicas: The First Database Scale-Out Step</h3>
+      <p>
+        The most common first step in database horizontal scaling is <strong>read replicas</strong>.
+        You keep one primary (write) node and create multiple replicas that handle reads.
+        Since most web applications are read-heavy (10:1 to 100:1 read/write ratio is common),
+        this dramatically increases throughput.
+      </p>
+
+      <p>
+        The tradeoff: replication lag. Replicas are slightly behind the primary. A write on the primary
+        might not be visible on replicas for 10–100ms. For most reads this is fine. For reads that must
+        see the latest write (e.g., "did my payment go through?"), you route to the primary.
+        We'll cover replication in depth on Day 12.
+      </p>
+    </div>
+
+    <!-- SECTION 6: Side-by-Side Comparison -->
+    <div class="content-section">
+      <h2 id="comparison">Side-by-Side Comparison</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Dimension</th>
+            <th>Vertical (Scale Up)</th>
+            <th>Horizontal (Scale Out)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Scale limit</td>
+            <td>Hard ceiling (largest machine)</td>
+            <td>Theoretically unlimited</td>
+          </tr>
+          <tr>
+            <td>Fault tolerance</td>
+            <td>Single point of failure</td>
+            <td>High availability by default</td>
+          </tr>
+          <tr>
+            <td>Code changes</td>
+            <td>None required</td>
+            <td>Must be stateless</td>
+          </tr>
+          <tr>
+            <td>Ops complexity</td>
+            <td>Low</td>
+            <td>High (load balancers, discovery, etc.)</td>
+          </tr>
+          <tr>
+            <td>Downtime</td>
+            <td>Required for resize</td>
+            <td>Zero downtime (rolling deploy)</td>
+          </tr>
+          <tr>
+            <td>Cost model</td>
+            <td>Single large instance (expensive)</td>
+            <td>Many small instances (efficient at scale)</td>
+          </tr>
+          <tr>
+            <td>Auto-scaling</td>
+            <td>Limited / disruptive</td>
+            <td>Native, sub-minute elasticity</td>
+          </tr>
+          <tr>
+            <td>Multi-region</td>
+            <td>Not possible</td>
+            <td>Native support</td>
+          </tr>
+          <tr>
+            <td>Best for</td>
+            <td>Databases, legacy apps, early stage</td>
+            <td>Stateless services, APIs, web servers</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- SECTION 7: Decision Framework -->
+    <div class="content-section">
+      <h2 id="when-to-use">When to Use Each: The Decision Framework</h2>
+
+      <p>
+        The choice isn't always one or the other. Most production systems use vertical scaling for some
+        components and horizontal scaling for others. Use this mental model:
+      </p>
+
+      <div class="decision-matrix">
+        <h4>Scenario → Recommended Approach</h4>
+
+        <div class="decision-row">
+          <span class="decision-scenario">You're a startup with &lt;10k daily active users</span>
+          <span class="decision-badge badge-vertical">Scale Up First</span>
+        </div>
+        <div class="decision-row">
+          <span class="decision-scenario">Your web/API servers are CPU-bound under load</span>
+          <span class="decision-badge badge-horizontal">Scale Out</span>
+        </div>
+        <div class="decision-row">
+          <span class="decision-scenario">Your database is the bottleneck</span>
+          <span class="decision-badge badge-vertical">Scale Up + Read Replicas</span>
+        </div>
+        <div class="decision-row">
+          <span class="decision-scenario">You need zero-downtime deployments</span>
+          <span class="decision-badge badge-horizontal">Scale Out</span>
+        </div>
+        <div class="decision-row">
+          <span class="decision-scenario">Your app maintains per-request in-memory state</span>
+          <span class="decision-badge badge-vertical">Scale Up (or refactor first)</span>
+        </div>
+        <div class="decision-row">
+          <span class="decision-scenario">You're serving users across multiple continents</span>
+          <span class="decision-badge badge-horizontal">Scale Out (multi-region)</span>
+        </div>
+        <div class="decision-row">
+          <span class="decision-scenario">Traffic spikes 10× during events (sports, product launches)</span>
+          <span class="decision-badge badge-horizontal">Scale Out (auto-scaling)</span>
+        </div>
+        <div class="decision-row">
+          <span class="decision-scenario">You're running a monolithic legacy app you can't refactor</span>
+          <span class="decision-badge badge-both">Scale Up + Strangler Fig Pattern</span>
+        </div>
+      </div>
+
+      <div class="callout callout-success">
+        <div class="callout-title">✅ The Pragmatic Engineer's Rule</div>
+        <p>
+          Scale vertically first. It's simpler, faster to implement, and often all you need.
+          Only move to horizontal scaling when you hit the ceiling or need high availability.
+          The biggest mistake engineers make is over-engineering for scale that never comes.
+          Instagram had 13 engineers when it was acquired by Facebook for $1B — they ran on
+          relatively few vertically-scaled machines until they actually needed to scale out.
+        </p>
+      </div>
+    </div>
+
+    <!-- SECTION 8: Real-World Examples -->
+    <div class="content-section">
+      <h2 id="real-world">Real-World Examples</h2>
+
+      <div class="example-card">
+        <div class="example-company">📺 Netflix</div>
+        <p>
+          Netflix runs entirely on AWS and is a canonical example of horizontal scaling.
+          Their microservices architecture runs thousands of service instances simultaneously.
+          Their API gateway alone runs on hundreds of nodes. They pioneered chaos engineering (Chaos Monkey)
+          specifically because they needed to verify their horizontal architecture was truly resilient to node failures.
+          Database scaling is handled via a combination of Cassandra (horizontally scaled NoSQL) and
+          MySQL with read replicas for relational data.
+        </p>
+      </div>
+
+      <div class="example-card">
+        <div class="example-company">🐦 Twitter / X</div>
+        <p>
+          Twitter's early architecture was a monolithic Ruby on Rails application that scaled primarily
+          vertically. By 2008–2010, this became unsustainable — the "Fail Whale" era. They rebuilt their
+          timeline service using a horizontally scaled Scala/Finagle stack. The timeline fan-out service
+          eventually ran on hundreds of nodes writing to Redis clusters. This migration took years and is
+          one of the most famous scaling rewrites in industry history.
+        </p>
+      </div>
+
+      <div class="example-card">
+        <div class="example-company">🛒 Amazon</div>
+        <p>
+          Amazon's move from a monolith to services (which became AWS) was driven by horizontal scaling needs.
+          Their "2 pizza teams" rule and service-oriented architecture allowed independent horizontal scaling
+          per service. Today, the Amazon.com product page alone calls 100+ independent microservices,
+          each horizontally scaled independently. Their databases scaled through a combination of read replicas,
+          DynamoDB (horizontally scaled NoSQL), and Aurora for relational workloads.
+        </p>
+      </div>
+
+      <div class="example-card">
+        <div class="example-company">📷 Instagram</div>
+        <p>
+          Instagram's early architecture is instructive. They started with Django (Python) on a single EC2
+          instance, then vertically scaled as they grew. They added PostgreSQL read replicas early.
+          Even at 1 million users, they were running a relatively small number of machines.
+          Their clever use of vertical scaling bought them time to build the stateless architecture
+          needed for proper horizontal scaling later. By the time they needed it, they could do it right.
+        </p>
+      </div>
+
+      <div class="callout callout-info">
+        <div class="callout-title">📌 Pattern: The Vertical-First Startup</div>
+        <p>
+          Notice the pattern: most successful startups start vertical, prove product-market fit, then invest
+          in horizontal scaling infrastructure when the traffic actually demands it. Horizontal scaling
+          is an investment in operational complexity. Make it when you must, not before.
+        </p>
+      </div>
+    </div>
+
+    <!-- SECTION 9: Interview Application -->
+    <div class="content-section">
+      <h2 id="interview">Using This in Interviews</h2>
+
+      <p>
+        Scaling questions come up constantly in system design interviews. Here's how to apply today's concepts.
+      </p>
+
+      <h3>When the Interviewer Says "Handle 1M Users"</h3>
+      <p>Don't immediately jump to Kubernetes and auto-scaling. Walk through the logic:</p>
+      <ol>
+        <li>Estimate the actual request rate (Day 1 framework: 1M daily active users × 10 requests/day / 86400 seconds ≈ <strong>116 req/s</strong>)</li>
+        <li>A single well-tuned server handles 1,000–10,000 req/s. You don't need horizontal scaling yet.</li>
+        <li>But you need <strong>high availability</strong> — so minimum 2 servers behind a load balancer.</li>
+        <li>The database is usually the first bottleneck — add a read replica before you add app servers.</li>
+      </ol>
+
+      <h3>When the Interviewer Says "Handle 100M Users"</h3>
+      <p>Now horizontal scaling is genuinely required:</p>
+      <ol>
+        <li>Application tier: stateless servers behind a load balancer, auto-scaled per CPU utilization</li>
+        <li>Session state: externalized to Redis cluster</li>
+        <li>Static assets: CDN (Day 4)</li>
+        <li>Database: read replicas + consider sharding (Day 13) or switching to NoSQL (Day 8)</li>
+        <li>Consider microservices to scale individual bottleneck services independently (Day 77)</li>
+      </ol>
+
+      <div class="callout callout-warning">
+        <div class="callout-title">⚠️ Common Interview Mistake</div>
+        <p>
+          Don't recommend horizontal scaling as your first answer to every scaling question. Interviewers
+          look for calibrated judgment. If someone asks you to design a system for 10,000 users and you
+          immediately propose Kubernetes with 50 microservices, that's a red flag — it shows you can't
+          match solution complexity to problem complexity.
+        </p>
+      </div>
+    </div>
+
+    <!-- Key Takeaways -->
+    <div class="takeaways">
+      <h3>✅ Key Takeaways for Day 2</h3>
+      <ul>
+        <li><strong>Vertical scaling</strong> = bigger machine. Simple, no code changes, but has a hard ceiling and is a single point of failure.</li>
+        <li><strong>Horizontal scaling</strong> = more machines. Theoretically unlimited, high availability, but requires stateless application design.</li>
+        <li><strong>Statelessness is the key</strong> to horizontal scaling — externalize all state to Redis, S3, or a database, never store it on the application server.</li>
+        <li>Databases are harder to scale horizontally than application servers. Start with read replicas, escalate to sharding only when needed.</li>
+        <li><strong>Scale vertically first</strong> in practice — it's simpler and often sufficient until you actually have the traffic to justify distributed systems complexity.</li>
+        <li>In interviews, always justify your scaling choice with estimated request rates, not by defaulting to "use Kubernetes."</li>
+      </ul>
+    </div>
+
+    <!-- Practice Questions -->
+    <div class="practice-questions">
+      <h3>🧠 Practice Questions</h3>
+
+      <div class="question-item">
+        <div class="question-num">1</div>
+        <div>
+          <div class="question-text">You're designing a web application that starts with 1,000 users and needs to grow to 10 million. Describe your scaling strategy at each order of magnitude: 1K, 10K, 100K, 1M, and 10M users. What changes at each stage?</div>
+          <div class="question-hint">Hint: Start with a single server. Add a database. Add a replica. Add servers. Add caching. Consider sharding. Each step should be justified by actual bottlenecks.</div>
+        </div>
+      </div>
+
+      <div class="question-item">
+        <div class="question-num">2</div>
+        <div>
+          <div class="question-text">A shopping cart feature stores items in a HashMap on each application server. Traffic grows and you want to add more servers. What problem will you encounter? How do you fix it without changing the user experience?</div>
+          <div class="question-hint">Hint: Think about what happens when the load balancer sends the user to a different server for their next request.</div>
+        </div>
+      </div>
+
+      <div class="question-item">
+        <div class="question-num">3</div>
+        <div>
+          <div class="question-text">Your API server's CPU is at 90% but your database CPU is at 20%. You need to reduce latency. Would you scale the API servers vertically, horizontally, or should you investigate the database? What questions would you ask?</div>
+          <div class="question-hint">Hint: Is the API CPU-bound due to computation, or is it waiting for I/O from the database? Profiling reveals the real bottleneck.</div>
+        </div>
+      </div>
+
+      <div class="question-item">
+        <div class="question-num">4</div>
+        <div>
+          <div class="question-text">Twitter's engineering team reported that at peak load, a single tweet from a major celebrity (like Obama) would trigger 10+ million timeline updates within seconds. Why does this make horizontal scaling essential, and what would break if they tried to handle this with a single large server?</div>
+          <div class="question-hint">Hint: Think about the write amplification problem — one write creates millions of derivative writes.</div>
+        </div>
+      </div>
+
+      <div class="question-item">
+        <div class="question-num">5</div>
+        <div>
+          <div class="question-text">An interviewer asks you to "design a system that scales to 1 billion users." Before designing anything, what 5 questions would you ask to understand whether vertical or horizontal scaling is the right starting point?</div>
+          <div class="question-hint">Hint: Apply Day 1's framework. What are the functional requirements? What's the read/write ratio? What does "scale" mean here — user count, request rate, or data volume?</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Day Nav Footer -->
+    <div class="day-nav-footer">
+      <a href="day-01.html" class="day-nav-btn">← Day 01: Interview Framework</a>
+      <a href="../index.html" class="btn btn-outline">🏠 Course Home</a>
+      <a href="day-03.html" class="day-nav-btn next">Day 03: Networking →</a>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <p>System Design Mastery · Day 2 of 90 ·
+    <a href="../index.html">Course Home</a> ·
+    <a href="https://github.com/deepshah22/system-design">GitHub</a>
+  </p>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script>
+/* ── Draw vertical vs horizontal scaling diagram ── */
+function drawScalingDiagram() {
+  const svg = document.getElementById('scaling-diagram');
+  if (!svg || typeof rough === 'undefined') return;
+  const rs = rough.svg(svg);
+
+  /* ─── LEFT SIDE: Vertical Scaling ─── */
+  // Label
+  const leftTitle = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  leftTitle.setAttribute('x', '110');
+  leftTitle.setAttribute('y', '22');
+  leftTitle.setAttribute('text-anchor', 'middle');
+  leftTitle.setAttribute('fill', '#8b5cf6');
+  leftTitle.setAttribute('font-size', '13');
+  leftTitle.setAttribute('font-weight', '700');
+  leftTitle.setAttribute('font-family', 'Inter, sans-serif');
+  leftTitle.textContent = 'VERTICAL SCALING';
+  svg.appendChild(leftTitle);
+
+  const leftSub = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  leftSub.setAttribute('x', '110');
+  leftSub.setAttribute('y', '37');
+  leftSub.setAttribute('text-anchor', 'middle');
+  leftSub.setAttribute('fill', '#6b7280');
+  leftSub.setAttribute('font-size', '11');
+  leftSub.setAttribute('font-family', 'Inter, sans-serif');
+  leftSub.textContent = '(Scale Up — one bigger machine)';
+  svg.appendChild(leftSub);
+
+  // Small server → Big server with arrow between
+  const smallServer = rs.rectangle(20, 55, 70, 60, {
+    stroke: '#8b5cf6', strokeWidth: 1.5, fill: 'rgba(139,92,246,0.08)',
+    fillStyle: 'solid', roughness: 1.2
+  });
+  svg.appendChild(smallServer);
+
+  // Small server label
+  const ssLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  ssLabel.setAttribute('x', '55');
+  ssLabel.setAttribute('y', '82');
+  ssLabel.setAttribute('text-anchor', 'middle');
+  ssLabel.setAttribute('fill', '#8b5cf6');
+  ssLabel.setAttribute('font-size', '10');
+  ssLabel.setAttribute('font-family', 'Inter, sans-serif');
+  ssLabel.textContent = 'Server';
+  svg.appendChild(ssLabel);
+  const ssLabel2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  ssLabel2.setAttribute('x', '55');
+  ssLabel2.setAttribute('y', '94');
+  ssLabel2.setAttribute('text-anchor', 'middle');
+  ssLabel2.setAttribute('fill', '#6b7280');
+  ssLabel2.setAttribute('font-size', '9');
+  ssLabel2.setAttribute('font-family', 'Inter, sans-serif');
+  ssLabel2.textContent = '4 vCPU · 8GB';
+  svg.appendChild(ssLabel2);
+
+  // Arrow →
+  const arrowLine = rs.line(98, 85, 130, 85, { stroke: '#6b7280', strokeWidth: 1.5, roughness: 0.8 });
+  svg.appendChild(arrowLine);
+  const arrowHead = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+  arrowHead.setAttribute('points', '130,80 140,85 130,90');
+  arrowHead.setAttribute('fill', '#6b7280');
+  svg.appendChild(arrowHead);
+
+  // Upgrade label
+  const upgradeLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  upgradeLabel.setAttribute('x', '114');
+  upgradeLabel.setAttribute('y', '79');
+  upgradeLabel.setAttribute('text-anchor', 'middle');
+  upgradeLabel.setAttribute('fill', '#8b5cf6');
+  upgradeLabel.setAttribute('font-size', '9');
+  upgradeLabel.setAttribute('font-family', 'Inter, sans-serif');
+  upgradeLabel.textContent = 'upgrade';
+  svg.appendChild(upgradeLabel);
+
+  // Big server
+  const bigServer = rs.rectangle(143, 45, 95, 80, {
+    stroke: '#8b5cf6', strokeWidth: 2, fill: 'rgba(139,92,246,0.15)',
+    fillStyle: 'solid', roughness: 1.2
+  });
+  svg.appendChild(bigServer);
+
+  const bsLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  bsLabel.setAttribute('x', '190');
+  bsLabel.setAttribute('y', '81');
+  bsLabel.setAttribute('text-anchor', 'middle');
+  bsLabel.setAttribute('fill', '#8b5cf6');
+  bsLabel.setAttribute('font-size', '11');
+  bsLabel.setAttribute('font-family', 'Inter, sans-serif');
+  bsLabel.textContent = 'Server';
+  svg.appendChild(bsLabel);
+  const bsLabel2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  bsLabel2.setAttribute('x', '190');
+  bsLabel2.setAttribute('y', '95');
+  bsLabel2.setAttribute('text-anchor', 'middle');
+  bsLabel2.setAttribute('fill', '#6b7280');
+  bsLabel2.setAttribute('font-size', '9');
+  bsLabel2.setAttribute('font-family', 'Inter, sans-serif');
+  bsLabel2.textContent = '128 vCPU · 256GB';
+  svg.appendChild(bsLabel2);
+
+  // Ceiling warning
+  const ceilLine = rs.line(15, 145, 245, 145, {
+    stroke: '#ef4444', strokeWidth: 1.5, roughness: 1.5
+  });
+  svg.appendChild(ceilLine);
+  const ceilLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  ceilLabel.setAttribute('x', '130');
+  ceilLabel.setAttribute('y', '162');
+  ceilLabel.setAttribute('text-anchor', 'middle');
+  ceilLabel.setAttribute('fill', '#ef4444');
+  ceilLabel.setAttribute('font-size', '10');
+  ceilLabel.setAttribute('font-family', 'Inter, sans-serif');
+  ceilLabel.textContent = '⚠ Hard ceiling — can\'t go beyond';
+  svg.appendChild(ceilLabel);
+
+  /* ─── DIVIDER ─── */
+  const divLine = rs.line(275, 20, 275, 240, {
+    stroke: '#374151', strokeWidth: 1, roughness: 1.0
+  });
+  svg.appendChild(divLine);
+
+  /* ─── RIGHT SIDE: Horizontal Scaling ─── */
+  const rightTitle = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  rightTitle.setAttribute('x', '575');
+  rightTitle.setAttribute('y', '22');
+  rightTitle.setAttribute('text-anchor', 'middle');
+  rightTitle.setAttribute('fill', '#10b981');
+  rightTitle.setAttribute('font-size', '13');
+  rightTitle.setAttribute('font-weight', '700');
+  rightTitle.setAttribute('font-family', 'Inter, sans-serif');
+  rightTitle.textContent = 'HORIZONTAL SCALING';
+  svg.appendChild(rightTitle);
+
+  const rightSub = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  rightSub.setAttribute('x', '575');
+  rightSub.setAttribute('y', '37');
+  rightSub.setAttribute('text-anchor', 'middle');
+  rightSub.setAttribute('fill', '#6b7280');
+  rightSub.setAttribute('font-size', '11');
+  rightSub.setAttribute('font-family', 'Inter, sans-serif');
+  rightSub.textContent = '(Scale Out — more machines)';
+  svg.appendChild(rightSub);
+
+  // Load Balancer
+  const lb = rs.rectangle(295, 90, 80, 40, {
+    stroke: '#6366f1', strokeWidth: 2, fill: 'rgba(99,102,246,0.12)',
+    fillStyle: 'solid', roughness: 1.2
+  });
+  svg.appendChild(lb);
+  const lbLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  lbLabel.setAttribute('x', '335');
+  lbLabel.setAttribute('y', '107');
+  lbLabel.setAttribute('text-anchor', 'middle');
+  lbLabel.setAttribute('fill', '#6366f1');
+  lbLabel.setAttribute('font-size', '10');
+  lbLabel.setAttribute('font-weight', '700');
+  lbLabel.setAttribute('font-family', 'Inter, sans-serif');
+  lbLabel.textContent = 'Load';
+  svg.appendChild(lbLabel);
+  const lbLabel2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  lbLabel2.setAttribute('x', '335');
+  lbLabel2.setAttribute('y', '119');
+  lbLabel2.setAttribute('text-anchor', 'middle');
+  lbLabel2.setAttribute('fill', '#6366f1');
+  lbLabel2.setAttribute('font-size', '10');
+  lbLabel2.setAttribute('font-weight', '700');
+  lbLabel2.setAttribute('font-family', 'Inter, sans-serif');
+  lbLabel2.textContent = 'Balancer';
+  svg.appendChild(lbLabel2);
+
+  // Servers (3 replicas)
+  const serverPositions = [
+    { x: 430, y: 55, label: 'Server 1' },
+    { x: 430, y: 100, label: 'Server 2' },
+    { x: 430, y: 145, label: 'Server 3' },
+  ];
+
+  serverPositions.forEach(pos => {
+    const srv = rs.rectangle(pos.x, pos.y, 85, 35, {
+      stroke: '#10b981', strokeWidth: 1.5, fill: 'rgba(16,185,129,0.08)',
+      fillStyle: 'solid', roughness: 1.2
+    });
+    svg.appendChild(srv);
+
+    const lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    lbl.setAttribute('x', String(pos.x + 42));
+    lbl.setAttribute('y', String(pos.y + 22));
+    lbl.setAttribute('text-anchor', 'middle');
+    lbl.setAttribute('fill', '#10b981');
+    lbl.setAttribute('font-size', '10');
+    lbl.setAttribute('font-family', 'Inter, sans-serif');
+    lbl.textContent = pos.label;
+    svg.appendChild(lbl);
+
+    // Arrow from LB to server
+    const connLine = rs.line(375, 110, pos.x, pos.y + 17, {
+      stroke: '#374151', strokeWidth: 1, roughness: 0.8
+    });
+    svg.appendChild(connLine);
+  });
+
+  // Add more server (dashed style)
+  const addServer = rs.rectangle(430, 190, 85, 35, {
+    stroke: '#10b981', strokeWidth: 1.5, fill: 'rgba(16,185,129,0.04)',
+    fillStyle: 'solid', roughness: 1.5, lineDash: [4, 4]
+  });
+  svg.appendChild(addServer);
+  const addLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  addLabel.setAttribute('x', '472');
+  addLabel.setAttribute('y', '212');
+  addLabel.setAttribute('text-anchor', 'middle');
+  addLabel.setAttribute('fill', '#10b981');
+  addLabel.setAttribute('font-size', '10');
+  addLabel.setAttribute('font-family', 'Inter, sans-serif');
+  addLabel.textContent = '+ Add more...';
+  svg.appendChild(addLabel);
+
+  // Infinity label
+  const infLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  infLabel.setAttribute('x', '575');
+  infLabel.setAttribute('y', '243');
+  infLabel.setAttribute('text-anchor', 'middle');
+  infLabel.setAttribute('fill', '#10b981');
+  infLabel.setAttribute('font-size', '11');
+  infLabel.setAttribute('font-family', 'Inter, sans-serif');
+  infLabel.textContent = '∞ Theoretically unlimited scale';
+  svg.appendChild(infLabel);
+
+  // Client arrow to LB
+  const clientLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  clientLabel.setAttribute('x', '305');
+  clientLabel.setAttribute('y', '70');
+  clientLabel.setAttribute('text-anchor', 'middle');
+  clientLabel.setAttribute('fill', '#6b7280');
+  clientLabel.setAttribute('font-size', '10');
+  clientLabel.setAttribute('font-family', 'Inter, sans-serif');
+  clientLabel.textContent = 'traffic';
+  svg.appendChild(clientLabel);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  drawScalingDiagram();
+  initDayPage(2);
+});
+</script>
+</body>
+</html>

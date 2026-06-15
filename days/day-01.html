@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 01: System Design Interview Framework | System Design Mastery</title>
+  <meta name="description" content="Learn the 5-step framework to ace any system design interview. Clarify requirements, estimate scale, design APIs, build high-level architecture, and deep dive — all with structure and confidence." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    /* ─── DAY PAGE STYLES ─── */
+    .day-hero {
+      padding: 3rem 0 2rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0;
+    }
+
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .breadcrumb a { color: var(--text-muted); }
+    .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: 0.4; }
+
+    .day-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .meta-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 0.25rem 0.65rem;
+      border-radius: 20px;
+    }
+
+    .day-hero h1 {
+      font-size: clamp(1.7rem, 4vw, 2.8rem);
+      margin-bottom: 1rem;
+    }
+
+    .day-hero .lead {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      max-width: 700px;
+      margin-bottom: 1.75rem;
+    }
+
+    .day-hero-actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    /* ─── LEARNING OBJECTIVES ─── */
+    .objectives {
+      background: rgba(99, 102, 241, 0.06);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin: 2rem 0;
+    }
+
+    .objectives-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent-light);
+      margin-bottom: 0.75rem;
+    }
+
+    .objectives ul {
+      padding-left: 1.25rem;
+      margin: 0;
+    }
+
+    .objectives li {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      margin-bottom: 0.3rem;
+    }
+
+    /* ─── CONTENT SECTIONS ─── */
+    .content-section {
+      margin-bottom: 3rem;
+    }
+
+    .content-section h2 {
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .content-section h3 {
+      margin-top: 1.75rem;
+      margin-bottom: 0.75rem;
+      color: var(--text-primary);
+    }
+
+    .content-section p {
+      margin-bottom: 1rem;
+    }
+
+    .content-section ul, .content-section ol {
+      margin-bottom: 1rem;
+    }
+
+    /* ─── STEP CARDS ─── */
+    .steps {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      margin: 1.5rem 0;
+    }
+
+    .step-card {
+      display: grid;
+      grid-template-columns: 60px 1fr;
+      gap: 1.25rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      align-items: start;
+      transition: border-color 0.2s;
+    }
+
+    .step-card:hover { border-color: var(--border-hover); }
+
+    .step-number {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      font-weight: 800;
+      flex-shrink: 0;
+      border: 2px solid;
+    }
+
+    .step-card:nth-child(1) .step-number { color: var(--phase1); border-color: var(--phase1); background: var(--phase1-bg); }
+    .step-card:nth-child(2) .step-number { color: #6366f1; border-color: #6366f1; background: rgba(99,102,241,0.1); }
+    .step-card:nth-child(3) .step-number { color: var(--phase2); border-color: var(--phase2); background: var(--phase2-bg); }
+    .step-card:nth-child(4) .step-number { color: #a855f7; border-color: #a855f7; background: rgba(168,85,247,0.1); }
+    .step-card:nth-child(5) .step-number { color: var(--phase3); border-color: var(--phase3); background: var(--phase3-bg); }
+
+    .step-content h3 { margin-top: 0; margin-bottom: 0.4rem; }
+    .step-time {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+    }
+
+    .step-content p { font-size: 0.9rem; margin-bottom: 0.5rem; }
+    .step-content ul { font-size: 0.875rem; }
+
+    /* ─── INTERVIEW SCENARIO BOX ─── */
+    .scenario-box {
+      background: #0d1424;
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin: 1.5rem 0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      line-height: 1.8;
+    }
+
+    .scenario-label {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent-light);
+      margin-bottom: 0.75rem;
+    }
+
+    .scenario-interviewer { color: #94a3b8; }
+    .scenario-you { color: #86efac; }
+    .scenario-interviewer::before { content: '👤 Interviewer: '; font-weight: 600; }
+    .scenario-you::before { content: '💬 You: '; color: #6ee7b7; font-weight: 600; }
+
+    /* ─── CHEAT SHEET ─── */
+    .cheat-sheet {
+      background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.08));
+      border: 1px solid rgba(99,102,241,0.2);
+      border-radius: var(--radius);
+      padding: 1.75rem;
+      margin: 2rem 0;
+    }
+
+    .cheat-sheet h3 { margin-top: 0; color: var(--accent-light); }
+
+    .cheat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .cheat-item {
+      background: rgba(0,0,0,0.3);
+      border-radius: var(--radius-sm);
+      padding: 0.75rem;
+    }
+
+    .cheat-item-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.35rem;
+    }
+
+    .cheat-item p { font-size: 0.8rem; color: var(--text-secondary); margin: 0; }
+
+    /* ─── KEY TAKEAWAYS ─── */
+    .takeaways {
+      background: var(--success-bg);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin: 2rem 0;
+    }
+
+    .takeaways h3 { color: #34d399; margin-top: 0; margin-bottom: 0.75rem; }
+    .takeaways li { color: #a7f3d0; font-size: 0.9rem; }
+
+    /* ─── PRACTICE QUESTIONS ─── */
+    .practice-questions {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin: 2rem 0;
+    }
+
+    .practice-questions h3 { margin-top: 0; color: var(--phase3); margin-bottom: 1rem; }
+
+    .question-item {
+      display: flex;
+      gap: 0.75rem;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+    }
+
+    .question-item:last-child { border-bottom: none; }
+
+    .question-num {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--phase3-bg);
+      color: var(--phase3);
+      font-size: 0.7rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .question-text { color: var(--text-secondary); }
+    .question-hint { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
+
+    /* ─── NAV FOOTER ─── */
+    .day-nav-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 2rem 0;
+      border-top: 1px solid var(--border);
+      margin-top: 4rem;
+      gap: 1rem;
+    }
+
+    .day-nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.25rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .day-nav-btn:hover {
+      color: var(--text-primary);
+      border-color: var(--accent);
+      background: var(--accent-glow);
+    }
+
+    .day-nav-btn.next {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .day-nav-btn.next:hover {
+      background: var(--accent-light);
+      border-color: var(--accent-light);
+    }
+
+    /* ─── DATA QUANTITY TABLE ─── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      margin: 1rem 0;
+    }
+
+    th {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      font-weight: 600;
+      padding: 0.6rem 0.9rem;
+      text-align: left;
+      border: 1px solid var(--border);
+    }
+
+    td {
+      padding: 0.6rem 0.9rem;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+    }
+
+    tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+
+    code.hl { color: var(--phase3); }
+
+    /* btn-flash */
+    .btn-flash { transform: scale(0.95); }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .step-card { grid-template-columns: 1fr; }
+      .step-number { width: 36px; height: 36px; font-size: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─── NAV ─────────────────────────────────────────────────── -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="../index.html" class="nav-logo" style="text-decoration:none">
+      <div class="logo-icon">⚙</div>
+      System Design Mastery
+    </a>
+    <div class="nav-links">
+      <a href="../index.html">← Course Home</a>
+      <a href="day-02.html">Day 2 →</a>
+    </div>
+    <div class="nav-progress">
+      <div class="nav-progress-bar">
+        <div class="nav-progress-fill" style="width:0%"></div>
+      </div>
+      <span class="nav-progress-label">0/90</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ─── MAIN CONTENT ──────────────────────────────────────────── -->
+<main>
+  <div class="container-narrow">
+
+    <!-- Hero -->
+    <div class="day-hero">
+      <div class="breadcrumb">
+        <a href="../index.html">Course Home</a>
+        <span class="breadcrumb-sep">›</span>
+        <span style="color:var(--phase1)">Phase 1: Fundamentals</span>
+        <span class="breadcrumb-sep">›</span>
+        <span>Day 01</span>
+      </div>
+
+      <div class="day-meta">
+        <span class="phase-badge phase-1">Phase 1 — Fundamentals</span>
+        <span class="meta-pill">📅 Day 1 of 90</span>
+        <span class="meta-pill">⏱ ~30 min read</span>
+        <span class="meta-pill">🎯 Interview Framework</span>
+      </div>
+
+      <h1>System Design Interview Framework</h1>
+      <p class="lead">
+        Before diving into individual concepts, you need a <strong>repeatable process</strong> for approaching any system design problem. This framework is the meta-skill that separates great candidates from good ones — and it's what we'll use throughout this entire course.
+      </p>
+
+      <div class="day-hero-actions">
+        <button id="mark-complete-btn" class="btn btn-outline" style="border-color:var(--success);color:var(--success)">
+          Mark as Complete
+        </button>
+        <a href="../index.html#curriculum" class="btn btn-outline">View All 90 Days</a>
+      </div>
+    </div>
+
+    <!-- Learning Objectives -->
+    <div class="objectives">
+      <div class="objectives-title">🎯 What You'll Learn Today</div>
+      <ul>
+        <li>The 5-step framework that applies to <em>any</em> system design problem</li>
+        <li>How to ask the right clarifying questions (and what to do with the answers)</li>
+        <li>How to estimate scale using back-of-envelope calculations</li>
+        <li>The difference between functional and non-functional requirements</li>
+        <li>How interviewers score system design answers and what they're really looking for</li>
+        <li>How to structure a 45-minute interview session with time allocation</li>
+      </ul>
+    </div>
+
+    <!-- Diagram -->
+    <div class="diagram-container">
+      <div class="diagram-label">Excalidraw — System Design Interview Framework</div>
+      <svg id="framework-diagram" width="100%" height="220" viewBox="0 0 860 220" xmlns="http://www.w3.org/2000/svg" style="max-width:860px;display:block;margin:0 auto"></svg>
+    </div>
+
+    <!-- SECTION 1 -->
+    <div class="content-section">
+      <h2 id="why-framework">Why You Need a Framework</h2>
+
+      <p>
+        System design interviews are intentionally open-ended. Unlike coding problems where there's a single correct answer,
+        system design problems have <strong>infinite valid approaches</strong>. This is by design — interviewers are evaluating
+        your <em>thought process</em>, not just your final architecture.
+      </p>
+
+      <p>
+        Without a framework, candidates make these common mistakes:
+      </p>
+
+      <ul>
+        <li><strong>Jumping straight to a solution</strong> before understanding the problem</li>
+        <li><strong>Designing for the wrong scale</strong> — building for Google-level traffic when the system needs to handle 10k users</li>
+        <li><strong>Missing critical requirements</strong> that invalidate the entire architecture later</li>
+        <li><strong>Spending 40 of 45 minutes on one component</strong>, leaving no time for other parts</li>
+        <li><strong>Being too vague</strong> or too detailed in the wrong places</li>
+      </ul>
+
+      <p>
+        A framework doesn't constrain your thinking — it <em>focuses</em> it. It tells you what to talk about and in what order,
+        so you can use your 45 minutes deliberately and demonstrate principal-level thinking.
+      </p>
+
+      <div class="callout callout-info">
+        <div class="callout-title">💡 What Interviewers Are Actually Evaluating</div>
+        <p>
+          Senior interviewers want to see: (1) that you can navigate ambiguity, (2) that you reason about tradeoffs explicitly,
+          (3) that you understand the limits of your design, and (4) that you can drive a technical conversation.
+          They are NOT looking for a textbook-perfect answer.
+        </p>
+      </div>
+    </div>
+
+    <!-- SECTION 2: THE 5 STEPS -->
+    <div class="content-section">
+      <h2 id="five-steps">The 5-Step Framework</h2>
+      <p>
+        Use this process for every single system design problem, whether it's "Design Twitter" or "Design a distributed key-value store."
+        The steps build on each other — skipping one creates problems later.
+      </p>
+
+      <div class="steps">
+        <!-- Step 1 -->
+        <div class="step-card">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Clarify Requirements</h3>
+            <div class="step-time">⏱ Spend 5–10 minutes</div>
+            <p>
+              Never start designing until you fully understand what you're building.
+              Ask questions to uncover both <strong>functional requirements</strong> (what the system does)
+              and <strong>non-functional requirements</strong> (how well it does it).
+            </p>
+            <p><strong>Questions to always ask:</strong></p>
+            <ul>
+              <li>Who are the users and what's the primary use case?</li>
+              <li>What scale are we designing for? (users, requests per second, data volume)</li>
+              <li>Which features are in scope vs out of scope?</li>
+              <li>What does "success" look like? (latency, availability, consistency requirements)</li>
+              <li>Are there any special constraints? (budget, team size, existing infrastructure)</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="step-card">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Estimate Scale &amp; Constraints</h3>
+            <div class="step-time">⏱ Spend 3–5 minutes</div>
+            <p>
+              Do back-of-envelope calculations to understand the scale of the problem.
+              These estimates drive every architectural decision — your storage choice, your sharding strategy, your caching tier.
+            </p>
+            <p><strong>Key things to estimate:</strong></p>
+            <ul>
+              <li><strong>QPS (Queries Per Second)</strong> — peak vs average read/write ratio</li>
+              <li><strong>Storage</strong> — data per record × records per day × retention period</li>
+              <li><strong>Bandwidth</strong> — throughput for reads and writes</li>
+              <li><strong>Memory</strong> — what needs to live in cache</li>
+            </ul>
+            <p>
+              Don't be precise — be right within an order of magnitude.
+              <code>10^6 users × 10 writes/day = 10^7 writes/day ≈ 115 writes/sec</code> is good enough.
+            </p>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="step-card">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Define the API</h3>
+            <div class="step-time">⏱ Spend 3–5 minutes</div>
+            <p>
+              Before drawing boxes and arrows, define the API contract for your system.
+              This forces you to think about what the system needs to do at a concrete level,
+              and it anchors the rest of your design.
+            </p>
+            <p><strong>For each major operation, define:</strong></p>
+            <ul>
+              <li>The endpoint (method, path or function signature)</li>
+              <li>The inputs (parameters, request body)</li>
+              <li>The outputs (response format, error cases)</li>
+              <li>Any rate limits or constraints</li>
+            </ul>
+            <p>Example for a URL shortener:</p>
+            <pre><code>POST /shorten
+  body: { url: string, ttl?: seconds }
+  returns: { short_url: string }
+
+GET /:code → 301 redirect to original URL</code></pre>
+          </div>
+        </div>
+
+        <!-- Step 4 -->
+        <div class="step-card">
+          <div class="step-number">4</div>
+          <div class="step-content">
+            <h3>High-Level Architecture</h3>
+            <div class="step-time">⏱ Spend 10–15 minutes</div>
+            <p>
+              Now draw the architecture. Start with the core data flow — how does a request travel
+              through your system from client to response? Draw the boxes and arrows.
+              Name your components clearly.
+            </p>
+            <p><strong>Identify and place:</strong></p>
+            <ul>
+              <li>Clients (web, mobile, API consumers)</li>
+              <li>Load balancers &amp; API gateways</li>
+              <li>Application/service layer</li>
+              <li>Storage (databases, object store, cache)</li>
+              <li>Asynchronous components (queues, workers)</li>
+              <li>External integrations (CDN, email, push notifications)</li>
+            </ul>
+            <p>
+              <strong>Always justify your choices.</strong> "I'm using PostgreSQL here because the data is relational
+              and we need ACID guarantees for financial records" is 10× better than just writing "DB" in a box.
+            </p>
+          </div>
+        </div>
+
+        <!-- Step 5 -->
+        <div class="step-card">
+          <div class="step-number">5</div>
+          <div class="step-content">
+            <h3>Deep Dive &amp; Tradeoffs</h3>
+            <div class="step-time">⏱ Spend 10–15 minutes</div>
+            <p>
+              Pick 2–3 areas to go deep. The interviewer will guide you, but you should also proactively
+              identify the hardest parts of your design and tackle them.
+            </p>
+            <p><strong>Common deep dive areas:</strong></p>
+            <ul>
+              <li>How does your system handle failures and partial outages?</li>
+              <li>How does it scale from 10k to 10M users?</li>
+              <li>What's the data model — show the actual schema?</li>
+              <li>How does the most performance-critical path work end-to-end?</li>
+              <li>What consistency/latency tradeoffs did you make and why?</li>
+            </ul>
+            <p>
+              At the principal level, you're expected to identify failure modes proactively —
+              without being asked, say: "A weakness of this design is X. Here's how I'd address it..."
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 3: Requirements -->
+    <div class="content-section">
+      <h2 id="requirements">Functional vs Non-Functional Requirements</h2>
+
+      <p>
+        This distinction is critical. Every system design interview starts with requirements gathering,
+        and you need to capture <em>both types</em>.
+      </p>
+
+      <h3>Functional Requirements</h3>
+      <p>
+        What the system <em>does</em>. These are the features and behaviors visible to users.
+      </p>
+
+      <div class="scenario-box">
+        <div class="scenario-label">Example — Designing a URL Shortener</div>
+        <p class="scenario-interviewer">Design a URL shortening service like bit.ly.</p>
+        <br/>
+        <p class="scenario-you">Got it. Let me start by clarifying the requirements. Can users create short URLs? Can they customize the alias? Do links expire? Is there analytics on link clicks?</p>
+        <br/>
+        <p class="scenario-interviewer">Yes to creating, no to custom aliases, links expire after 1 year, analytics are out of scope for now.</p>
+        <br/>
+        <p class="scenario-you">Perfect. So functional requirements: (1) Given a long URL, generate a short URL. (2) Redirect short URL to long URL. (3) URLs expire after 1 year. Does that capture it?</p>
+        <br/>
+        <p class="scenario-interviewer">Yes, that's right.</p>
+      </div>
+
+      <h3>Non-Functional Requirements</h3>
+      <p>
+        How the system performs. These define the quality attributes and constraints that shape your architecture.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Attribute</th>
+            <th>Question to Ask</th>
+            <th>Why It Matters</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Availability</strong></td>
+            <td>What SLA do we need? (99.9%? 99.99%?)</td>
+            <td>Determines redundancy, failover strategy</td>
+          </tr>
+          <tr>
+            <td><strong>Latency</strong></td>
+            <td>What's acceptable p99 response time?</td>
+            <td>Drives caching and async processing decisions</td>
+          </tr>
+          <tr>
+            <td><strong>Consistency</strong></td>
+            <td>Is stale data acceptable? For how long?</td>
+            <td>Impacts database choice and replication strategy</td>
+          </tr>
+          <tr>
+            <td><strong>Durability</strong></td>
+            <td>Can we lose any data if a server crashes?</td>
+            <td>Determines write durability, backup strategy</td>
+          </tr>
+          <tr>
+            <td><strong>Scale</strong></td>
+            <td>How many users, QPS, and how much data?</td>
+            <td>The most fundamental constraint on everything</td>
+          </tr>
+          <tr>
+            <td><strong>Security</strong></td>
+            <td>What data is sensitive? Who can access what?</td>
+            <td>Affects auth design, encryption, compliance</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout callout-warning">
+        <div class="callout-title">⚠️ Common Mistake: Assuming Requirements</div>
+        <p>
+          Never assume the scale. A system for 1,000 users is designed completely differently from one
+          for 1,000,000,000. Always ask, always confirm, always make your assumptions explicit.
+        </p>
+      </div>
+    </div>
+
+    <!-- SECTION 4: Estimation -->
+    <div class="content-section">
+      <h2 id="estimation">Back-of-Envelope Estimation Basics</h2>
+
+      <p>
+        You don't need to be precise — you need to be roughly right about the <em>order of magnitude</em>.
+        This tells you whether you need one server or one thousand, whether you need 1TB or 1PB of storage.
+      </p>
+
+      <h3>Numbers Every Engineer Should Know</h3>
+
+      <table>
+        <thead>
+          <tr><th>Quantity</th><th>Value</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Seconds in a day</td><td><code class="hl">~86,400 ≈ 10<sup>5</sup></code></td><td>Round to 100k for easy math</td></tr>
+          <tr><td>Seconds in a month</td><td><code class="hl">~2.6M ≈ 3×10<sup>6</sup></code></td><td></td></tr>
+          <tr><td>1 Gbps network</td><td><code class="hl">~125 MB/s</code></td><td>Practical throughput ~60%</td></tr>
+          <tr><td>SSD sequential read</td><td><code class="hl">~500 MB/s</code></td><td>Random reads: much lower</td></tr>
+          <tr><td>HDD sequential read</td><td><code class="hl">~100 MB/s</code></td><td></td></tr>
+          <tr><td>Memory read</td><td><code class="hl">~10 GB/s</code></td><td>100× faster than SSD</td></tr>
+          <tr><td>Average web page</td><td><code class="hl">~2 MB</code></td><td></td></tr>
+          <tr><td>Tweet size</td><td><code class="hl">~300 bytes</code></td><td></td></tr>
+          <tr><td>Photo (compressed)</td><td><code class="hl">~200 KB</code></td><td></td></tr>
+          <tr><td>Video minute (720p)</td><td><code class="hl">~50 MB</code></td><td></td></tr>
+        </tbody>
+      </table>
+
+      <h3>Worked Example — Twitter Scale Estimation</h3>
+      <p>Let's say Twitter has 300M daily active users. Estimate the storage requirements for tweets.</p>
+
+      <pre><code># Given
+Daily Active Users (DAU)     = 300,000,000
+Tweets per user per day      = 0.5 (avg)
+Bytes per tweet              = 300 bytes
+
+# Writes per second
+Total tweets/day  = 300M × 0.5 = 150M tweets/day
+Tweets/second     = 150M / 86,400 ≈ 1,736 tweets/sec
+
+# Storage per day
+Daily storage     = 150M × 300 bytes = 45 GB/day
+
+# Storage for 5 years
+5-year storage    = 45 GB × 365 × 5 ≈ 82 TB
+
+# With replication (3×)
+Total storage     ≈ 250 TB</code></pre>
+
+      <p>
+        From this, we know we need to store ~250TB of tweet text over 5 years. That's significant —
+        it tells us we'll need multiple database servers and probably some kind of archival strategy.
+      </p>
+
+      <div class="callout callout-success">
+        <div class="callout-title">✓ Estimation Best Practice</div>
+        <p>
+          Always state your assumptions explicitly. "I'm assuming 300M DAU, 0.5 tweets per user per day, 300 bytes per tweet."
+          The interviewer can correct wrong assumptions, but can't give you credit for assumptions they don't know you're making.
+        </p>
+      </div>
+    </div>
+
+    <!-- SECTION 5: Time Management -->
+    <div class="content-section">
+      <h2 id="time">Managing 45 Minutes Effectively</h2>
+
+      <p>
+        Most system design interviews are 45–60 minutes. Here's how to allocate that time:
+      </p>
+
+      <div class="cheat-sheet">
+        <h3>⏰ 45-Minute Interview Time Budget</h3>
+        <div class="cheat-grid">
+          <div class="cheat-item">
+            <div class="cheat-item-label">0–10 min</div>
+            <p><strong>Clarify Requirements</strong><br/>Ask questions, establish scope, confirm non-functional requirements</p>
+          </div>
+          <div class="cheat-item">
+            <div class="cheat-item-label">10–15 min</div>
+            <p><strong>Estimate &amp; API</strong><br/>Back-of-envelope calculations, define API endpoints</p>
+          </div>
+          <div class="cheat-item">
+            <div class="cheat-item-label">15–30 min</div>
+            <p><strong>High-Level Design</strong><br/>Draw the architecture, justify every component choice</p>
+          </div>
+          <div class="cheat-item">
+            <div class="cheat-item-label">30–45 min</div>
+            <p><strong>Deep Dive</strong><br/>Pick 2–3 hard problems, tradeoffs, failure scenarios</p>
+          </div>
+        </div>
+      </div>
+
+      <h3>Keeping the Interviewer Engaged</h3>
+      <p>
+        System design interviews are <em>conversations</em>, not presentations.
+        You're expected to involve the interviewer constantly:
+      </p>
+
+      <ul>
+        <li>"I'm thinking of using a relational DB here. Does that work for your use case?"</li>
+        <li>"I see two approaches — X is simpler but doesn't scale as well; Y is more complex but handles 10× traffic. Which direction would you like me to go?"</li>
+        <li>"I'm going to make an assumption here that reads are 100× more frequent than writes. Does that match your expectations?"</li>
+      </ul>
+
+      <p>
+        This signals collaborative thinking — a skill that's even more valuable at the principal level than technical knowledge.
+      </p>
+    </div>
+
+    <!-- SECTION 6: What Interviewers Look For -->
+    <div class="content-section">
+      <h2 id="scoring">How Interviewers Score Your Answer</h2>
+
+      <p>
+        Most companies use a rubric with dimensions like these. Understanding the rubric helps you
+        know where to focus your energy.
+      </p>
+
+      <div class="steps" style="gap:0.75rem">
+        <div class="card" style="padding:1rem">
+          <h4 style="color:var(--phase1);margin-bottom:0.25rem">Problem Scoping (20%)</h4>
+          <p style="font-size:0.875rem;margin:0">Did you ask the right questions? Did you establish clear requirements? Did you scope the problem appropriately?</p>
+        </div>
+        <div class="card" style="padding:1rem">
+          <h4 style="color:#6366f1;margin-bottom:0.25rem">System Knowledge (25%)</h4>
+          <p style="font-size:0.875rem;margin:0">Do you know the components that make systems work? Load balancers, databases, caches, queues — do you understand their properties?</p>
+        </div>
+        <div class="card" style="padding:1rem">
+          <h4 style="color:var(--phase2);margin-bottom:0.25rem">Tradeoff Analysis (30%)</h4>
+          <p style="font-size:0.875rem;margin:0">Do you reason about tradeoffs explicitly? Do you acknowledge limitations? Do you know when to use what and why?</p>
+        </div>
+        <div class="card" style="padding:1rem">
+          <h4 style="color:#a855f7;margin-bottom:0.25rem">Design Quality (15%)</h4>
+          <p style="font-size:0.875rem;margin:0">Is the design coherent, scalable, and correct? Does it actually solve the problem at the stated scale?</p>
+        </div>
+        <div class="card" style="padding:1rem">
+          <h4 style="color:var(--phase3);margin-bottom:0.25rem">Communication (10%)</h4>
+          <p style="font-size:0.875rem;margin:0">Are you clear and structured? Do you drive the conversation? Can you explain complex concepts simply?</p>
+        </div>
+      </div>
+
+      <p class="mt-3">
+        Notice that <strong>Tradeoff Analysis</strong> is the highest-weighted dimension.
+        This is why the course spends so much time on the "why" behind each architectural decision —
+        knowing that Kafka exists is worth less than knowing when to use Kafka vs SQS vs direct DB writes and why.
+      </p>
+    </div>
+
+    <!-- SECTION 7: Red Flags -->
+    <div class="content-section">
+      <h2 id="red-flags">Red Flags That Kill Great Candidates</h2>
+
+      <p>Even experienced engineers fail system design interviews by making these mistakes:</p>
+
+      <div class="callout callout-warning" style="margin-top:0">
+        <div class="callout-title">🚩 Red Flag #1: Starting with the solution</div>
+        <p>
+          The moment the interviewer says "Design YouTube," some candidates immediately say "Okay, we need S3 for video storage, Kafka for events, and a CDN." This skips requirements entirely.
+          Always ask: who are the users, what are they doing, what's the scale?
+        </p>
+      </div>
+
+      <div class="callout callout-warning">
+        <div class="callout-title">🚩 Red Flag #2: Defending a bad design</div>
+        <p>
+          When the interviewer probes a weak point in your design, agree and adapt.
+          "You're right, that's a single point of failure. Let me add a replica..."
+          Defending wrong answers is worse than making them.
+        </p>
+      </div>
+
+      <div class="callout callout-warning">
+        <div class="callout-title">🚩 Red Flag #3: Buzzword engineering</div>
+        <p>
+          "I'd use microservices with Kubernetes and Kafka and GraphQL and Redis" without explaining why is a red flag.
+          Every technology choice must be justified. If you can't explain the tradeoff,
+          don't mention the technology.
+        </p>
+      </div>
+
+      <div class="callout callout-warning">
+        <div class="callout-title">🚩 Red Flag #4: Silence</div>
+        <p>
+          Thinking quietly for 3 minutes is death in a system design interview. Think out loud.
+          "I'm considering two options here — let me think through the tradeoffs of each..."
+          Even wrong reasoning stated out loud beats silence.
+        </p>
+      </div>
+    </div>
+
+    <!-- SECTION 8: How This Course Works -->
+    <div class="content-section">
+      <h2 id="course-structure">How This Course Is Structured</h2>
+
+      <p>
+        Every day of this course follows the same structure so you can learn efficiently:
+      </p>
+
+      <ul>
+        <li><strong>Core concept explained</strong> — the theory behind why this matters</li>
+        <li><strong>Diagrams</strong> — visual representation of the concept (Excalidraw style)</li>
+        <li><strong>Real-world examples</strong> — how companies like Google, Amazon, and Netflix apply this</li>
+        <li><strong>Tradeoffs</strong> — explicit discussion of when this approach wins vs loses</li>
+        <li><strong>Interview connections</strong> — how this concept shows up in interview questions</li>
+        <li><strong>Practice questions</strong> — 3–5 questions to test your understanding</li>
+      </ul>
+
+      <p>
+        The course is designed so that each day's concepts build on previous ones.
+        By Day 30, you'll have the vocabulary and knowledge to tackle any interview question.
+        By Day 60, you'll have practiced 20+ design problems.
+        By Day 90, you'll be thinking like a principal engineer.
+      </p>
+
+      <div class="callout callout-info">
+        <div class="callout-title">📅 How to Use This Course</div>
+        <p>
+          Spend 30 minutes per day on the lesson. Take notes. For design problems (starting Day 38),
+          sketch your own solution on paper <em>before</em> reading the provided solution.
+          The struggle of designing without help is where the real learning happens.
+        </p>
+      </div>
+    </div>
+
+    <!-- Key Takeaways -->
+    <div class="takeaways">
+      <h3>✅ Key Takeaways for Day 1</h3>
+      <ul>
+        <li>Use the 5-step framework for <em>every</em> system design interview: Clarify → Estimate → API → Architecture → Deep Dive</li>
+        <li>Always ask clarifying questions before designing. Never assume scale or requirements.</li>
+        <li>Separate functional requirements (what it does) from non-functional requirements (how well it does it)</li>
+        <li>Back-of-envelope estimates drive architectural decisions — learn to do them quickly</li>
+        <li>Interviewers score tradeoff reasoning more heavily than technical knowledge</li>
+        <li>Think out loud. System design is a collaborative conversation, not a solo presentation.</li>
+      </ul>
+    </div>
+
+    <!-- Practice Questions -->
+    <div class="practice-questions">
+      <h3>🧠 Practice Questions</h3>
+
+      <div class="question-item">
+        <div class="question-num">1</div>
+        <div>
+          <div class="question-text">You're asked to "Design Instagram." Write down 8 clarifying questions you'd ask before drawing a single box. Then categorize them as functional vs non-functional.</div>
+          <div class="question-hint">Hint: Think about who posts, who reads, what media types, what features, what scale</div>
+        </div>
+      </div>
+
+      <div class="question-item">
+        <div class="question-num">2</div>
+        <div>
+          <div class="question-text">Estimate the storage requirements for a WhatsApp-like system with 1 billion daily active users, where each user sends an average of 40 messages per day. Assume 75% are text (1KB each), 20% are images (200KB each), and 5% are videos (5MB each).</div>
+          <div class="question-hint">Hint: Calculate text, image, and video storage separately, then add a 3× replication factor</div>
+        </div>
+      </div>
+
+      <div class="question-item">
+        <div class="question-num">3</div>
+        <div>
+          <div class="question-text">What's the difference between latency and throughput? Give an example where a system could have high throughput but poor latency, and another where it has low latency but poor throughput.</div>
+          <div class="question-hint">Hint: Think about batch processing systems vs interactive APIs</div>
+        </div>
+      </div>
+
+      <div class="question-item">
+        <div class="question-num">4</div>
+        <div>
+          <div class="question-text">An interviewer asks you to design a "parking lot system." List what you'd consider in-scope vs out-of-scope, and identify the 3 most important non-functional requirements for this system.</div>
+        </div>
+      </div>
+
+      <div class="question-item">
+        <div class="question-num">5</div>
+        <div>
+          <div class="question-text">Practice the time allocation. Set a 45-minute timer and try to apply the 5-step framework to "Design a file sharing service like Dropbox." Don't worry about getting it right — just practice the structure.</div>
+          <div class="question-hint">We'll cover the detailed solution on Day 49</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Day Nav Footer -->
+    <div class="day-nav-footer">
+      <span class="btn btn-outline" style="opacity:0.4;cursor:default">← Day 00 (Start)</span>
+      <a href="../index.html" class="btn btn-outline">🏠 Course Home</a>
+      <a href="day-02.html" class="day-nav-btn next">Day 02: Scalability →</a>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <p>System Design Mastery · Day 1 of 90 ·
+    <a href="../index.html">Course Home</a> ·
+    <a href="https://github.com/deepshah22/system-design">GitHub</a>
+  </p>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script>
+  // ─── Draw the 5-step framework diagram using roughjs ───
+  function drawFramework() {
+    const svg = document.getElementById('framework-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+
+    const rs = rough.svg(svg);
+    const W = 860, H = 220;
+    const steps = [
+      { label: ['1. Clarify', 'Requirements'], color: '#3b82f6', time: '5-10 min' },
+      { label: ['2. Estimate', 'Scale'], color: '#6366f1', time: '3-5 min' },
+      { label: ['3. Define', 'API'], color: '#8b5cf6', time: '3-5 min' },
+      { label: ['4. High-Level', 'Design'], color: '#a855f7', time: '10-15 min' },
+      { label: ['5. Deep Dive', '& Tradeoffs'], color: '#f59e0b', time: '10-15 min' },
+    ];
+
+    const boxW = 135, boxH = 80, gap = 20;
+    const totalW = steps.length * boxW + (steps.length - 1) * gap;
+    const startX = (W - totalW) / 2;
+    const startY = 55;
+
+    steps.forEach((step, i) => {
+      const x = startX + i * (boxW + gap);
+      const y = startY;
+
+      // Shadow
+      const shadow = rs.rectangle(x + 3, y + 3, boxW, boxH, {
+        stroke: 'none',
+        fill: 'rgba(0,0,0,0.3)',
+        fillStyle: 'solid',
+        roughness: 0
+      });
+      svg.appendChild(shadow);
+
+      // Box
+      const rect = rs.rectangle(x, y, boxW, boxH, {
+        stroke: step.color,
+        strokeWidth: 1.8,
+        roughness: 1.4,
+        fill: step.color + '18',
+        fillStyle: 'solid',
+      });
+      svg.appendChild(rect);
+
+      // Label lines
+      step.label.forEach((line, li) => {
+        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('x', x + boxW / 2);
+        t.setAttribute('y', y + (li === 0 ? 30 : 50));
+        t.setAttribute('text-anchor', 'middle');
+        t.setAttribute('fill', '#f1f5f9');
+        t.setAttribute('font-family', 'Inter, sans-serif');
+        t.setAttribute('font-size', '11.5');
+        t.setAttribute('font-weight', li === 0 ? '700' : '400');
+        t.textContent = line;
+        svg.appendChild(t);
+      });
+
+      // Time badge
+      const timeBadge = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      timeBadge.setAttribute('x', x + boxW / 2);
+      timeBadge.setAttribute('y', y + 68);
+      timeBadge.setAttribute('text-anchor', 'middle');
+      timeBadge.setAttribute('fill', step.color);
+      timeBadge.setAttribute('font-family', 'Inter, sans-serif');
+      timeBadge.setAttribute('font-size', '9.5');
+      timeBadge.setAttribute('font-weight', '600');
+      timeBadge.textContent = step.time;
+      svg.appendChild(timeBadge);
+
+      // Arrow to next
+      if (i < steps.length - 1) {
+        const ax = x + boxW + 2, ay = y + boxH / 2;
+        const arrowLine = rs.line(ax, ay, ax + gap - 4, ay, {
+          stroke: '#475569',
+          strokeWidth: 1.5,
+          roughness: 0.8,
+        });
+        svg.appendChild(arrowLine);
+
+        // Arrowhead
+        const arrowHead = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        const tipX = ax + gap - 3;
+        arrowHead.setAttribute('points',
+          `${tipX},${ay} ${tipX - 7},${ay - 4} ${tipX - 7},${ay + 4}`);
+        arrowHead.setAttribute('fill', '#475569');
+        svg.appendChild(arrowHead);
+      }
+    });
+
+    // Top label
+    const topLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    topLabel.setAttribute('x', W / 2);
+    topLabel.setAttribute('y', 28);
+    topLabel.setAttribute('text-anchor', 'middle');
+    topLabel.setAttribute('fill', '#64748b');
+    topLabel.setAttribute('font-family', 'Inter, sans-serif');
+    topLabel.setAttribute('font-size', '11');
+    topLabel.setAttribute('font-weight', '600');
+    topLabel.setAttribute('letter-spacing', '0.08em');
+    topLabel.textContent = 'THE 5-STEP SYSTEM DESIGN FRAMEWORK';
+    svg.appendChild(topLabel);
+
+    // Bottom annotation
+    const note = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    note.setAttribute('x', W / 2);
+    note.setAttribute('y', 195);
+    note.setAttribute('text-anchor', 'middle');
+    note.setAttribute('fill', '#475569');
+    note.setAttribute('font-family', 'Inter, sans-serif');
+    note.setAttribute('font-size', '10');
+    note.textContent = 'Total: 45 minutes  ·  Always clarify before designing  ·  Justify every decision';
+    svg.appendChild(note);
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    drawFramework();
+    initDayPage(1);
+  });
+</script>
+</body>
+</html>
