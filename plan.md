@@ -3,7 +3,7 @@
 **Course URL (GitHub Pages):** https://deepshah22.github.io/system-design/  
 **Duration:** 90 days (~30 min/day)  
 **Target:** Principal Engineer level interview preparation  
-**Last Updated:** 2026-06-14
+**Last Updated:** 2026-06-15
 
 ---
 
@@ -27,7 +27,7 @@ A 3-month progressive system design course that builds from fundamentals to prin
 | 01 | System Design Interview Framework | ✅ Published |
 | 02 | Horizontal vs Vertical Scaling | ✅ Published |
 | 03 | Networking: TCP/IP, HTTP & DNS | ✅ Published |
-| 04 | Content Delivery Networks (CDN) | ⏳ Scheduled |
+| 04 | Content Delivery Networks (CDN) | ✅ Published |
 | 05 | Load Balancing: Algorithms & Patterns | ⏳ Scheduled |
 | 06 | Caching Strategies & Patterns | ⏳ Scheduled |
 | 07 | Redis & Memcached Deep Dive | ⏳ Scheduled |
@@ -200,6 +200,7 @@ system-design/
 | 2026-06-14 | Day 1 | Initial course launch. Homepage, Day 1: Interview Framework |
 | 2026-06-14 | Day 2 | Day 2: Horizontal vs Vertical Scaling |
 | 2026-06-14 | Day 3 | Day 3: Networking — TCP/IP, HTTP & DNS |
+| 2026-06-15 | Day 4 | Day 4: Content Delivery Networks (CDN) |
 
 ---
 
