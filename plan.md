@@ -180,6 +180,7 @@ system-design/
 │   └── progress.js     # LocalStorage-based progress tracking
 └── days/
     ├── day-01.html     # ✅ Published
+    ├── day-04.html     # ✅ Published
     └── day-NN.html     # One file added per day
 ```
 
