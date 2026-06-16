@@ -3,7 +3,7 @@
 **Course URL (GitHub Pages):** https://deepshah22.github.io/system-design/  
 **Duration:** 90 days (~30 min/day)  
 **Target:** Principal Engineer level interview preparation  
-**Last Updated:** 2026-06-14
+**Last Updated:** 2026-06-15
 
 ---
 
