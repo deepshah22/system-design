@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 06: Caching Strategies & Patterns | System Design Mastery</title>
+  <meta name="description" content="A librarian who keeps the popular books on the front desk. Cache-aside, write-through, write-back, TTLs, and eviction — taught through story and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .objectives { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+    .objectives-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.6rem; }
+    .objectives ul { padding-left: 1.25rem; margin: 0; }
+    .objectives li { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.3rem; }
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 06</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 06 of 90</span>
+      <span class="meta-pill">⏱ ~30 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 1 — Core Concepts</span>
+    </div>
+    <h1>Caching<br><span style="color:var(--accent)">The Librarian Who Reads Your Mind</span></h1>
+    <p class="lead">
+      The single highest-leverage trick in all of system design: stop asking the slow thing the same
+      question twice. Today you learn exactly where to put the cache, what to do when it's wrong, and
+      why "just add a cache" is both the best and most dangerous advice in the field.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#hook">The Hook</a>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#patterns">Caching Patterns</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#eviction">Eviction & TTLs</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#feynman">Feynman Test</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <div class="objectives">
+        <div class="objectives-title">Learning Objectives</div>
+        <ul>
+          <li>Explain why caching is usually the highest-leverage scaling decision in a system</li>
+          <li>Compare cache-aside, write-through, and write-back patterns</li>
+          <li>Reason about TTLs, eviction policies (LRU, LFU), and stale-data tradeoffs</li>
+          <li>Identify cache stampede / thundering herd and how to prevent it</li>
+          <li>Apply this to interview questions about reducing database load</li>
+        </ul>
+      </div>
+
+      <section id="hook">
+        <div class="hook">
+          Why does Netflix's homepage load in <span>under 100ms</span>, when the data behind it lives
+          in databases on the other side of the country?
+        </div>
+        <p>
+          Because almost nothing on that screen is actually being computed when you load the page.
+          It was computed once, recently, by someone else's request — and saved somewhere much
+          closer and much faster than the database. That's caching: the art of not doing the same
+          expensive work twice.
+        </p>
+      </section>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">📚</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>A librarian keeping the ten most-requested books on the front desk, instead of walking
+            into the warehouse every single time someone asks for one.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            Meet <span class="story-character">Cache Cathy</span>, who sits at a small desk right by
+            the front door. Behind her, down a long hallway, is <span class="story-character">Database
+            Dave</span> — reliable, complete, but slow to walk to.
+          </p>
+          <p>
+            When a visitor asks for something, Cathy checks her desk first. If it's there (a
+            <strong>cache hit</strong>), she hands it over instantly. If it's not (a <strong>cache
+            miss</strong>), she jogs down the hallway, asks Dave, brings the answer back — and, this
+            is the important part, <em>leaves a copy on her desk</em> for the next person who asks the
+            same thing. Cathy's desk is small, though, so when it fills up she throws out whatever
+            nobody's asked for in a while to make room (eviction).
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">Cache = Frequently used information stored somewhere much
+          closer and faster than its original, permanent home.</div>
+        </div>
+      </section>
+
+      <section id="patterns">
+        <h2>Caching Patterns</h2>
+        <table class="algo-table">
+          <tr><th>Pattern</th><th>How it works</th><th>Tradeoff</th></tr>
+          <tr><td><strong>Cache-aside</strong></td><td>App checks cache first; on miss, reads DB and writes result into cache itself</td><td>Simple, most common. Cache can go briefly stale.</td></tr>
+          <tr><td><strong>Write-through</strong></td><td>Every write goes to the cache and the DB at the same time</td><td>Cache always fresh, but writes are slower (two systems updated synchronously)</td></tr>
+          <tr><td><strong>Write-back</strong></td><td>Write goes to cache first; DB is updated later, asynchronously</td><td>Very fast writes, but risk of data loss if the cache fails before flushing</td></tr>
+        </table>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself</h2>
+        <div class="sim-box">
+          <p>Slide the cache hit rate and see how it changes average response time when a cache hit
+          takes 1ms and a database read takes 80ms.</p>
+          <div class="sim-controls">
+            <label for="sim-hitrate" style="min-width:160px;font-size:.85rem;">Cache hit rate: <strong id="sim-hitrate-val">90%</strong></label>
+            <input type="range" id="sim-hitrate" min="0" max="100" value="90">
+          </div>
+          <div class="sim-output" id="sim-output">Loading…</div>
+        </div>
+      </section>
+
+      <section id="eviction">
+        <h2>Eviction Policies & TTLs</h2>
+        <p>A cache is always smaller than the source of truth, so something has to leave when it
+        fills up. <strong>LRU (Least Recently Used)</strong> evicts whatever hasn't been touched in
+        the longest time — the default in most systems. <strong>LFU (Least Frequently Used)</strong>
+        evicts whatever is asked for least often overall. A <strong>TTL (Time To Live)</strong> simply
+        expires an entry after N seconds regardless of usage, bounding how stale data can get.</p>
+        <p><strong>Cache stampede (thundering herd):</strong> when a hot key expires, thousands of
+        requests can simultaneously miss and hammer the database at once. Fixes: stagger TTLs with
+        jitter, use a lock so only one request repopulates the cache while others wait, or
+        proactively refresh hot keys before they expire.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>Walk through the house again — you're furnishing the living room today.</h4>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>Front Door</strong> — <span>Load Balancer (Day 5). Decided who gets in.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📦</span><div><strong>Living Room</strong> — <span>Cache (today). The stuff you reach for first, sitting right by the door.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📚</span><div><strong>Library</strong> — <span>Database. The permanent, organized archive deeper in the house (Day 8+).</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📮</span><div><strong>Mail Room</strong> — <span>Message Queue. Where work waits until someone's ready for it (Day 18).</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node">Load Balancer (Day 5)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">App Servers</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Cache (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Database (Day 8+)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">CDN (Day 4)</span>
+        </div>
+        <p>Cache sits between your app and your database — and conceptually rhymes with the CDN you
+        learned on Day 4, just one hop closer to your own servers.</p>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ What problem does caching solve, in one sentence? (click to reveal)</div>
+          <div class="recall-answer">It avoids repeating expensive work (usually a database read) by
+          storing the result somewhere faster, cutting both latency and load on the source of truth.</div>
+        </div>
+      </section>
+
+      <section id="feynman">
+        <h2>Feynman Test</h2>
+        <div class="feynman-box">
+          <p><strong>Explain Redis to a 10-year-old.</strong> Write it below, then compare.</p>
+          <textarea placeholder="It's like a..."></textarea>
+          <button class="btn btn-outline feynman-reveal-btn" style="margin-top:.75rem;">Reveal model answer</button>
+          <div class="feynman-model">"Imagine Redis as a super-fast assistant sitting right beside
+          your desk who remembers the last few things you asked for, while the database is a giant
+          filing cabinet across the building that has everything but takes longer to walk to."</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🎬 Netflix</div><p>Caches personalized homepage rows (EVCache, built on Memcached) so browsing feels instant across regions.</p></div>
+          <div class="realworld-card"><div class="rw-company">🐦 Twitter</div><p>Caches the social graph and timelines heavily — most reads never touch the primary database.</p></div>
+          <div class="realworld-card"><div class="rw-company">📦 Amazon</div><p>Caches product and pricing pages at multiple layers — CDN, app cache, and database query cache.</p></div>
+          <div class="realworld-card"><div class="rw-company">🅰️ Airbnb</div><p>Uses caching for search results, which are expensive to compute and don't need to be perfectly real-time.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why use caching?</div>
+          <div class="fc-a">A: Reduce latency and database load by avoiding repeated expensive reads.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What's a cache stampede, and one way to prevent it?</div>
+          <div class="fc-a">A: Many requests miss a hot key at once and overload the DB; prevent it with jittered TTLs or a repopulation lock.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Write-through vs write-back — what's the risk of write-back?</div>
+          <div class="fc-a">A: Faster writes, but data can be lost if the cache fails before it flushes to the database.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>What's the difference between a cache hit and a cache miss?</li>
+          <li>Name the three core caching patterns and one tradeoff of each.</li>
+          <li>What is a cache stampede and how do you prevent it?</li>
+          <li>What's the difference between LRU and LFU eviction?</li>
+          <li>Why might write-back caching lose data that write-through wouldn't?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: caching trades a little bit of staleness for a lot of
+          speed — your job in an interview is to say exactly how much staleness is acceptable.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-05.html">← Day 05: Load Balancing</a>
+        <a href="day-07.html" class="coming-soon-link">Day 07: Redis &amp; Memcached Deep Dive →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 06 of 90 — Caching Strategies &amp; Patterns</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  const hitrateEl = document.getElementById('sim-hitrate');
+  const hitrateVal = document.getElementById('sim-hitrate-val');
+  const output = document.getElementById('sim-output');
+  function render() {
+    const hit = Number(hitrateEl.value);
+    hitrateVal.textContent = hit + '%';
+    const avg = (hit/100 * 1) + ((100-hit)/100 * 80);
+    output.textContent = `Avg response time = (${hit}% × 1ms) + (${100-hit}% × 80ms) = ${avg.toFixed(1)}ms`;
+  }
+  hitrateEl.addEventListener('input', render);
+  render();
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,31 @@
+name: Daily Lesson Publish
+
+on:
+  schedule:
+    # 13:00 UTC every day
+    - cron: "0 13 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Publish next staged lesson
+        id: publish
+        run: python3 scripts/publish_next_day.py
+
+      - name: Commit and push
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add days/ staging/ index.html plan.md
+          git commit -m "Publish Day ${{ steps.publish.outputs.day_num }}: ${{ steps.publish.outputs.title }}"
+          git push origin main
