@@ -521,3 +521,139 @@ footer a:hover { color: var(--accent); }
   stroke-linecap: round;
   transition: stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* ════════════════════════════════════════════════════════════
+   MEMORABLE LEARNING FRAMEWORK — reusable lesson components
+   Used by every day-NN.html page from Day 5 onward.
+   ════════════════════════════════════════════════════════════ */
+
+/* ─── HOOK ───────────────────────────────────────────────── */
+.hook {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: linear-gradient(135deg, var(--accent-glow), transparent);
+  border-left: 4px solid var(--accent);
+  padding: 1.5rem 1.75rem;
+  border-radius: var(--radius);
+  margin: 1.5rem 0 2rem;
+}
+.hook span { color: var(--accent); }
+
+/* ─── VISUAL MEMORY ANCHOR ───────────────────────────────── */
+.anchor-card {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.75rem;
+  margin: 1.5rem 0 2rem;
+  box-shadow: var(--shadow);
+  flex-wrap: wrap;
+}
+.anchor-emoji { font-size: 3.5rem; line-height: 1; flex-shrink: 0; }
+.anchor-text h4 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.4rem; }
+.anchor-text p { font-size: 1.05rem; font-weight: 600; color: var(--text-primary); margin: 0; }
+
+/* ─── STORY BOX ──────────────────────────────────────────── */
+.story-box {
+  background: var(--bg-secondary);
+  border-radius: var(--radius);
+  padding: 1.75rem;
+  margin: 1.5rem 0 2rem;
+  position: relative;
+}
+.story-box::before { content: "💬"; position: absolute; top: -14px; left: 1.5rem; font-size: 1.6rem; background: var(--bg-primary); padding: 0 0.4rem; }
+.story-box p { color: var(--text-secondary); line-height: 1.75; }
+.story-character { font-weight: 700; color: var(--accent); }
+
+/* ─── MENTAL MODEL CARD ──────────────────────────────────── */
+.model-card {
+  background: linear-gradient(135deg, #eef2ff, #f5f3ff);
+  border: 1.5px dashed var(--accent);
+  border-radius: var(--radius);
+  padding: 1.5rem 1.75rem;
+  margin: 1.5rem 0 2rem;
+  text-align: center;
+}
+.model-card .model-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); margin-bottom: 0.5rem; }
+.model-card .model-statement { font-size: 1.15rem; font-weight: 700; color: var(--text-primary); }
+
+/* ─── INTERACTIVE SIMULATION ─────────────────────────────── */
+.sim-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.75rem;
+  margin: 1.5rem 0 2rem;
+  box-shadow: var(--shadow);
+}
+.sim-controls { display: flex; align-items: center; gap: 1rem; margin: 1rem 0; flex-wrap: wrap; }
+.sim-controls input[type="range"] { flex: 1; min-width: 160px; }
+.sim-output { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; background: var(--bg-secondary); border-radius: var(--radius-sm); padding: 1rem; margin-top: 0.75rem; white-space: pre-wrap; }
+
+/* ─── MEMORY PALACE ──────────────────────────────────────── */
+.palace {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  margin: 1.5rem 0 2rem;
+}
+.palace h4 { color: #fff; font-size: 0.95rem; margin-bottom: 1.25rem; }
+.palace-room { display: flex; align-items: flex-start; gap: 0.9rem; padding: 0.6rem 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.palace-room:last-child { border-bottom: none; }
+.palace-icon { font-size: 1.4rem; }
+.palace-room strong { color: #fff; }
+.palace-room span { color: #94a3b8; font-size: 0.88rem; }
+
+/* ─── CONNECTION GRAPH ───────────────────────────────────── */
+.graph-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin: 1.5rem 0 2rem; }
+.graph-node { background: var(--bg-card); border: 1.5px solid var(--accent); border-radius: 999px; padding: 0.5rem 1.1rem; font-size: 0.85rem; font-weight: 600; color: var(--text-primary); }
+.graph-node.dim { opacity: 0.5; border-color: var(--border); }
+.graph-arrow { color: var(--text-muted); font-size: 1.1rem; }
+
+/* ─── ACTIVE RECALL ──────────────────────────────────────── */
+.recall-box { border: 1.5px solid var(--border); border-radius: var(--radius); padding: 1.5rem 1.75rem; margin: 1.5rem 0 2rem; background: var(--bg-card); }
+.recall-q { font-weight: 700; font-size: 1.05rem; margin-bottom: 1rem; }
+.recall-answer { display: none; padding-top: 1rem; border-top: 1px dashed var(--border); color: var(--text-secondary); line-height: 1.7; }
+.recall-answer.shown { display: block; }
+.recall-toggle { cursor: pointer; }
+
+/* ─── FEYNMAN TEST ───────────────────────────────────────── */
+.feynman-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius); padding: 1.5rem 1.75rem; margin: 1.5rem 0 2rem; }
+.feynman-box textarea { width: 100%; min-height: 100px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.75rem; font-family: inherit; font-size: 0.92rem; resize: vertical; margin-top: 0.75rem; }
+.feynman-model { display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed #fde68a; color: var(--text-secondary); }
+.feynman-model.shown { display: block; }
+
+/* ─── REAL-WORLD EXAMPLE ─────────────────────────────────── */
+.realworld-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin: 1.5rem 0 2rem; }
+.realworld-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; }
+.realworld-card .rw-company { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.4rem; }
+.realworld-card p { font-size: 0.85rem; color: var(--text-secondary); margin: 0; }
+
+/* ─── FLASHCARDS ─────────────────────────────────────────── */
+.flashcard { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin-bottom: 0.75rem; cursor: pointer; transition: box-shadow 0.15s; }
+.flashcard:hover { box-shadow: var(--shadow); }
+.flashcard .fc-q { font-weight: 600; }
+.flashcard .fc-a { display: none; margin-top: 0.6rem; color: var(--text-secondary); padding-top: 0.6rem; border-top: 1px dashed var(--border); }
+.flashcard.flipped .fc-a { display: block; }
+.flashcard-save-btn { margin-top: 0.5rem; }
+
+/* ─── MEMORY TEST / TAKEAWAY ─────────────────────────────── */
+.memtest-list { list-style: none; padding: 0; }
+.memtest-list li { padding: 0.6rem 0; border-bottom: 1px solid var(--border); }
+.memtest-list li::before { content: "❓ "; }
+.takeaway-box {
+  background: linear-gradient(135deg, var(--accent), var(--accent-light));
+  color: #fff;
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  margin: 2rem 0;
+  text-align: center;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
