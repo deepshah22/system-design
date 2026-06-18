@@ -3,7 +3,7 @@
 **Course URL (GitHub Pages):** https://deepshah22.github.io/system-design/  
 **Duration:** 90 days (~30 min/day)  
 **Target:** Principal Engineer level interview preparation  
-**Last Updated:** 2026-06-15
+**Last Updated:** 2026-06-18
 
 ---
 
@@ -17,6 +17,39 @@ A 3-month progressive system design course that builds from fundamentals to prin
 - **Diagrams:** Excalidraw-style SVGs rendered with `roughjs`, embedded inline
 - **Progress:** Tracked in browser `localStorage`, no backend required
 
+### Memorable Learning Framework (Day 5 onward)
+Every lesson from Day 5 forward follows the same 11-part structure designed for long-term
+retention rather than passive reading:
+
+1. **Hook** — a curiosity-trigger question, never a textbook intro
+2. **Visual Memory Anchor** — one emoji + one scene that represents the whole concept
+3. **Story** — recurring characters (LB Lola, Cache Cathy, Database Dave, Queue Quinn, API Alex…)
+4. **Mental Model Card** — the one-sentence version to keep in your head
+5. **Interactive Simulation** — sliders/live math you can manipulate, not just read
+6. **Memory Palace** — the running "Distributed Systems House" every concept lives in
+7. **Connection Graph** — how today's concept links to concepts already learned
+8. **Active Recall** — a hidden-answer question you must attempt before revealing
+9. **Feynman Test** — explain it simply yourself, then compare to a model answer
+10. **Real-World Engineering** — how Netflix/Amazon/Uber/Google actually use it
+11. **Flashcards + Memory Test + Takeaway** — spaced-repetition deck (saved to `localStorage`) and a one-line "if you only remember one thing"
+
+Days 1–4 were written before this framework existed and use a more traditional structure; they
+remain published as-is and are candidates for a future rewrite pass.
+
+### Daily Publish Automation
+Lessons are authored ahead of time into `staging/day-NN.html` (so quality isn't rushed), but they
+are only **released** one per day — `staging/` is never linked from the live site. A GitHub Actions
+workflow (`.github/workflows/daily-publish.yml`) runs every day at 13:00 UTC, calls
+`scripts/publish_next_day.py`, which:
+- Moves the lowest-numbered staged file into `days/`
+- Flips that day's card in `index.html` from "coming soon" to live
+- Marks the day "✅ Published" in this file and appends a Progress Log row
+- Commits and pushes directly to `main`
+
+This guarantees real one-topic-per-day pacing without needing a live AI call (and therefore no API
+key, no runtime quality risk) — the work of writing each lesson happens in advance, the *release*
+is what's metered daily. Day 6 (Caching) is staged now and will auto-publish via this workflow.
+
 ---
 
 ## Phase 1: Fundamentals (Days 1–30)
@@ -28,8 +61,8 @@ A 3-month progressive system design course that builds from fundamentals to prin
 | 02 | Horizontal vs Vertical Scaling | ✅ Published |
 | 03 | Networking: TCP/IP, HTTP & DNS | ✅ Published |
 | 04 | Content Delivery Networks (CDN) | ✅ Published |
-| 05 | Load Balancing: Algorithms & Patterns | ⏳ Scheduled |
-| 06 | Caching Strategies & Patterns | ⏳ Scheduled |
+| 05 | Load Balancing: Algorithms & Patterns | ✅ Published |
+| 06 | Caching Strategies & Patterns | 📦 Staged (auto-publishes next) |
 | 07 | Redis & Memcached Deep Dive | ⏳ Scheduled |
 
 ### Week 2: Storage Fundamentals
@@ -198,6 +231,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-06-18 | Day 5 | Day 5: Load Balancing — Algorithms & Patterns. Introduced the Memorable Learning Framework (hook, story, memory palace, active recall, Feynman test, flashcards) and the daily-publish automation. |
 | 2026-06-14 | Day 1 | Initial course launch. Homepage, Day 1: Interview Framework |
 | 2026-06-14 | Day 2 | Day 2: Horizontal vs Vertical Scaling |
 | 2026-06-14 | Day 3 | Day 3: Networking — TCP/IP, HTTP & DNS |
@@ -211,6 +245,10 @@ system-design/
 - [x] Homepage (`index.html`) with full 90-day curriculum grid
 - [x] Progress tracking system (localStorage)
 - [x] Global stylesheet with dark theme
-- [x] Day 1 published: System Design Interview Framework
-- [ ] Days 2–90: To be published one per day
-- [ ] GitHub Pages enabled on `main` branch
+- [x] Days 1–4 published (Interview Framework, Scaling, Networking, CDN)
+- [x] Memorable Learning Framework designed (hook → anchor → story → mental model → sim → memory palace → connection graph → active recall → Feynman test → real-world examples → flashcards/memory test/takeaway)
+- [x] Day 5 published using the new framework: Load Balancing
+- [x] Day 6 staged in `staging/` for tomorrow's automated publish: Caching Strategies & Patterns
+- [x] Daily publish automation: `scripts/publish_next_day.py` + `.github/workflows/daily-publish.yml` (cron 13:00 UTC)
+- [ ] Days 7–90: to be authored into `staging/` and auto-published one per day
+- [ ] GitHub Pages enabled on `main` branch (verify in repo Settings → Pages → source: `main` / root)
