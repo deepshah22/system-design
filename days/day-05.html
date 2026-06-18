@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 05: Load Balancing — Algorithms & Patterns | System Design Mastery</title>
+  <meta name="description" content="Why nothing in a distributed system survives at scale without a traffic cop. Load balancing algorithms, L4 vs L7, health checks, and sticky sessions — taught through story, memory anchors, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .objectives { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+    .objectives-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.6rem; }
+    .objectives ul { padding-left: 1.25rem; margin: 0; }
+    .objectives li { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.3rem; }
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    canvas#lb-diagram { width:100%; max-width:680px; display:block; margin: 0 auto; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 05</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 05 of 90</span>
+      <span class="meta-pill">⏱ ~30 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 1 — Core Concepts</span>
+    </div>
+    <h1>Load Balancing<br><span style="color:var(--accent)">The Traffic Cop of Distributed Systems</span></h1>
+    <p class="lead">
+      Every system that survives real traffic has one thing in common: something stands between the
+      internet and the servers, deciding who goes where. Today you learn exactly how — and why almost
+      every system design interview answer starts by drawing this box.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#hook">The Hook</a>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#algorithms">Algorithms</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#l4-l7">L4 vs L7</a>
+        <a href="#health">Health Checks & Sticky Sessions</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#feynman">Feynman Test</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <div class="objectives">
+        <div class="objectives-title">Learning Objectives</div>
+        <ul>
+          <li>Explain why every distributed system needs a load balancer before it needs anything else</li>
+          <li>Compare round robin, weighted round robin, least connections, and consistent hashing</li>
+          <li>Distinguish Layer 4 (transport) from Layer 7 (application) load balancing</li>
+          <li>Reason about health checks, sticky sessions, and load balancer high availability</li>
+          <li>Apply this to interview questions: "how does traffic get distributed across your servers?"</li>
+        </ul>
+      </div>
+
+      <section id="hook">
+        <div class="hook">
+          Why didn't Amazon's homepage fall over on Black Friday, when <span>10 million people</span>
+          hit "Buy Now" inside the same 60 seconds?
+        </div>
+        <p>
+          It's not because Amazon has one giant, impossibly powerful server. It's because no single
+          request ever talks to "the server" — it talks to a thin layer that instantly decides
+          <em>which</em> of thousands of identical servers should handle it. That layer is the load
+          balancer, and it is almost always the first box drawn in a system design interview.
+        </p>
+      </section>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🚦</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>A traffic cop standing at a fork in the road, waving each incoming car down a different
+            lane so no single lane backs up — while a few lanes are coned off for repairs and quietly
+            get no traffic at all.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            Meet <span class="story-character">LB Lola</span>. She stands at the only door into
+            Requestville. Behind her are three identical workers — <span class="story-character">Server
+            Sam</span>, <span class="story-character">Server Sam-2</span>, and
+            <span class="story-character">Server Sam-3</span> — each capable of handling any request,
+            but each with a limited number of hands.
+          </p>
+          <p>
+            When a request walks in, Lola doesn't think hard. She glances at who's least busy, taps
+            them on the shoulder, and sends the request their way. If Sam-2 collapses from exhaustion
+            (a crash), Lola simply stops sending him anyone until he's back on his feet — she noticed
+            because she checks on each Sam every few seconds with a quick "you alive?" (a health check).
+            Nobody outside the door ever knows Sam-2 had a bad day.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">Load Balancer = One smart traffic cop spreading requests across
+          many identical workers, so no single worker — and no single point — ever falls over.</div>
+        </div>
+      </section>
+
+      <section id="algorithms">
+        <h2>Load Balancing Algorithms</h2>
+        <p>Lola needs a rule for picking the next worker. The rule she uses changes the system's
+        behavior dramatically:</p>
+        <table class="algo-table">
+          <tr><th>Algorithm</th><th>How it picks</th><th>Good for</th></tr>
+          <tr><td><strong>Round Robin</strong></td><td>Cycles through servers in order: 1, 2, 3, 1, 2, 3…</td><td>Servers with identical capacity</td></tr>
+          <tr><td><strong>Weighted Round Robin</strong></td><td>Same as above, but stronger servers get more turns</td><td>Mixed hardware (some servers are bigger)</td></tr>
+          <tr><td><strong>Least Connections</strong></td><td>Sends the request to whoever has the fewest active connections right now</td><td>Long-lived or uneven requests (e.g. websockets)</td></tr>
+          <tr><td><strong>IP Hash</strong></td><td>Hashes the client IP to always route the same client to the same server</td><td>Simple session stickiness</td></tr>
+          <tr><td><strong>Consistent Hashing</strong></td><td>Maps both servers and requests onto a hash ring</td><td>Caches/sharded stores where minimizing re-mapping on scale-out matters</td></tr>
+        </table>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself</h2>
+        <div class="sim-box">
+          <p>Drag the sliders. Watch how requests per server changes as you add backend servers or
+          increase traffic — this is the exact mental math interviewers expect you to do out loud.</p>
+          <div class="sim-controls">
+            <label for="sim-servers" style="min-width:160px;font-size:.85rem;">Backend servers: <strong id="sim-servers-val">3</strong></label>
+            <input type="range" id="sim-servers" min="1" max="20" value="3">
+          </div>
+          <div class="sim-controls">
+            <label for="sim-rps" style="min-width:160px;font-size:.85rem;">Requests/sec: <strong id="sim-rps-val">9000</strong></label>
+            <input type="range" id="sim-rps" min="100" max="50000" step="100" value="9000">
+          </div>
+          <div class="sim-output" id="sim-output">Loading…</div>
+        </div>
+        <canvas id="lb-diagram" width="680" height="260"></canvas>
+      </section>
+
+      <section id="l4-l7">
+        <h2>Layer 4 vs Layer 7 Load Balancing</h2>
+        <h3>Layer 4 (Transport)</h3>
+        <p>Looks only at IP + TCP/UDP port. Doesn't read the actual HTTP request. Extremely fast, but
+        "dumb" — it can't route based on URL path or headers. Used for raw throughput (e.g. AWS NLB).</p>
+        <h3>Layer 7 (Application)</h3>
+        <p>Reads the actual HTTP request — path, headers, cookies — and can route
+        <code>/api/*</code> to one fleet and <code>/images/*</code> to another. Slightly slower (more
+        to inspect) but far more flexible. Used for most web traffic (AWS ALB, NGINX, Envoy).</p>
+      </section>
+
+      <section id="health">
+        <h2>Health Checks & Sticky Sessions</h2>
+        <p><strong>Health checks:</strong> the load balancer periodically pings each backend
+        (<code>GET /healthz</code>). Miss enough checks in a row and the server is pulled from
+        rotation automatically — no human in the loop.</p>
+        <p><strong>Sticky sessions:</strong> sometimes a user's session state lives only on one
+        server's memory. The load balancer pins that user (via a cookie or IP hash) to the same
+        server for the session. This is a crutch — the better fix is usually a shared session store
+        (Redis), which you'll meet on Day 7.</p>
+        <p><strong>The load balancer itself is a single point of failure</strong> — so production
+        systems run at least two, in active-passive or active-active pairs, often fronted by DNS or a
+        floating IP.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>Walk through the house. Each room is a concept you'll meet this month.</h4>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>Front Door</strong> — <span>Load Balancer (today). Decides who gets in and where they go.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📦</span><div><strong>Living Room</strong> — <span>Cache. The stuff you reach for first, sitting right by the door (Day 6).</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📚</span><div><strong>Library</strong> — <span>Database. The permanent, organized archive deeper in the house (Day 8+).</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📮</span><div><strong>Mail Room</strong> — <span>Message Queue. Where work waits until someone's ready for it (Day 18).</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node">Client</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Load Balancer</span><span class="graph-arrow">→</span>
+          <span class="graph-node">App Servers</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Cache (Day 6)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Database (Day 8+)</span>
+        </div>
+        <p>Today you placed the front door. Tomorrow you furnish the living room.</p>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ What specific problem does a load balancer solve, in one sentence? (click to reveal)</div>
+          <div class="recall-answer">It prevents any single server from being overwhelmed by spreading
+          incoming requests across a fleet of servers, while routing around any server that's
+          unhealthy.</div>
+        </div>
+      </section>
+
+      <section id="feynman">
+        <h2>Feynman Test</h2>
+        <div class="feynman-box">
+          <p><strong>Explain a load balancer to a 10-year-old.</strong> Write it below, then compare.</p>
+          <textarea placeholder="It's like a..."></textarea>
+          <button class="btn btn-outline feynman-reveal-btn" style="margin-top:.75rem;">Reveal model answer</button>
+          <div class="feynman-model">"Imagine one cash register at a busy store with a huge line. Now
+          imagine three registers open, and a helper at the front pointing each customer to whichever
+          register is shortest. That helper is the load balancer."</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🎬 Netflix</div><p>Uses AWS Elastic Load Balancers in front of thousands of microservice instances, with Zuul as an app-layer gateway for routing and resiliency.</p></div>
+          <div class="realworld-card"><div class="rw-company">📦 Amazon</div><p>ALB for HTTP routing by path/host, NLB for raw TCP throughput on payment and inventory paths.</p></div>
+          <div class="realworld-card"><div class="rw-company">🔎 Google</div><p>Built Maglev, a custom software load balancer handling all of Google's inbound traffic with consistent hashing for failover.</p></div>
+          <div class="realworld-card"><div class="rw-company">🚗 Uber</div><p>Uses consistent hashing in its load balancing layer so that re-balancing on scale-out doesn't reshuffle most existing mappings.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why use a load balancer?</div>
+          <div class="fc-a">A: To distribute traffic across multiple servers, avoid overload, and route around failures.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Round robin vs least connections — when does least connections win?</div>
+          <div class="fc-a">A: When requests vary in duration/cost (e.g. long-lived connections), so an even count doesn't mean even load.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: L4 vs L7 load balancing — what's the core tradeoff?</div>
+          <div class="fc-a">A: L4 is faster but routes blind (IP/port only); L7 reads the HTTP request and can route smartly, at a small latency cost.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>What does a load balancer do when a health check fails three times in a row?</li>
+          <li>Name two load balancing algorithms and one scenario where each wins.</li>
+          <li>Why is a single load balancer itself a risk, and how do production systems fix that?</li>
+          <li>What's the difference between Layer 4 and Layer 7 load balancing?</li>
+          <li>Why are sticky sessions considered a crutch, and what's the better long-term fix?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: a load balancer's entire job is to make a fleet of
+          replaceable servers look, from the outside, like one perfectly reliable one.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-04.html">← Day 04: Content Delivery Networks (CDN)</a>
+        <a href="day-06.html" class="coming-soon-link">Day 06: Caching Strategies & Patterns →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 05 of 90 — Load Balancing</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  const serversEl = document.getElementById('sim-servers');
+  const rpsEl = document.getElementById('sim-rps');
+  const serversVal = document.getElementById('sim-servers-val');
+  const rpsVal = document.getElementById('sim-rps-val');
+  const output = document.getElementById('sim-output');
+
+  function render() {
+    const servers = Number(serversEl.value);
+    const rps = Number(rpsEl.value);
+    serversVal.textContent = servers;
+    rpsVal.textContent = rps.toLocaleString();
+    const perServer = (rps / servers).toFixed(1);
+    let verdict = 'Healthy — comfortable headroom per server.';
+    if (perServer > 2000) verdict = 'At risk — each server is handling a lot. Consider adding more, or scaling vertically.';
+    else if (perServer > 800) verdict = 'Busy — fine for now, watch this if traffic grows.';
+    output.textContent =
+`${rps.toLocaleString()} requests/sec ÷ ${servers} servers = ${perServer} req/sec per server
+
+${verdict}`;
+  }
+  serversEl.addEventListener('input', render);
+  rpsEl.addEventListener('input', render);
+  render();
+})();
+
+/* ─── LOAD BALANCER DIAGRAM ─── */
+(function() {
+  const canvas = document.getElementById('lb-diagram');
+  if (!canvas || typeof rough === 'undefined') return;
+  const rc = rough.canvas(canvas);
+  const ctx = canvas.getContext('2d');
+
+  function box(x, y, w, h, color, label) {
+    rc.rectangle(x, y, w, h, { stroke: color, strokeWidth: 2, roughness: 1.5, fill: color, fillStyle: 'hachure', fillWeight: 0.5 });
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '13px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, x + w / 2, y + h / 2 + 4);
+  }
+  function arrow(x1, y1, x2, y2) {
+    rc.line(x1, y1, x2, y2, { stroke: '#64748b', strokeWidth: 1.5, roughness: 1 });
+  }
+
+  box(20, 110, 90, 40, '#22c55e', 'Client');
+  box(160, 100, 120, 60, '#4f46e5', 'Load Balancer');
+  box(360, 20, 110, 40, '#0ea5e9', 'Server 1');
+  box(360, 100, 110, 40, '#0ea5e9', 'Server 2');
+  box(360, 180, 110, 40, '#94a3b8', 'Server 3 (down)');
+
+  arrow(110, 130, 160, 130);
+  arrow(280, 115, 360, 40);
+  arrow(280, 130, 360, 120);
+  arrow(280, 145, 360, 200);
+})();
+</script>
+
+</body>
+</html>
