@@ -39,8 +39,10 @@ remain published as-is and are candidates for a future rewrite pass.
 ### Daily Publish Automation
 Lessons are authored ahead of time into `staging/day-NN.html` (so quality isn't rushed), but they
 are only **released** one per day — `staging/` is never linked from the live site. A GitHub Actions
-workflow (`.github/workflows/daily-publish.yml`) runs every day at 13:00 UTC, calls
-`scripts/publish_next_day.py`, which:
+workflow (`.github/workflows/daily-publish.yml`) checks in every day at 13:00 UTC, but
+`scripts/publish_next_day.py` only actually publishes **every other day** — cadence is tracked in
+`staging/.last_published` rather than the cron schedule itself, so it stays correct even if a run
+is delayed or skipped. When it is due, the script:
 - Moves the lowest-numbered staged file into `days/`
 - Flips that day's card in `index.html` from "coming soon" to live
 - Marks the day "✅ Published" in this file and appends a Progress Log row

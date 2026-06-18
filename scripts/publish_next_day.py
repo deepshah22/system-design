@@ -4,8 +4,11 @@ Publishes the next staged lesson (lowest-numbered days/day-NN.html sitting in
 staging/) into the live days/ folder, flips its index.html card from
 "coming-soon" to live, and marks it Published in plan.md.
 
-Run by .github/workflows/daily-publish.yml on a daily cron schedule.
-Exits with status 1 (no-op) if staging/ is empty -- nothing to publish yet.
+Run by .github/workflows/daily-publish.yml on a daily cron check, but only
+actually publishes every other day -- cadence is enforced here via a state
+file (staging/.last_published) rather than the cron schedule itself, so it
+holds even if a scheduled run is delayed or skipped.
+Exits with status 1 (no-op) if staging/ is empty or it isn't time yet.
 """
 import re
 import sys
@@ -18,11 +21,30 @@ STAGING = os.path.join(ROOT, "staging")
 DAYS = os.path.join(ROOT, "days")
 INDEX = os.path.join(ROOT, "index.html")
 PLAN = os.path.join(ROOT, "plan.md")
+STATE_FILE = os.path.join(STAGING, ".last_published")
+PUBLISH_INTERVAL_DAYS = 2
 
 
 def next_staged_file():
     files = sorted(glob.glob(os.path.join(STAGING, "day-*.html")))
     return files[0] if files else None
+
+
+def due_to_publish():
+    if not os.path.exists(STATE_FILE):
+        return True
+    with open(STATE_FILE, encoding="utf-8") as f:
+        last = f.read().strip()
+    try:
+        last_date = date.fromisoformat(last)
+    except ValueError:
+        return True
+    return (date.today() - last_date).days >= PUBLISH_INTERVAL_DAYS
+
+
+def mark_published_today():
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        f.write(date.today().isoformat())
 
 
 def extract_title(html, day_num):
@@ -78,11 +100,15 @@ def publish(path):
 
 
 if __name__ == "__main__":
+    if not due_to_publish():
+        print(f"Not due yet -- publishing every {PUBLISH_INTERVAL_DAYS} days. Skipping today.")
+        sys.exit(1)
     next_file = next_staged_file()
     if not next_file:
         print("No staged lessons waiting in staging/. Nothing to publish today.")
         sys.exit(1)
     day_num, title = publish(next_file)
+    mark_published_today()
     # Emit for the GitHub Actions step to use in the commit message.
     gh_out = os.environ.get("GITHUB_OUTPUT")
     if gh_out:
