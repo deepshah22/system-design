@@ -39,8 +39,8 @@ remain published as-is and are candidates for a future rewrite pass.
 ### Daily Publish Automation
 Lessons are authored ahead of time into `staging/day-NN.html` (so quality isn't rushed), but they
 are only **released** one per day — `staging/` is never linked from the live site. A GitHub Actions
-workflow (`.github/workflows/daily-publish.yml`) checks in every day at 13:00 UTC, but
-`scripts/publish_next_day.py` only actually publishes **every other day** — cadence is tracked in
+workflow (`.github/workflows/daily-publish.yml`) checks in every day at 13:00 UTC, and
+`scripts/publish_next_day.py` publishes exactly **one lesson per day** — cadence is tracked in
 `staging/.last_published` rather than the cron schedule itself, so it stays correct even if a run
 is delayed or skipped. When it is due, the script:
 - Moves the lowest-numbered staged file into `days/`
@@ -50,7 +50,9 @@ is delayed or skipped. When it is due, the script:
 
 This guarantees real one-topic-per-day pacing without needing a live AI call (and therefore no API
 key, no runtime quality risk) — the work of writing each lesson happens in advance, the *release*
-is what's metered daily. Day 6 (Caching) is staged now and will auto-publish via this workflow.
+is what's metered daily. This automation only takes effect once it lives on `main` (GitHub Actions
+schedules only fire off the default branch), which is why everything is being pushed to `main`
+directly today.
 
 ---
 
@@ -64,7 +66,7 @@ is what's metered daily. Day 6 (Caching) is staged now and will auto-publish via
 | 03 | Networking: TCP/IP, HTTP & DNS | ✅ Published |
 | 04 | Content Delivery Networks (CDN) | ✅ Published |
 | 05 | Load Balancing: Algorithms & Patterns | ✅ Published |
-| 06 | Caching Strategies & Patterns | 📦 Staged (auto-publishes next) |
+| 06 | Caching Strategies & Patterns | ✅ Published |
 | 07 | Redis & Memcached Deep Dive | ⏳ Scheduled |
 
 ### Week 2: Storage Fundamentals
@@ -233,6 +235,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-06-19 | Day 6 | Day 6: Caching Strategies & Patterns |
 | 2026-06-18 | Day 5 | Day 5: Load Balancing — Algorithms & Patterns. Introduced the Memorable Learning Framework (hook, story, memory palace, active recall, Feynman test, flashcards) and the daily-publish automation. |
 | 2026-06-14 | Day 1 | Initial course launch. Homepage, Day 1: Interview Framework |
 | 2026-06-14 | Day 2 | Day 2: Horizontal vs Vertical Scaling |
@@ -250,7 +253,8 @@ system-design/
 - [x] Days 1–4 published (Interview Framework, Scaling, Networking, CDN)
 - [x] Memorable Learning Framework designed (hook → anchor → story → mental model → sim → memory palace → connection graph → active recall → Feynman test → real-world examples → flashcards/memory test/takeaway)
 - [x] Day 5 published using the new framework: Load Balancing
-- [x] Day 6 staged in `staging/` for tomorrow's automated publish: Caching Strategies & Patterns
-- [x] Daily publish automation: `scripts/publish_next_day.py` + `.github/workflows/daily-publish.yml` (cron 13:00 UTC)
+- [x] Day 6 published using the new framework: Caching Strategies & Patterns
+- [x] Daily publish automation: `scripts/publish_next_day.py` + `.github/workflows/daily-publish.yml` (cron 13:00 UTC, fixed to a strict 1-day cadence)
+- [x] Course history consolidated onto `main` (was previously isolated on a feature branch, so the daily cron never actually ran — GitHub Actions schedules only fire from the default branch)
 - [ ] Days 7–90: to be authored into `staging/` and auto-published one per day
 - [ ] GitHub Pages enabled on `main` branch (verify in repo Settings → Pages → source: `main` / root)

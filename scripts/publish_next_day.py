@@ -4,9 +4,9 @@ Publishes the next staged lesson (lowest-numbered days/day-NN.html sitting in
 staging/) into the live days/ folder, flips its index.html card from
 "coming-soon" to live, and marks it Published in plan.md.
 
-Run by .github/workflows/daily-publish.yml on a daily cron check, but only
-actually publishes every other day -- cadence is enforced here via a state
-file (staging/.last_published) rather than the cron schedule itself, so it
+Run by .github/workflows/daily-publish.yml on a daily cron check. Publishes
+one lesson per day -- cadence is enforced here via a state file
+(staging/.last_published) rather than the cron schedule itself, so it
 holds even if a scheduled run is delayed or skipped.
 Exits with status 1 (no-op) if staging/ is empty or it isn't time yet.
 """
@@ -22,7 +22,7 @@ DAYS = os.path.join(ROOT, "days")
 INDEX = os.path.join(ROOT, "index.html")
 PLAN = os.path.join(ROOT, "plan.md")
 STATE_FILE = os.path.join(STAGING, ".last_published")
-PUBLISH_INTERVAL_DAYS = 2
+PUBLISH_INTERVAL_DAYS = 1
 
 
 def next_staged_file():
@@ -101,7 +101,7 @@ def publish(path):
 
 if __name__ == "__main__":
     if not due_to_publish():
-        print(f"Not due yet -- publishing every {PUBLISH_INTERVAL_DAYS} days. Skipping today.")
+        print(f"Not due yet -- publishing every {PUBLISH_INTERVAL_DAYS} day(s). Skipping today.")
         sys.exit(1)
     next_file = next_staged_file()
     if not next_file:
