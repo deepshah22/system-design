@@ -1,11 +1,11 @@
-name: Daily Lesson Publish
+name: Lesson Publish (3x/week)
 
 on:
   schedule:
-    # Runs daily at 13:00 UTC. The script enforces a strict one-lesson-per-day
-    # cadence via staging/.last_published, so it stays correct even if a run
-    # is delayed or skipped.
-    - cron: "0 13 * * *"
+    # Runs Mon/Wed/Fri at 13:00 UTC -- a 3-day-a-week reading cadence, not a
+    # literal calendar deadline. The script also guards against publishing
+    # twice in one day via staging/.last_published, so manual re-runs are safe.
+    - cron: "0 13 * * 1,3,5"
   workflow_dispatch: {}
 
 permissions:

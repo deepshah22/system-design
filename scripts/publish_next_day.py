@@ -4,11 +4,13 @@ Publishes the next staged lesson (lowest-numbered days/day-NN.html sitting in
 staging/) into the live days/ folder, flips its index.html card from
 "coming-soon" to live, and marks it Published in plan.md.
 
-Run by .github/workflows/daily-publish.yml on a daily cron check. Publishes
-one lesson per day -- cadence is enforced here via a state file
-(staging/.last_published) rather than the cron schedule itself, so it
-holds even if a scheduled run is delayed or skipped.
-Exits with status 1 (no-op) if staging/ is empty or it isn't time yet.
+Run by .github/workflows/daily-publish.yml on a Mon/Wed/Fri cron check (3x a
+week -- see the workflow's cron expression for the actual cadence). One
+lesson is published per run; the state file (staging/.last_published) only
+guards against publishing twice on the same calendar day if a run is
+manually re-triggered, since the weekly cadence itself lives in the cron
+schedule, not here.
+Exits with status 1 (no-op) if staging/ is empty or it already published today.
 """
 import re
 import sys
@@ -22,7 +24,6 @@ DAYS = os.path.join(ROOT, "days")
 INDEX = os.path.join(ROOT, "index.html")
 PLAN = os.path.join(ROOT, "plan.md")
 STATE_FILE = os.path.join(STAGING, ".last_published")
-PUBLISH_INTERVAL_DAYS = 1
 
 
 def next_staged_file():
@@ -39,7 +40,7 @@ def due_to_publish():
         last_date = date.fromisoformat(last)
     except ValueError:
         return True
-    return (date.today() - last_date).days >= PUBLISH_INTERVAL_DAYS
+    return last_date != date.today()
 
 
 def mark_published_today():
@@ -101,7 +102,7 @@ def publish(path):
 
 if __name__ == "__main__":
     if not due_to_publish():
-        print(f"Not due yet -- publishing every {PUBLISH_INTERVAL_DAYS} day(s). Skipping today.")
+        print("Already published a lesson today. Skipping.")
         sys.exit(1)
     next_file = next_staged_file()
     if not next_file:

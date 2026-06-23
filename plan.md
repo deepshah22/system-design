@@ -1,19 +1,20 @@
 # System Design Mastery — Course Plan
 
 **Course URL (GitHub Pages):** https://deepshah22.github.io/system-design/  
-**Duration:** 90 days (~30 min/day)  
+**Scope:** 90 lessons total (~30 min each)  
+**Publish cadence:** 3x/week (Mon, Wed, Fri) — not literally tied to a 3-month calendar window; at 3 lessons/week, 90 lessons takes ~30 weeks (~7 months) of real time, paced for actual retention rather than rushing daily.  
 **Target:** Principal Engineer level interview preparation  
-**Last Updated:** 2026-06-18
+**Last Updated:** 2026-06-23
 
 ---
 
 ## Course Overview
 
-A 3-month progressive system design course that builds from fundamentals to principal-engineer-level mastery. One topic is published each day, designed to take ~30 minutes to read. By day 90, the student can confidently answer any system design interview question at top tech companies.
+A progressive, 90-lesson system design course that builds from fundamentals to principal-engineer-level mastery. One topic is published every Monday/Wednesday/Friday, each designed to take ~30 minutes to read. By the end of all 90 lessons, the student can confidently answer system design interview questions at top tech companies.
 
 ### Structure
 - **Homepage:** `index.html` — tracks progress, navigates all 90 days
-- **Daily lessons:** `days/day-NN.html` — self-contained HTML pages
+- **Lessons:** `days/day-NN.html` — self-contained HTML pages, released 3x/week
 - **Diagrams:** Excalidraw-style SVGs rendered with `roughjs`, embedded inline
 - **Progress:** Tracked in browser `localStorage`, no backend required
 
@@ -36,23 +37,24 @@ retention rather than passive reading:
 Days 1–4 were written before this framework existed and use a more traditional structure; they
 remain published as-is and are candidates for a future rewrite pass.
 
-### Daily Publish Automation
+### Publish Automation (3x/week: Mon, Wed, Fri)
 Lessons are authored ahead of time into `staging/day-NN.html` (so quality isn't rushed), but they
-are only **released** one per day — `staging/` is never linked from the live site. A GitHub Actions
-workflow (`.github/workflows/daily-publish.yml`) checks in every day at 13:00 UTC, and
-`scripts/publish_next_day.py` publishes exactly **one lesson per day** — cadence is tracked in
-`staging/.last_published` rather than the cron schedule itself, so it stays correct even if a run
-is delayed or skipped. When it is due, the script:
+are only **released** on a Mon/Wed/Fri cadence — `staging/` is never linked from the live site. A
+GitHub Actions workflow (`.github/workflows/daily-publish.yml`) runs on cron `0 13 * * 1,3,5`
+(13:00 UTC on Mon/Wed/Fri), and `scripts/publish_next_day.py` publishes exactly **one lesson per
+run**. The weekly cadence lives in the cron expression itself; `staging/.last_published` only
+guards against publishing twice if a run is manually re-triggered the same day. When it runs, the
+script:
 - Moves the lowest-numbered staged file into `days/`
 - Flips that day's card in `index.html` from "coming soon" to live
 - Marks the day "✅ Published" in this file and appends a Progress Log row
 - Commits and pushes directly to `main`
 
-This guarantees real one-topic-per-day pacing without needing a live AI call (and therefore no API
-key, no runtime quality risk) — the work of writing each lesson happens in advance, the *release*
-is what's metered daily. This automation only takes effect once it lives on `main` (GitHub Actions
-schedules only fire off the default branch), which is why everything is being pushed to `main`
-directly today.
+This guarantees real, paced lesson-by-lesson release (3 per week, not all 90 dumped at once)
+without needing a live AI call (and therefore no API key, no runtime quality risk) — the work of
+writing each lesson happens in advance, the *release* is what's metered. This automation only takes
+effect once it lives on `main` (GitHub Actions schedules only fire off the default branch), which is
+why everything is being pushed to `main` directly.
 
 ---
 
@@ -254,7 +256,7 @@ system-design/
 - [x] Memorable Learning Framework designed (hook → anchor → story → mental model → sim → memory palace → connection graph → active recall → Feynman test → real-world examples → flashcards/memory test/takeaway)
 - [x] Day 5 published using the new framework: Load Balancing
 - [x] Day 6 published using the new framework: Caching Strategies & Patterns
-- [x] Daily publish automation: `scripts/publish_next_day.py` + `.github/workflows/daily-publish.yml` (cron 13:00 UTC, fixed to a strict 1-day cadence)
-- [x] Course history consolidated onto `main` (was previously isolated on a feature branch, so the daily cron never actually ran — GitHub Actions schedules only fire from the default branch)
-- [ ] Days 7–90: to be authored into `staging/` and auto-published one per day
+- [x] Publish automation: `scripts/publish_next_day.py` + `.github/workflows/daily-publish.yml` (cron `0 13 * * 1,3,5` — Mon/Wed/Fri, 3x/week cadence)
+- [x] Course history consolidated onto `main` (was previously isolated on a feature branch, so the cron never actually ran — GitHub Actions schedules only fire from the default branch)
+- [ ] Days 7–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
 - [ ] GitHub Pages enabled on `main` branch (verify in repo Settings → Pages → source: `main` / root)
