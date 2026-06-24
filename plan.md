@@ -258,5 +258,7 @@ system-design/
 - [x] Day 6 published using the new framework: Caching Strategies & Patterns
 - [x] Publish automation: `scripts/publish_next_day.py` + `.github/workflows/daily-publish.yml` (cron `0 13 * * 1,3,5` — Mon/Wed/Fri, 3x/week cadence)
 - [x] Course history consolidated onto `main` (was previously isolated on a feature branch, so the cron never actually ran — GitHub Actions schedules only fire from the default branch)
-- [ ] Days 7–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
-- [ ] GitHub Pages enabled on `main` branch (verify in repo Settings → Pages → source: `main` / root)
+- [x] Course history merged onto `main` (was stuck on an unmerged feature branch — the live site and the publish cron only work from `main`, so this was the actual blocker, now resolved)
+- [x] Day 7 (Redis & Memcached Deep Dive) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
+- [ ] Days 8–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
+- [ ] GitHub Pages enabled on `main` branch (verify in repo Settings → Pages → source: `main` / root) — **action needed**: if https://deepshah22.github.io/system-design/ 404s, this manual toggle is the only remaining step
