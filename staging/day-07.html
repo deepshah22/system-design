@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 07: Redis & Memcached Deep Dive | System Design Mastery</title>
+  <meta name="description" content="Two different chairs for the same living room. Redis vs Memcached, data structures, persistence, clustering, and pub/sub — taught through story and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .objectives { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+    .objectives-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.6rem; }
+    .objectives ul { padding-left: 1.25rem; margin: 0; }
+    .objectives li { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.3rem; }
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 07</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 07 of 90</span>
+      <span class="meta-pill">⏱ ~30 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 1 — Core Concepts</span>
+    </div>
+    <h1>Redis &amp; Memcached<br><span style="color:var(--accent)">Two Chairs for the Same Living Room</span></h1>
+    <p class="lead">
+      Yesterday you learned that a cache sits between your app and your database. Today you learn
+      what's actually sitting in that spot — and why "just use Redis" and "just use Memcached" are
+      both right, depending entirely on what you're asking the cache to remember.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#hook">The Hook</a>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#compare">Redis vs Memcached</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#depth">Redis In Depth</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#feynman">Feynman Test</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <div class="objectives">
+        <div class="objectives-title">Learning Objectives</div>
+        <ul>
+          <li>Explain the core architectural difference between Redis and Memcached</li>
+          <li>Compare them on data structures, persistence, replication, and clustering</li>
+          <li>Reason about when a rich data structure (sorted set, list, hash) beats a plain key-blob store</li>
+          <li>Understand Redis persistence (RDB vs AOF) and Redis Cluster sharding at a high level</li>
+          <li>Apply this to interview questions like "would you use Redis or Memcached here, and why?"</li>
+        </ul>
+      </div>
+
+      <section id="hook">
+        <div class="hook">
+          Why does Twitter use Redis to store your timeline, but a plain CDN-fronted app might be
+          perfectly happy with <span>Memcached</span> for session tokens?
+        </div>
+        <p>
+          Because not all caching jobs are the same job. Some caching jobs just need a fast box to
+          stash a blob of bytes and forget about it. Others need the cache to actually understand
+          the shape of the data — to know it's a sorted list of recent tweet IDs, or a set of
+          followers, or a hash of user fields — so it can update a tiny slice of it without
+          re-fetching and re-writing the whole thing. That distinction is Redis vs Memcached.
+        </p>
+      </section>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🪑</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Two chairs in the same living room. One is a simple, sturdy stool — sit down, get up,
+            nothing fancy (Memcached: key → blob). The other is a recliner with built-in drawers,
+            a cup holder, and a footrest that folds out on command (Redis: key → rich structures
+            you can manipulate in place).</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="kv-diagram" width="820" height="260" viewBox="0 0 820 260"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Cache Cathy</span> has been running her front desk for a
+            while now, and the warehouse owner just asked her to hire some help. Two candidates show
+            up.
+          </p>
+          <p>
+            The first, <strong>Mem</strong>, is fast, simple, and a little forgetful — give him a
+            label and a box, and he'll hand the box back instantly when you ask for that label
+            again. He doesn't care what's in the box. If the building loses power, his desk is
+            wiped clean and he shrugs: "that's the deal, I never promised to remember forever." But
+            because he doesn't track anything fancy, he can run on every spare desk in the building
+            at once (multi-threaded), and the more desks Cathy gives him, the faster he gets.
+          </p>
+          <p>
+            The second, <strong>Red</strong>, is more particular. He doesn't just hold boxes — he
+            organizes what's inside them. Ask him for "the top 10 trending hashtags" and he can
+            actually maintain that ranking for you, live, because he understands sorted sets. He
+            also keeps a notebook of everything he's done (the AOF log) and takes periodic
+            photographs of his whole desk (RDB snapshots), so if the power goes out, he can mostly
+            reconstruct what was there. He works alone at his own desk, one task at a time
+            (single-threaded core loop) — but he's so fast at each task that it rarely matters, and
+            when one desk isn't enough, Cathy gives him a team of desks that split the work between
+            them (Redis Cluster).
+          </p>
+          <p>
+            Cathy doesn't pick a favorite. For session tokens and simple lookups, she calls Mem.
+            For leaderboards, rate limiters, and anything that needs real structure, she calls Red.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">Memcached = a fast, simple, multi-threaded key → blob store
+          with no persistence. Redis = a fast, single-threaded key → <em>data structure</em> server
+          with optional persistence, replication, and clustering.</div>
+        </div>
+      </section>
+
+      <section id="compare">
+        <h2>Redis vs Memcached</h2>
+        <table class="algo-table">
+          <tr><th>Dimension</th><th>Memcached</th><th>Redis</th></tr>
+          <tr><td><strong>Data structures</strong></td><td>Plain key → byte blob (you serialize/deserialize yourself)</td><td>Strings, lists, sets, hashes, sorted sets, streams, bitmaps, HyperLogLog</td></tr>
+          <tr><td><strong>Persistence</strong></td><td>None — pure in-memory, data is gone on restart</td><td>Optional: RDB snapshots, AOF log, or both</td></tr>
+          <tr><td><strong>Replication</strong></td><td>Not built in (client-side sharding only)</td><td>Native primary-replica replication</td></tr>
+          <tr><td><strong>Clustering</strong></td><td>Client-side hashing across nodes; nodes don't know about each other</td><td>Redis Cluster — built-in sharding with 16,384 hash slots</td></tr>
+          <tr><td><strong>Threading model</strong></td><td>Multi-threaded — scales with CPU cores for raw throughput</td><td>Single-threaded core event loop (I/O threading added for networking in v6+)</td></tr>
+          <tr><td><strong>Extra features</strong></td><td>None — intentionally minimal</td><td>Pub/sub, transactions, Lua scripting, TTLs per key, geo commands</td></tr>
+          <tr><td><strong>Best for</strong></td><td>Simple, large-scale, ephemeral key-value caching (sessions, HTML fragments)</td><td>Anything needing structure, durability, or messaging (leaderboards, queues, rate limiters)</td></tr>
+        </table>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself</h2>
+        <div class="sim-box">
+          <p>Pick a use case and see which tool actually fits — and why reaching for the wrong one
+          means writing a lot of extra application code.</p>
+          <div class="sim-controls">
+            <label for="sim-usecase" style="min-width:160px;font-size:.85rem;">Use case:</label>
+            <select id="sim-usecase" style="background:var(--bg-card); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:.4rem .6rem;">
+              <option value="session">Cache user session tokens</option>
+              <option value="leaderboard">Live game leaderboard (top 10, ranked)</option>
+              <option value="ratelimit">API rate limiter (requests per minute)</option>
+              <option value="html">Cache rendered HTML fragments</option>
+              <option value="pubsub">Fan out live notifications to many clients</option>
+            </select>
+          </div>
+          <div class="sim-output" id="sim-output">Loading…</div>
+        </div>
+      </section>
+
+      <section id="depth">
+        <h2>Redis In Depth</h2>
+        <h3>Data structures</h3>
+        <p>This is Redis's whole identity: every value has a type, and each type has commands that
+        operate on it directly, in place, on the server. A <strong>list</strong> gives you
+        <code>LPUSH</code>/<code>RPOP</code> for queues. A <strong>set</strong> gives you union and
+        intersection — instant "mutual friends" queries. A <strong>sorted set (ZSET)</strong> keeps
+        members ordered by score, so <code>ZRANGE</code> gives you a leaderboard for free. A
+        <strong>hash</strong> lets you store and update individual fields of an object (like a user
+        profile) without serializing the whole thing.</p>
+
+        <h3>Persistence: RDB vs AOF</h3>
+        <p><strong>RDB (Redis Database)</strong> takes a point-in-time binary snapshot of the
+        entire dataset on a schedule — compact, fast to restart from, but you can lose everything
+        since the last snapshot. <strong>AOF (Append-Only File)</strong> logs every write
+        operation as it happens — far less data loss on crash, but a larger file and slower
+        restarts since Redis replays the whole log. Most production setups use both: RDB for fast
+        recovery, AOF for durability between snapshots.</p>
+
+        <h3>Redis Cluster: sharding</h3>
+        <p>Redis Cluster splits the keyspace into <strong>16,384 hash slots</strong>. Every key is
+        hashed to a slot, and each slot is owned by one node (with replicas for failover). Clients
+        can be redirected (<code>MOVED</code>) to the right node, so the cluster scales
+        horizontally without a single coordinator becoming the bottleneck — a direct, concrete
+        cousin of the consistent hashing you'll formalize on Day 14.</p>
+
+        <h3>Pub/Sub</h3>
+        <p>Redis lets clients <code>SUBSCRIBE</code> to named channels and <code>PUBLISH</code>
+        messages to them; every subscriber gets a copy instantly. It's not a durable queue — if no
+        one's listening, the message is gone — but it's the simplest possible way to fan out
+        real-time events, and it's the conceptual bridge to the dedicated message queues
+        (Day 18) you'll meet when you need delivery guarantees Redis pub/sub doesn't provide.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You already furnished the living room on Day 6. Today you're picking out the chairs.</h4>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>Front Door</strong> — <span>Load Balancer (Day 5). Decided who gets in.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📦</span><div><strong>Living Room</strong> — <span>Cache (Day 6). The stuff you reach for first, sitting right by the door.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🪑</span><div><strong>The Chairs</strong> — <span>Redis &amp; Memcached (today). Same room, two different jobs — a plain stool for quick sits (Memcached), a multi-drawer recliner for everything else (Redis).</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📚</span><div><strong>Library</strong> — <span>Database. The permanent, organized archive deeper in the house (Day 8+).</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📮</span><div><strong>Mail Room</strong> — <span>Message Queue. Where work waits until someone's ready for it (Day 18) — Redis pub/sub is the mail slot in the living room wall that leads there.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Cache concept (Day 6)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Redis &amp; Memcached (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Consistent Hashing (Day 14)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Redis Pub/Sub (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Message Queues (Day 18)</span>
+        </div>
+        <p>Today is the implementation layer underneath Day 6's caching theory. Redis Cluster's hash
+        slots are a concrete preview of Day 14's consistent hashing, and Redis pub/sub is the
+        simplest possible on-ramp to the dedicated message queues you'll formalize on Day 18.</p>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ In one sentence, what's the core architectural difference between Redis and Memcached? (click to reveal)</div>
+          <div class="recall-answer">Memcached stores plain byte blobs behind a key with no
+          persistence or built-in structure; Redis stores typed data structures (lists, sets,
+          hashes, sorted sets) that the server can manipulate directly, and can optionally persist
+          and replicate them.</div>
+        </div>
+      </section>
+
+      <section id="feynman">
+        <h2>Feynman Test</h2>
+        <div class="feynman-box">
+          <p><strong>Explain why a leaderboard needs Redis instead of Memcached, to a 10-year-old.</strong> Write it below, then compare.</p>
+          <textarea placeholder="It's like a..."></textarea>
+          <button class="btn btn-outline feynman-reveal-btn" style="margin-top:.75rem;">Reveal model answer</button>
+          <div class="feynman-model">"Memcached is a box of labeled jars — to update a ranking
+          you'd have to take the whole jar out, fix the list by hand, and put it back. Redis is
+          more like a whiteboard where the scores are already sorted for you, so asking 'who's in
+          the top 10 right now?' is instant, even as scores keep changing."</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🐦 Twitter</div><p>Uses Redis heavily for timelines and the social graph — sorted sets are a natural fit for ranked, time-ordered tweet IDs.</p></div>
+          <div class="realworld-card"><div class="rw-company">📸 Instagram</div><p>Has used Memcached extensively for its feed and session caching, valuing its simplicity and raw throughput at massive scale.</p></div>
+          <div class="realworld-card"><div class="rw-company">🐙 GitHub</div><p>Uses Redis for background job queues (via Sidekiq/Resque-style workers) and caching, leaning on its data structures beyond simple key-value lookups.</p></div>
+          <div class="realworld-card"><div class="rw-company">📚 Stack Overflow</div><p>Has documented using Redis for caching and rate limiting, citing its low latency and rich command set as decisive over a plain key-value store.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What's the core difference between Redis and Memcached?</div>
+          <div class="fc-a">A: Memcached stores plain blobs with no persistence; Redis stores typed data structures and can persist, replicate, and cluster them.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: RDB vs AOF — what's the tradeoff?</div>
+          <div class="fc-a">A: RDB is a compact periodic snapshot (fast restart, more data loss risk); AOF logs every write (less data loss, slower restarts).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: How does Redis Cluster shard data?</div>
+          <div class="fc-a">A: It splits the keyspace into 16,384 hash slots, each owned by a node, so the cluster scales horizontally without one coordinator.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is Memcached often faster for raw, simple throughput?</div>
+          <div class="fc-a">A: It's multi-threaded with no structure to maintain, so it scales with CPU cores; Redis runs its core logic on a single thread.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Name three data structures Redis supports that Memcached has no concept of.</li>
+          <li>What's the difference between RDB snapshots and AOF logging?</li>
+          <li>Why is Redis's single-threaded core not the bottleneck you'd expect?</li>
+          <li>How many hash slots does Redis Cluster use to shard keys, and why does that matter?</li>
+          <li>Give one use case better suited to Memcached and one better suited to Redis.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: Memcached is a fast, disposable key-blob store; Redis is a
+          fast key-<em>structure</em> server that can also persist, replicate, and message. Choose
+          based on whether you need the cache to understand the shape of your data — not on
+          benchmarks alone.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-06.html">← Day 06: Caching Strategies &amp; Patterns</a>
+        <a href="day-08.html" class="coming-soon-link">Day 08: SQL vs NoSQL: When to Use What →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 07 of 90 — Redis &amp; Memcached Deep Dive</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ─── Try It Yourself: use-case → tool recommendation ───
+  const usecaseEl = document.getElementById('sim-usecase');
+  const output = document.getElementById('sim-output');
+  const advice = {
+    session: "Memcached fits well: a session token is just an opaque blob, you don't need structure, persistence, or ordering — just speed and simplicity at scale.",
+    leaderboard: "Redis wins: a sorted set (ZSET) keeps the leaderboard ranked automatically, so 'top 10 right now' is an O(log N) operation instead of you re-sorting a blob on every read.",
+    ratelimit: "Redis wins: atomic INCR plus a TTL on a per-user key implements a rate limiter in two commands — Memcached's INCR exists but you lose Redis's atomic expiry combos and Lua scripting for edge cases.",
+    html: "Memcached is the classic choice: rendered HTML is just bytes, there's nothing to structure, and Memcached's multi-threaded design handles huge fragment-caching workloads cheaply.",
+    pubsub: "Redis is the only real option here: Memcached has no pub/sub primitive at all. Redis PUBLISH/SUBSCRIBE fans a message out to every connected subscriber instantly."
+  };
+  function render() {
+    output.textContent = advice[usecaseEl.value];
+  }
+  usecaseEl.addEventListener('change', render);
+  render();
+
+  // ─── Diagram: Memcached (key→blob) vs Redis (key→structures) ───
+  function drawDiagram() {
+    const svg = document.getElementById('kv-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    const rs = rough.svg(svg);
+
+    // Section labels
+    function label(x, y, text, color) {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('fill', color || '#94a3b8');
+      t.setAttribute('font-family', 'Inter, sans-serif');
+      t.setAttribute('font-size', '12');
+      t.setAttribute('font-weight', '700');
+      t.setAttribute('letter-spacing', '0.05em');
+      t.textContent = text;
+      svg.appendChild(t);
+    }
+    function small(x, y, text, color, size) {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('fill', color || '#cbd5e1');
+      t.setAttribute('font-family', 'Inter, sans-serif');
+      t.setAttribute('font-size', size || '11');
+      t.textContent = text;
+      svg.appendChild(t);
+    }
+
+    // LEFT: Memcached — key -> single blob
+    label(170, 28, 'MEMCACHED', '#f59e0b');
+    const keyBox = rs.rectangle(70, 60, 90, 44, { stroke: '#f59e0b', strokeWidth: 1.6, roughness: 1.3, fill: '#f59e0b18', fillStyle: 'solid' });
+    svg.appendChild(keyBox);
+    small(115, 86, 'key: "user:42"', '#f1f5f9', 10.5);
+
+    const arrow1 = rs.line(160, 82, 205, 82, { stroke: '#64748b', strokeWidth: 1.5, roughness: 0.8 });
+    svg.appendChild(arrow1);
+    const head1 = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    head1.setAttribute('points', '210,82 203,78 203,86');
+    head1.setAttribute('fill', '#64748b');
+    svg.appendChild(head1);
+
+    const blob = rs.rectangle(215, 50, 110, 64, { stroke: '#fbbf24', strokeWidth: 1.6, roughness: 1.5, fill: '#fbbf2418', fillStyle: 'cross-hatch' });
+    svg.appendChild(blob);
+    small(270, 78, 'opaque', '#fde68a', 11);
+    small(270, 94, 'byte blob', '#fde68a', 11);
+
+    // Divider
+    const divider = rs.line(400, 15, 400, 245, { stroke: '#334155', strokeWidth: 1, roughness: 0.6, strokeLineDash: [4, 4] });
+    svg.appendChild(divider);
+
+    // RIGHT: Redis — key -> typed structures
+    label(610, 28, 'REDIS', '#22c55e');
+    const keyBox2 = rs.rectangle(450, 60, 90, 44, { stroke: '#22c55e', strokeWidth: 1.6, roughness: 1.3, fill: '#22c55e18', fillStyle: 'solid' });
+    svg.appendChild(keyBox2);
+    small(495, 86, 'key: "user:42"', '#f1f5f9', 10.5);
+
+    const structures = [
+      { x: 600, y: 50, w: 95, h: 38, label: 'LIST', color: '#34d399' },
+      { x: 600, y: 96, w: 95, h: 38, label: 'SET', color: '#34d399' },
+      { x: 705, y: 50, w: 95, h: 38, label: 'HASH', color: '#34d399' },
+      { x: 705, y: 96, w: 95, h: 38, label: 'ZSET', color: '#34d399' },
+    ];
+    structures.forEach(s => {
+      const r = rs.rectangle(s.x, s.y, s.w, s.h, { stroke: s.color, strokeWidth: 1.4, roughness: 1.3, fill: s.color + '15', fillStyle: 'solid' });
+      svg.appendChild(r);
+      small(s.x + s.w / 2, s.y + s.h / 2 + 4, s.label, '#bbf7d0', 11);
+    });
+
+    const arrow2 = rs.line(540, 82, 580, 70, { stroke: '#64748b', strokeWidth: 1.5, roughness: 0.8 });
+    svg.appendChild(arrow2);
+    const arrow3 = rs.line(540, 82, 580, 115, { stroke: '#64748b', strokeWidth: 1.5, roughness: 0.8 });
+    svg.appendChild(arrow3);
+
+    // Bottom captions
+    small(170, 235, '"Here\'s your box. I don\'t look inside."', '#64748b', 10.5);
+    small(610, 235, '"I know the shape — I can edit a piece directly."', '#64748b', 10.5);
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawDiagram, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawDiagram);
+  }
+})();
+</script>
+
+</body>
+</html>
