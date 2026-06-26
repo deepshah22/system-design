@@ -69,7 +69,7 @@ why everything is being pushed to `main` directly.
 | 04 | Content Delivery Networks (CDN) | ✅ Published |
 | 05 | Load Balancing: Algorithms & Patterns | ✅ Published |
 | 06 | Caching Strategies & Patterns | ✅ Published |
-| 07 | Redis & Memcached Deep Dive | ⏳ Scheduled |
+| 07 | Redis & Memcached Deep Dive | ✅ Published |
 
 ### Week 2: Storage Fundamentals
 | Day | Topic | Status |
@@ -237,6 +237,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-06-26 | Day 7 | Day 7: Redis & Memcached Deep Dive |
 | 2026-06-19 | Day 6 | Day 6: Caching Strategies & Patterns |
 | 2026-06-18 | Day 5 | Day 5: Load Balancing — Algorithms & Patterns. Introduced the Memorable Learning Framework (hook, story, memory palace, active recall, Feynman test, flashcards) and the daily-publish automation. |
 | 2026-06-14 | Day 1 | Initial course launch. Homepage, Day 1: Interview Framework |
