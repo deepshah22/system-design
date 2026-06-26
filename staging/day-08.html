@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 08: SQL vs NoSQL: When to Use What | System Design Mastery</title>
+  <meta name="description" content="A filing cabinet vs a pile of labeled boxes. SQL vs NoSQL, the four NoSQL families, and a real decision framework — taught through story and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .objectives { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+    .objectives-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.6rem; }
+    .objectives ul { padding-left: 1.25rem; margin: 0; }
+    .objectives li { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.3rem; }
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 08</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 08 of 90</span>
+      <span class="meta-pill">⏱ ~30 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 2 — Storage Fundamentals</span>
+    </div>
+    <h1>SQL vs NoSQL<br><span style="color:var(--accent)">The Filing Cabinet vs the Pile of Labeled Boxes</span></h1>
+    <p class="lead">
+      You've been caching data near your app for two days now. Today you go one floor down, into the
+      library itself, and meet the argument that's been running for fifty years: should the archive
+      be one rigid filing cabinet with a strict schema, or a sprawling warehouse of boxes, each
+      organized however its own contents demand? The honest answer is "it depends" — but today you
+      learn exactly <em>what</em> it depends on.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#hook">The Hook</a>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#families">The Four NoSQL Families</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#depth">SQL In Depth</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#feynman">Feynman Test</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <div class="objectives">
+        <div class="objectives-title">Learning Objectives</div>
+        <ul>
+          <li>Explain the relational model, normalization, and why ACID guarantees exist</li>
+          <li>Name the four major NoSQL data models and give a real product example of each</li>
+          <li>Reason about when joins/transactions/strong consistency make SQL the right call</li>
+          <li>Reason about when flexible schema, horizontal scale, or access-pattern modeling make NoSQL the right call</li>
+          <li>Apply a concrete decision framework to "SQL or NoSQL?" interview questions, and explain polyglot persistence</li>
+        </ul>
+      </div>
+
+      <section id="hook">
+        <div class="hook">
+          Why does your bank store your balance in a rigid, decades-old relational database — but
+          Amazon stores your shopping cart in something that looks nothing like a spreadsheet at all?
+        </div>
+        <p>
+          Because a bank balance and a shopping cart are answering completely different questions.
+          A balance has to survive a power outage mid-transfer with exactly one correct answer —
+          there is no "approximately your balance." A shopping cart just needs to be there,
+          instantly, for one specific user, at the scale of hundreds of millions of carts a day, and
+          it's fine if a cart write takes a few hundred milliseconds to fully replicate. SQL vs
+          NoSQL isn't "old vs new" or "boring vs cool" — it's a real engineering tradeoff between
+          structure and scale, and picking wrong shows up immediately in an interview.
+        </p>
+      </section>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🗄️</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>One side of the library: a steel filing cabinet, every drawer labeled, every folder
+            the exact same shape, cross-referenced by a card catalog (SQL — rigid schema, joins,
+            guarantees). The other side: a warehouse of labeled boxes, each box organized however
+            its contents actually get used, spread across a dozen shelving units that can grow
+            without anyone re-filing the whole cabinet (NoSQL — flexible schema, horizontal scale).</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="shape-diagram" width="820" height="280" viewBox="0 0 820 280"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Database Dave</span> has run the library's filing cabinet
+            for years. Every record has a fixed shape — columns nailed down in advance — and every
+            folder lives in exactly one drawer, cross-referenced by ID so Dave can answer questions
+            like "show me every order placed by every customer in Texas this month" by joining the
+            customers drawer to the orders drawer. When two people try to update the same folder at
+            once, Dave's cabinet enforces a strict queue: one transaction finishes completely, or it
+            doesn't happen at all. That's his whole personality — consistency above all else.
+          </p>
+          <p>
+            One day the warehouse owner hires <span class="story-character">Document Dana</span> to
+            handle the overflow. Dana doesn't believe in fixed drawers. She hands you a box, and
+            whatever you put in it — a product listing with 30 fields, then a product listing with
+            3 fields and a nested list of reviews — is fine, because each box just describes
+            itself. She doesn't do joins; if you need a customer's order history, she expects you
+            to have already put a copy of what you need <em>inside</em> the box you're reading, so
+            you never have to walk to another shelf. And because her boxes don't depend on each
+            other, she can spread them across a hundred shelving units in different rooms, and
+            adding a new room never requires reorganizing the old ones.
+          </p>
+          <p>
+            Dave and Dana don't compete for the same job. The warehouse owner gives Dave anything
+            that must never be wrong — payments, inventory counts, anything with money attached.
+            Dana gets anything that must never be slow at massive scale and can tolerate a slightly
+            looser shape — product catalogs, session data, activity feeds, sensor logs. Most modern
+            systems, the owner realizes, need both Dave and Dana working at the same time. That's
+            polyglot persistence: no single storage engine is "the" database anymore.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">SQL = a fixed schema with relationships and ACID guarantees,
+          optimized for correctness and complex queries. NoSQL = a flexible schema modeled around
+          your <em>access pattern</em>, optimized for horizontal scale and availability. You don't
+          pick a religion — you pick the right tool per workload, and most real systems use several.</div>
+        </div>
+      </section>
+
+      <section id="families">
+        <h2>The Four NoSQL Families</h2>
+        <p>"NoSQL" isn't one thing — it's four genuinely different data models that happen to share
+        the label "not strictly relational." Knowing which family solves which problem is the actual
+        interview skill; "I'd use NoSQL" with no follow-up is a non-answer.</p>
+        <div class="family-grid">
+          <div class="family-card">
+            <h4>🔑 Key-Value</h4>
+            <p>The simplest shape: a key maps to an opaque value, no query language beyond get/put.
+            Blazing fast, trivially shardable.</p>
+            <div class="eg">e.g. DynamoDB, Redis, Riak — sessions, shopping carts, feature flags</div>
+          </div>
+          <div class="family-card">
+            <h4>📄 Document</h4>
+            <p>Stores semi-structured JSON/BSON documents. Each document is self-contained and can
+            have a different shape from its neighbors; you embed related data instead of joining.</p>
+            <div class="eg">e.g. MongoDB, Couchbase — product catalogs, content management, user profiles</div>
+          </div>
+          <div class="family-card">
+            <h4>🏛️ Column-Family</h4>
+            <p>Rows are grouped by a partition key, but each row can have a different set of
+            columns, stored together on disk by column family for fast wide-row scans and writes.</p>
+            <div class="eg">e.g. Cassandra, HBase, Bigtable — time-series, write-heavy event/metrics data</div>
+          </div>
+          <div class="family-card">
+            <h4>🕸️ Graph</h4>
+            <p>Stores nodes and edges as first-class citizens, optimized for traversing relationships
+            many hops deep — something a relational JOIN gets brutally slow at.</p>
+            <div class="eg">e.g. Neo4j, Amazon Neptune — social graphs, fraud rings, recommendation paths</div>
+          </div>
+        </div>
+        <p>Notice the common thread: every NoSQL family trades away something SQL guarantees
+        (joins, multi-row transactions, a single rigid schema) in exchange for a shape that fits one
+        specific access pattern extremely well. That tradeoff is the whole story.</p>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself</h2>
+        <div class="sim-box">
+          <p>Pick a real workload and see which storage model actually fits — and which specific
+          guarantee you'd be giving up by choosing the other one.</p>
+          <div class="sim-controls">
+            <label for="sim-usecase" style="min-width:160px;font-size:.85rem;">Workload:</label>
+            <select id="sim-usecase" style="background:var(--bg-card); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:.4rem .6rem;">
+              <option value="payments">Bank account transfers</option>
+              <option value="catalog">E-commerce product catalog</option>
+              <option value="cart">Shopping cart / session store</option>
+              <option value="timeseries">IoT sensor readings (millions/sec)</option>
+              <option value="social">Social graph ("friends of friends")</option>
+              <option value="reporting">Monthly sales reporting across regions</option>
+            </select>
+          </div>
+          <div class="sim-output" id="sim-output">Loading…</div>
+        </div>
+      </section>
+
+      <section id="depth">
+        <h2>SQL In Depth: The Relational Model, ACID, and the Decision Framework</h2>
+
+        <h3>The relational model & normalization</h3>
+        <p>A relational database organizes data into <strong>tables</strong> of fixed-shape rows,
+        related to each other by keys instead of by copying data around. <strong>Normalization</strong>
+        is the discipline of splitting data so each fact lives in exactly one place — a customer's
+        address lives in the customers table, not copied into every one of their orders — so an
+        update only ever has to happen once. The cost is that reading a full picture (a customer
+        <em>and</em> their orders) requires a <strong>JOIN</strong> across tables, which is exactly
+        the operation NoSQL document/key-value stores choose not to support well.</p>
+
+        <h3>ACID — the four guarantees (full depth on Day 9)</h3>
+        <p>SQL databases are built around <strong>ACID</strong> transactions: <strong>Atomicity</strong>
+        (a transaction fully happens or fully doesn't), <strong>Consistency</strong> (it never leaves
+        the data in a state that violates your constraints), <strong>Isolation</strong> (concurrent
+        transactions don't see each other's half-finished work), and <strong>Durability</strong>
+        (once committed, it survives a crash). This is precisely why your bank balance lives in a
+        relational database — "the transfer either happened completely or not at all, even if the
+        power dies mid-transfer" is an ACID guarantee, not a NoSQL one. Day 9 unpacks each letter in
+        full with isolation levels and concrete failure scenarios.</p>
+
+        <h3>BASE — NoSQL's looser alternative</h3>
+        <p>Most NoSQL stores trade ACID for <strong>BASE</strong>: <strong>B</strong>asically
+        <strong>A</strong>vailable, <strong>S</strong>oft state, <strong>E</strong>ventually
+        consistent. The system stays up and accepts writes even during partial failures, but
+        different replicas might briefly disagree before converging. That's a perfectly fine trade
+        for a shopping cart ("you might see yesterday's item count for 200ms") and a terrible trade
+        for an account balance. Exactly how that tradeoff gets formalized is Day 10's CAP theorem —
+        today, just notice that "SQL favors consistency, many NoSQL stores favor availability" is
+        the seed of CAP, not the whole thing.</p>
+
+        <h3>Decision framework: how to actually choose</h3>
+        <div class="flow-box">
+          <div class="flow-step"><strong>1. Does correctness trump everything?</strong><span>&nbsp;— money, inventory counts, anything where "approximately right" is a bug → SQL, lean on ACID transactions.</span></div>
+          <div class="flow-step"><strong>2. Do you need to query across relationships flexibly?</strong><span>&nbsp;— ad-hoc joins, reporting, anything where you don't know every query shape in advance → SQL.</span></div>
+          <div class="flow-step"><strong>3. Is your access pattern fixed and lookup-shaped?</strong><span>&nbsp;— "get this item by this key," same shape every time, at huge scale → NoSQL key-value or document.</span></div>
+          <div class="flow-step"><strong>4. Does your data have a genuinely variable or evolving shape?</strong><span>&nbsp;— different attributes per item, fast-changing schema, nested structures → document store.</span></div>
+          <div class="flow-step"><strong>5. Is the core question "how are these things connected"?</strong><span>&nbsp;— multi-hop relationships, recommendations, fraud rings → graph database.</span></div>
+          <div class="flow-step"><strong>6. Are you ingesting a firehose of timestamped writes?</strong><span>&nbsp;— metrics, logs, sensor data, write-heavy and rarely updated → column-family store.</span></div>
+          <div class="flow-step"><strong>7. Still unsure, or need both?</strong><span>&nbsp;— that's normal. Most real systems are polyglot: SQL for the system of record, NoSQL for the hot, high-scale paths around it.</span></div>
+        </div>
+
+        <h3>Polyglot persistence</h3>
+        <p>The biggest mistake in this topic is treating it as a single, permanent choice for "the
+        database." Real architectures pick storage per workload: a relational store for orders and
+        billing (needs ACID + joins), a document store for the product catalog (needs flexible,
+        evolving schema), a key-value store for sessions and carts (needs raw speed at scale), and
+        maybe a graph store for recommendations. <strong>Polyglot persistence</strong> is the name
+        for deliberately running several storage engines side by side instead of forcing one engine
+        to do every job adequately.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You're walking past the living room now, deeper into the house, into the library itself.</h4>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>Front Door</strong> — <span>Load Balancer (Day 5). Decided who gets in.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🪑</span><div><strong>Living Room</strong> — <span>Cache, Redis &amp; Memcached (Days 6–7). The stuff you reach for first.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🗄️</span><div><strong>The Library, Left Wing</strong> — <span>SQL (today). The filing cabinet — rigid drawers, a card catalog that lets you cross-reference anything, and a strict "finish or undo completely" rule for every edit.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📦</span><div><strong>The Library, Right Wing</strong> — <span>NoSQL (today). The warehouse of labeled boxes — key-value shelves, document crates, wide column-family racks, and a graph room with string connecting every related box.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">⚖️</span><div><strong>The Hallway Between Them</strong> — <span>CAP Theorem (Day 10). The actual physics of why you can't always have both wings fully agree, instantly, during a network partition.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Cache / Redis (Days 6–7)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">SQL vs NoSQL (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">ACID Properties (Day 9)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">SQL vs NoSQL (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">CAP Theorem &amp; PACELC (Day 10)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Indexing (Day 11)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Replication &amp; Sharding (Days 12–13)</span>
+        </div>
+        <p>Today is the foundation for the rest of Week 2: Day 9 zooms into the ACID guarantees SQL
+        relies on, Day 10 formalizes the consistency-vs-availability tradeoff this lesson only
+        hinted at, and Days 11–13 build the indexing, replication, and sharding machinery that both
+        SQL and NoSQL systems use to actually scale.</p>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ In one sentence, what's the core tradeoff between SQL and NoSQL? (click to reveal)</div>
+          <div class="recall-answer">SQL gives you a fixed schema, relationships via joins, and ACID
+          transactional guarantees at the cost of harder horizontal scaling; NoSQL gives up some of
+          those guarantees (joins, strict schema, sometimes strong consistency) in exchange for a
+          data shape modeled directly around one access pattern and much easier horizontal scale.</div>
+        </div>
+      </section>
+
+      <section id="feynman">
+        <h2>Feynman Test</h2>
+        <div class="feynman-box">
+          <p><strong>Explain to a 10-year-old why a bank uses a different kind of database than a
+          social media "like" counter.</strong> Write it below, then compare.</p>
+          <textarea placeholder="It's like a..."></textarea>
+          <button class="btn btn-outline feynman-reveal-btn" style="margin-top:.75rem;">Reveal model answer</button>
+          <div class="feynman-model">"A bank is like a filing cabinet where every form has to be
+          filled out completely and correctly before it gets filed — because if your money disappears
+          halfway through a transfer, that's a disaster. A 'like' counter is like a jar of marbles at
+          every cash register in every store in the country — it's totally fine if one register's
+          jar is a few marbles behind for a second, as long as it catches up, because nobody's life
+          is ruined by a like count being off by one for a moment."</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">📦 Amazon</div><p>Runs Aurora (relational) for order and billing systems that need ACID transactions, while DynamoDB (key-value/document) powers the shopping cart and session layers that need massive, predictable-latency scale — a textbook polyglot architecture.</p></div>
+          <div class="realworld-card"><div class="rw-company">🚗 Uber</div><p>Started on a single relational schema, then evolved toward a schemaless storage layer (Schemaless, built on MySQL shards) as trip and rider data outgrew rigid table definitions across a fast-changing product.</p></div>
+          <div class="realworld-card"><div class="rw-company">📷 Instagram</div><p>Uses PostgreSQL for core relational data (users, relationships) and Cassandra-style stores for high-volume, write-heavy feed and activity data — different shapes for different jobs.</p></div>
+          <div class="realworld-card"><div class="rw-company">🎬 Netflix</div><p>Uses Cassandra extensively for viewing history and personalization data at massive write throughput, while relying on relational stores for billing and account data that needs strong consistency.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What's the core tradeoff between SQL and NoSQL?</div>
+          <div class="fc-a">A: SQL gives a fixed schema, joins, and ACID guarantees; NoSQL trades some of that away for a data shape built around one access pattern and easier horizontal scale.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Name the four major NoSQL data models and one example product for each.</div>
+          <div class="fc-a">A: Key-value (DynamoDB, Redis), document (MongoDB), column-family (Cassandra), graph (Neo4j).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What does ACID stand for, in one phrase each?</div>
+          <div class="fc-a">A: Atomicity (all-or-nothing), Consistency (never violates constraints), Isolation (concurrent transactions don't interfere), Durability (survives a crash once committed).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is polyglot persistence?</div>
+          <div class="fc-a">A: Deliberately using multiple storage engines (e.g. SQL for billing, NoSQL for sessions) in one system, picking storage per workload instead of forcing one engine to do every job.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Name the four NoSQL data models and one real product example of each.</li>
+          <li>Why does a relational database need normalization, and what does it cost you when reading data back?</li>
+          <li>Give one workload where ACID transactions are non-negotiable, and one where BASE/eventual consistency is perfectly fine.</li>
+          <li>What is polyglot persistence, and why do most large systems end up using it?</li>
+          <li>Walk through the decision framework: how would you decide between SQL and NoSQL for a new feature, step by step?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: SQL vs NoSQL isn't a winner — it's a question of which
+          guarantee you need more, correctness/relationships (SQL) or scale/flexibility (NoSQL), and
+          most serious systems use both, on purpose, for different parts of the same product.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-07.html">← Day 07: Redis &amp; Memcached Deep Dive</a>
+        <a href="day-09.html" class="coming-soon-link">Day 09: ACID Properties &amp; Transactions →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 08 of 90 — SQL vs NoSQL: When to Use What</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ─── Try It Yourself: workload → storage recommendation ───
+  const usecaseEl = document.getElementById('sim-usecase');
+  const output = document.getElementById('sim-output');
+  const advice = {
+    payments: "SQL wins: a transfer must be atomic and durable — partial failure mid-transaction is unacceptable. ACID guarantees exist precisely for this case.",
+    catalog: "Document store wins: products have wildly different attributes (a book has pages, a TV has screen size), and a document model lets each item describe its own shape without a thousand mostly-null columns.",
+    cart: "Key-value store wins: a cart is a simple lookup by user/session ID, needs to be fast at huge scale, and tolerating brief replication lag is fine — DynamoDB or Redis fit perfectly.",
+    timeseries: "Column-family store wins: massive write throughput of timestamped, rarely-updated rows is exactly what Cassandra/Bigtable-style wide-column stores are built for.",
+    social: "Graph database wins: 'friends of friends' is a multi-hop relationship traversal — a relational JOIN chain gets brutally slow, while a graph store walks edges directly.",
+    reporting: "SQL wins: ad-hoc aggregation and joins across regions, products, and time periods is exactly what a relational engine's query planner is optimized for."
+  };
+  function render() {
+    output.textContent = advice[usecaseEl.value];
+  }
+  usecaseEl.addEventListener('change', render);
+  render();
+
+  // ─── Diagram: SQL (fixed rows + joins) vs NoSQL (flexible documents) ───
+  function drawDiagram() {
+    const svg = document.getElementById('shape-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    const rs = rough.svg(svg);
+
+    function label(x, y, text, color) {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('fill', color || '#94a3b8');
+      t.setAttribute('font-family', 'Inter, sans-serif');
+      t.setAttribute('font-size', '12');
+      t.setAttribute('font-weight', '700');
+      t.setAttribute('letter-spacing', '0.05em');
+      t.textContent = text;
+      svg.appendChild(t);
+    }
+    function small(x, y, text, color, size) {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('fill', color || '#cbd5e1');
+      t.setAttribute('font-family', 'Inter, sans-serif');
+      t.setAttribute('font-size', size || '10.5');
+      t.textContent = text;
+      svg.appendChild(t);
+    }
+
+    // LEFT: SQL — two related tables joined by a key
+    label(190, 26, 'SQL: FIXED ROWS + JOIN', '#f59e0b');
+
+    const custTable = rs.rectangle(50, 50, 150, 84, { stroke: '#f59e0b', strokeWidth: 1.6, roughness: 1.3, fill: '#f59e0b15', fillStyle: 'solid' });
+    svg.appendChild(custTable);
+    small(125, 66, 'customers', '#fde68a', 10.5);
+    small(125, 84, 'id | name | city', '#f1f5f9', 9.5);
+    small(125, 100, '1  | Amy  | Austin', '#cbd5e1', 9);
+    small(125, 116, '2  | Bo   | Reno', '#cbd5e1', 9);
+
+    const ordersTable = rs.rectangle(220, 50, 150, 84, { stroke: '#f59e0b', strokeWidth: 1.6, roughness: 1.3, fill: '#f59e0b15', fillStyle: 'solid' });
+    svg.appendChild(ordersTable);
+    small(295, 66, 'orders', '#fde68a', 10.5);
+    small(295, 84, 'id | cust_id | sku', '#f1f5f9', 9.5);
+    small(295, 100, '9  | 1       | A1', '#cbd5e1', 9);
+    small(295, 116, '10 | 1       | B7', '#cbd5e1', 9);
+
+    const joinArrow = rs.line(200, 92, 220, 92, { stroke: '#fbbf24', strokeWidth: 2, roughness: 0.8 });
+    svg.appendChild(joinArrow);
+    small(210, 144, 'JOIN on id = cust_id', '#fbbf24', 9.5);
+    small(190, 160, 'every row same shape, enforced', '#64748b', 9.5);
+
+    // Divider
+    const divider = rs.line(400, 15, 400, 265, { stroke: '#334155', strokeWidth: 1, roughness: 0.6, strokeLineDash: [4, 4] });
+    svg.appendChild(divider);
+
+    // RIGHT: NoSQL — two self-contained, differently-shaped documents
+    label(610, 26, 'NOSQL: SELF-CONTAINED DOCS', '#22c55e');
+
+    const doc1 = rs.rectangle(450, 50, 150, 100, { stroke: '#22c55e', strokeWidth: 1.6, roughness: 1.4, fill: '#22c55e15', fillStyle: 'solid' });
+    svg.appendChild(doc1);
+    small(525, 66, '{ "id": 1,', '#bbf7d0', 9.5);
+    small(525, 82, '  "name": "Amy",', '#bbf7d0', 9.5);
+    small(525, 98, '  "city": "Austin",', '#bbf7d0', 9.5);
+    small(525, 114, '  "orders": [9,10] }', '#bbf7d0', 9.5);
+    small(525, 130, '— embedded, no join', '#86efac', 9);
+
+    const doc2 = rs.rectangle(620, 50, 150, 84, { stroke: '#22c55e', strokeWidth: 1.6, roughness: 1.4, fill: '#22c55e15', fillStyle: 'solid' });
+    svg.appendChild(doc2);
+    small(695, 66, '{ "id": 2,', '#bbf7d0', 9.5);
+    small(695, 82, '  "name": "Bo",', '#bbf7d0', 9.5);
+    small(695, 98, '  "vip": true,', '#bbf7d0', 9.5);
+    small(695, 114, '  "tags": ["new"] }', '#bbf7d0', 9.5);
+
+    small(610, 160, 'different shape per doc, no schema enforced', '#64748b', 9.5);
+
+    // Bottom captions
+    small(190, 240, '"One source of truth per fact — but you must walk to both drawers."', '#64748b', 10);
+    small(610, 240, '"Everything you need is already in the box you opened."', '#64748b', 10);
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawDiagram, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawDiagram);
+  }
+})();
+</script>
+
+</body>
+</html>

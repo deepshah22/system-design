@@ -74,7 +74,7 @@ why everything is being pushed to `main` directly.
 ### Week 2: Storage Fundamentals
 | Day | Topic | Status |
 |-----|-------|--------|
-| 08 | SQL vs NoSQL: When to Use What | ⏳ Scheduled |
+| 08 | SQL vs NoSQL: When to Use What | 📦 Staged (in `staging/`, awaiting next Mon/Wed/Fri publish) |
 | 09 | ACID Properties & Transactions | ⏳ Scheduled |
 | 10 | CAP Theorem & PACELC | ⏳ Scheduled |
 | 11 | Database Indexing Strategies | ⏳ Scheduled |
@@ -237,6 +237,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-06-26 | Day 8 (staged) | Day 8: SQL vs NoSQL: When to Use What — authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish. |
 | 2026-06-26 | Day 7 | Day 7: Redis & Memcached Deep Dive |
 | 2026-06-19 | Day 6 | Day 6: Caching Strategies & Patterns |
 | 2026-06-18 | Day 5 | Day 5: Load Balancing — Algorithms & Patterns. Introduced the Memorable Learning Framework (hook, story, memory palace, active recall, Feynman test, flashcards) and the daily-publish automation. |
@@ -261,5 +262,6 @@ system-design/
 - [x] Course history consolidated onto `main` (was previously isolated on a feature branch, so the cron never actually ran — GitHub Actions schedules only fire from the default branch)
 - [x] Course history merged onto `main` (was stuck on an unmerged feature branch — the live site and the publish cron only work from `main`, so this was the actual blocker, now resolved)
 - [x] Day 7 (Redis & Memcached Deep Dive) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
-- [ ] Days 8–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
-- [ ] GitHub Pages enabled on `main` branch (verify in repo Settings → Pages → source: `main` / root) — **action needed**: if https://deepshah22.github.io/system-design/ 404s, this manual toggle is the only remaining step
+- [x] Day 8 (SQL vs NoSQL: When to Use What) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
+- [ ] Days 9–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
+- [x] GitHub Pages enabled on `main` branch — confirmed via the active `pages-build-deployment` Actions workflow on the repo
