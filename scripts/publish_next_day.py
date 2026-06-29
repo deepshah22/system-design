@@ -81,12 +81,14 @@ def publish(path):
     # Mark Published + append a progress log row in plan.md.
     with open(PLAN, encoding="utf-8") as f:
         plan = f.read()
-    plan = re.sub(
-        r"(\|\s*0?{}\s*\|[^\n]*\|)\s*⏳ Scheduled\s*\|".format(day_num),
+    plan, n_status = re.subn(
+        r"(\|\s*0?{}\s*\|[^\n|]*\|)[^\n|]*\|".format(day_num),
         r"\1 ✅ Published |",
         plan,
         count=1,
     )
+    if n_status == 0:
+        print(f"WARNING: could not find a status row for Day {day_num} in plan.md", file=sys.stderr)
     today = date.today().isoformat()
     plan = plan.replace(
         "## Progress Log\n\n| Date | Days Published | Notes |\n|------|----------------|-------|\n",

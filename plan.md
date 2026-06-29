@@ -74,7 +74,7 @@ why everything is being pushed to `main` directly.
 ### Week 2: Storage Fundamentals
 | Day | Topic | Status |
 |-----|-------|--------|
-| 08 | SQL vs NoSQL: When to Use What | 📦 Staged (in `staging/`, awaiting next Mon/Wed/Fri publish) |
+| 08 | SQL vs NoSQL: When to Use What | ✅ Published |
 | 09 | ACID Properties & Transactions | 📦 Staged (in `staging/`, awaiting next Mon/Wed/Fri publish) |
 | 10 | CAP Theorem & PACELC | ⏳ Scheduled |
 | 11 | Database Indexing Strategies | ⏳ Scheduled |
