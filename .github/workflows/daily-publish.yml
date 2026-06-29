@@ -30,4 +30,18 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add days/ staging/ index.html plan.md
           git commit -m "Publish Day ${{ steps.publish.outputs.day_num }}: ${{ steps.publish.outputs.title }}"
-          git push origin main
+
+          # main moves often (manual pushes can land between checkout and push),
+          # so rebase onto the latest remote tip and retry a few times instead
+          # of failing on a non-fast-forward push.
+          for attempt in 1 2 3 4 5; do
+            if git push origin main; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt) -- rebasing onto latest origin/main and retrying"
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 3))
+          done
+          echo "::error::Failed to push after 5 attempts"
+          exit 1

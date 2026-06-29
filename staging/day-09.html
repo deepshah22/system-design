@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 09: ACID Properties &amp; Transactions | System Design Mastery</title>
+  <meta name="description" content="What actually stops your bank balance from vanishing mid-transfer. ACID, isolation levels, and real failure scenarios — taught through story and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .objectives { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+    .objectives-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.6rem; }
+    .objectives ul { padding-left: 1.25rem; margin: 0; }
+    .objectives li { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.3rem; }
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 09</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 09 of 90</span>
+      <span class="meta-pill">⏱ ~30 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 2 — Storage Fundamentals</span>
+    </div>
+    <h1>ACID Properties &amp; Transactions<br><span style="color:var(--accent)">The Contract That Stops Your Money From Vanishing</span></h1>
+    <p class="lead">
+      Yesterday you learned Database Dave's whole personality is "consistency above all else." Today
+      you open up the actual mechanism behind that personality — the four-letter contract every
+      relational database enforces on every transaction, and the very real, very specific bugs it
+      exists to prevent. By the end you'll be able to name the exact ACID letter that fails in any
+      given failure scenario, not just recite the acronym.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#hook">The Hook</a>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#depth">ACID In Depth</a>
+        <a href="#isolation">Isolation Levels</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#feynman">Feynman Test</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <div class="objectives">
+        <div class="objectives-title">Learning Objectives</div>
+        <ul>
+          <li>Define each ACID letter precisely and name the specific bug it prevents</li>
+          <li>Walk through a concrete bank-transfer failure scenario for each letter</li>
+          <li>Explain the four standard SQL isolation levels and the read anomaly each one fixes</li>
+          <li>Reason about the cost/throughput tradeoff of stronger isolation</li>
+          <li>Connect ACID to BASE and preview why CAP theorem (Day 10) makes "always ACID, everywhere" impossible at scale</li>
+        </ul>
+      </div>
+
+      <section id="hook">
+        <div class="hook">
+          You transfer $500 to a friend. The power goes out at your bank's data center at the exact
+          millisecond after your account is debited but before your friend's account is credited.
+          When the power comes back — where did the $500 go?
+        </div>
+        <p>
+          The honest, infuriating answer should be: nowhere. It should be exactly as if the transfer
+          never started at all. Not "your $500 is debited and we're investigating," not "your friend
+          got the money twice because the retry doubled up" — the transfer either completes
+          completely, or it's as if you clicked nothing. That single guarantee, repeated correctly
+          under crashes, concurrent transactions, and partial failures, is what ACID actually buys
+          you. Most engineers can recite the acronym; principal engineers can tell you exactly which
+          letter breaks in a given incident report.
+        </p>
+      </section>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">📜</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>A notary's desk. Every document either gets fully signed, sealed, and filed — or it's
+            torn up and thrown in the bin, never half-filed (Atomicity). The notary refuses to file
+            anything that breaks the office's standing rules, like a deed naming an owner who doesn't
+            exist (Consistency). Two clients negotiating contracts at adjacent desks can't see each
+            other's unfinished paperwork (Isolation). And once a document is stamped "FILED," it goes
+            into a fireproof safe, not a desk drawer that burns with the building (Durability).</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="acid-diagram" width="820" height="280" viewBox="0 0 820 280"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Database Dave</span> is processing a transfer: debit Amy
+            $500, credit Bo $500. Halfway through, the power cuts. When the lights come back, Dave
+            doesn't shrug and guess — he checks his <strong>write-ahead log</strong>, a running diary
+            he wrote <em>before</em> touching either balance, and either finishes the whole transfer
+            from where the log says it was, or rolls it back to before it started. Amy never ends up
+            $500 poorer with Bo unpaid. That's <strong>Atomicity</strong>: all or nothing, no matter
+            how rude the power outage is.
+          </p>
+          <p>
+            Dave also refuses to file a transfer that would make Bo's balance negative if Bo has an
+            overdraft rule against it, or that would make the bank's total ledger not sum to zero —
+            every transaction must leave the books in a state that obeys the rules Dave was given.
+            That's <strong>Consistency</strong> — not "eventually consistent" in the NoSQL sense, but
+            "never violates a constraint," full stop.
+          </p>
+          <p>
+            While Dave is mid-transfer, <span class="story-character">Database Dave's</span> coworker
+            starts a second transaction reading Amy's balance to print a statement. If that coworker
+            saw Amy's balance <em>after</em> the debit but <em>before</em> Bo's credit landed, the
+            statement would show money that's nowhere — debited from Amy, not yet at Bo. Dave's
+            office enforces <strong>Isolation</strong>: concurrent transactions are scheduled so no
+            one ever reads another transaction's half-finished scratch work, as if every transaction
+            ran one at a time even though several run concurrently for speed.
+          </p>
+          <p>
+            Finally, the instant Dave stamps a transaction "COMMITTED," it's written to disk in a
+            way that survives a crash, a reboot, even a fire in the building next door (replicated
+            write-ahead log). That's <strong>Durability</strong> — "committed" is a promise, not a
+            suggestion, and the database keeps that promise even if it dies one millisecond later.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">ACID = a transaction either fully happens or fully doesn't
+          (Atomicity), never breaks your rules (Consistency), never leaks half-finished work to
+          another transaction (Isolation), and survives a crash once committed (Durability). Each
+          letter is a named answer to a specific failure mode — not a vague promise of "correctness."</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself</h2>
+        <div class="sim-box">
+          <p>Pick a failure scenario during Amy → Bo's $500 transfer and see exactly which ACID
+          letter is the one standing between that scenario and a real bug.</p>
+          <div class="sim-controls">
+            <label for="sim-scenario" style="min-width:160px;font-size:.85rem;">Scenario:</label>
+            <select id="sim-scenario" style="background:var(--bg-card); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:.4rem .6rem;">
+              <option value="crash">Power cuts after debit, before credit</option>
+              <option value="constraint">Transfer would push Bo's balance below his overdraft limit</option>
+              <option value="dirtyread">A report reads Amy's balance mid-transfer</option>
+              <option value="diskfail">Disk fails one second after the bank shows "Transfer complete"</option>
+              <option value="doublewrite">Two transfers from Amy's account run at the exact same instant</option>
+            </select>
+          </div>
+          <div class="sim-output" id="sim-output">Loading…</div>
+        </div>
+      </section>
+
+      <section id="depth">
+        <h2>ACID In Depth</h2>
+
+        <h3>Atomicity — all or nothing</h3>
+        <p>A transaction is a single unit: every statement inside it commits together, or none of
+        them do. The mechanism is almost always a <strong>write-ahead log (WAL)</strong> — the
+        database writes "I intend to do X, then Y" to a durable log <em>before</em> touching the
+        actual data pages. If a crash happens mid-transaction, recovery replays the log to either
+        finish a transaction that was fully logged as committed, or undo one that wasn't. This is
+        also why <code>ROLLBACK</code> works on demand — the database just stops applying the log and
+        discards it.</p>
+
+        <h3>Consistency — never break the rules</h3>
+        <p>This is the most overloaded word in distributed systems (it means something different in
+        CAP theorem — Day 10 untangles that explicitly). In ACID, Consistency means a transaction can
+        only move the database from one valid state to another valid state, honoring every
+        constraint: foreign keys, uniqueness, check constraints, application-level invariants enforced
+        inside the transaction. It's the database's way of saying "I will never let your bug corrupt
+        the data, even if your application logic tries to."</p>
+
+        <h3>Isolation — concurrent transactions don't leak</h3>
+        <p>In theory, isolation means transactions behave as if they ran one after another
+        (<strong>serializable</strong>), even though the database actually interleaves them for
+        throughput. In practice, full serializability is expensive, so SQL defines four standard
+        isolation levels that trade strictness for speed — covered in depth below.</p>
+
+        <h3>Durability — committed means committed</h3>
+        <p>Once a transaction returns "success," that data must survive a crash, a reboot, or a power
+        loss. This is usually achieved by <code>fsync</code>-ing the write-ahead log to disk (or to
+        multiple replicas) before acknowledging the commit — which is exactly why durability has a
+        latency cost: waiting for a physical disk write, or for a quorum of replicas to confirm, is
+        slower than just writing to memory and hoping.</p>
+      </section>
+
+      <section id="isolation">
+        <h2>Isolation Levels: What Each One Actually Fixes</h2>
+        <p>Isolation isn't binary. SQL defines four standard levels, each one closing off one more
+        category of "read anomaly" — and each one costs more throughput than the last.</p>
+        <table class="algo-table">
+          <tr><th>Level</th><th>Prevents</th><th>Still allows</th></tr>
+          <tr><td><strong>Read Uncommitted</strong></td><td>Nothing extra</td><td><strong>Dirty reads</strong> — you can read another transaction's uncommitted, possibly-about-to-be-rolled-back changes</td></tr>
+          <tr><td><strong>Read Committed</strong></td><td>Dirty reads</td><td><strong>Non-repeatable reads</strong> — re-reading the same row twice in one transaction can return different values if someone else committed in between</td></tr>
+          <tr><td><strong>Repeatable Read</strong></td><td>Dirty reads, non-repeatable reads</td><td><strong>Phantom reads</strong> — re-running the same range query can return new rows that another transaction inserted</td></tr>
+          <tr><td><strong>Serializable</strong></td><td>All of the above</td><td>Nothing — but pays the highest cost: heavy locking or conflict detection, more aborts/retries under contention</td></tr>
+        </table>
+        <p>Most production systems default to <strong>Read Committed</strong> (Postgres, Oracle) or a
+        snapshot-based variant of <strong>Repeatable Read</strong> (MySQL/InnoDB), because true
+        Serializable isolation under high concurrency tanks throughput. The interview-relevant skill
+        isn't memorizing the table — it's knowing that "isolation" is a dial, not a switch, and being
+        able to argue which level a given feature actually needs.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>Still in the library — you've found the notary's desk in the corner.</h4>
+          <div class="palace-room"><span class="palace-icon">🪑</span><div><strong>Living Room</strong> — <span>Cache, Redis &amp; Memcached (Days 6–7).</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🗄️</span><div><strong>The Library, Left Wing</strong> — <span>SQL (Day 8). The filing cabinet.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📜</span><div><strong>The Notary's Desk</strong> — <span>ACID Transactions (today). The desk where nothing is half-filed, nothing breaks the rules, no one peeks at unfinished paperwork, and a fireproof safe holds everything once stamped.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">⚖️</span><div><strong>The Hallway Beyond the Desk</strong> — <span>CAP Theorem (Day 10). Where you learn the notary can't always reach every safe in every building at once.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">SQL vs NoSQL (Day 8)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">ACID &amp; Transactions (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">CAP Theorem &amp; PACELC (Day 10)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">ACID &amp; Transactions (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Database Replication (Day 12)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Distributed Transactions: 2PC &amp; 3PC (Day 33)</span>
+        </div>
+        <p>Today's isolation/atomicity machinery is what gets stretched, strained, and partially
+        abandoned once a database stops fitting on one machine — Day 10 names the actual physics of
+        that tradeoff, and Day 33 revisits Atomicity specifically for transactions that span multiple
+        machines, where "all or nothing" gets dramatically harder to guarantee.</p>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ Which ACID letter specifically prevents a half-finished bank transfer from surviving a crash? (click to reveal)</div>
+          <div class="recall-answer">Atomicity (enforced via the write-ahead log, which lets recovery
+          either replay a fully-logged transaction or discard a partial one) is what prevents a
+          half-finished transfer. Durability is related but answers a different question: once the
+          transfer is fully committed, Durability is what guarantees that result survives a
+          <em>later</em> crash — the two letters cover different moments in the transaction's life.</div>
+        </div>
+      </section>
+
+      <section id="feynman">
+        <h2>Feynman Test</h2>
+        <div class="feynman-box">
+          <p><strong>Explain to a 10-year-old why your bank app doesn't just "save as it goes" the
+          way a video game auto-saves.</strong> Write it below, then compare.</p>
+          <textarea placeholder="It's like a..."></textarea>
+          <button class="btn btn-outline feynman-reveal-btn" style="margin-top:.75rem;">Reveal model answer</button>
+          <div class="feynman-model">"A video game auto-save is fine if it sometimes loses the last
+          ten seconds of progress — annoying, not catastrophic. A bank transfer is two separate edits
+          (take from one person, give to another) that have to count as ONE thing. If the bank just
+          saved as it went, a crash between the two edits would make money disappear forever. So
+          instead, the bank writes down its plan first, does both edits, and only then says 'done' —
+          and if anything interrupts it partway, it can always undo back to exactly where it
+          started, like nothing happened."</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🏦 Stripe</div><p>Built idempotency keys on top of ACID transactions so that retried payment requests (network timeouts, client retries) never double-charge a customer — the database transaction guarantees a single charge is atomic, and the idempotency layer guarantees a retried request maps to that same atomic outcome.</p></div>
+          <div class="realworld-card"><div class="rw-company">🛒 Amazon</div><p>Uses ACID transactions in Aurora/RDS for order placement and inventory decrement together — a customer must never be charged for an item that simultaneously fails to decrement stock, which is exactly an atomicity guarantee across two writes.</p></div>
+          <div class="realworld-card"><div class="rw-company">✈️ Airline booking systems</div><p>Rely on Serializable or near-Serializable isolation for seat assignment — without it, two travelers could both "successfully" book the last seat, a classic phantom-read/race-condition bug that strict isolation exists to prevent.</p></div>
+          <div class="realworld-card"><div class="rw-company">📊 PostgreSQL internals</div><p>Implements isolation via MVCC (Multi-Version Concurrency Control) — readers see a consistent snapshot of the data instead of blocking writers, which is how Postgres gets strong isolation without grinding concurrent throughput to a halt.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What does each ACID letter guarantee, in one phrase?</div>
+          <div class="fc-a">A: Atomicity = all-or-nothing. Consistency = never violates constraints. Isolation = concurrent transactions don't see each other's half-finished work. Durability = survives a crash once committed.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What mechanism typically implements Atomicity and Durability together?</div>
+          <div class="fc-a">A: The write-ahead log (WAL) — changes are logged durably before being applied, so recovery can replay or discard a transaction after a crash.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Name the four SQL isolation levels in order of strictness, and one anomaly each one newly prevents.</div>
+          <div class="fc-a">A: Read Uncommitted (none) → Read Committed (prevents dirty reads) → Repeatable Read (prevents non-repeatable reads) → Serializable (prevents phantom reads too).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why don't most production databases default to full Serializable isolation?</div>
+          <div class="fc-a">A: Serializable isolation requires heavy locking or conflict detection, which reduces concurrency/throughput — most systems pick Read Committed or snapshot-based Repeatable Read as the practical default.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Define each of the four ACID letters and name the specific bug each one prevents.</li>
+          <li>Walk through what happens to a transfer if power is lost between the debit and the credit — which letter saves you, and how?</li>
+          <li>Name the four SQL isolation levels in order and the one new anomaly each level closes off.</li>
+          <li>Why is "Consistency" in ACID a different concept from "Consistency" in CAP theorem?</li>
+          <li>Why do most production databases not default to full Serializable isolation?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: ACID isn't a vague promise of "correctness" — it's four
+          named, independent guarantees, each one closing off one specific way a transaction can go
+          wrong under crashes or concurrency, and you should be able to point to the exact letter that
+          fails in any given incident.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-08.html">← Day 08: SQL vs NoSQL: When to Use What</a>
+        <a href="day-10.html" class="coming-soon-link">Day 10: CAP Theorem &amp; PACELC →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 09 of 90 — ACID Properties &amp; Transactions</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ─── Try It Yourself: failure scenario → ACID letter that saves you ───
+  const scenarioEl = document.getElementById('sim-scenario');
+  const output = document.getElementById('sim-output');
+  const advice = {
+    crash: "Atomicity saves you: the write-ahead log lets the database replay or discard the transaction on recovery, so the transfer either fully completes or never happened — never half-done.",
+    constraint: "Consistency saves you: the transaction is rejected outright because it would violate Bo's overdraft constraint, leaving the database exactly as valid as it was before the attempt.",
+    dirtyread: "Isolation saves you: at Read Committed or stricter, the report can't see Amy's balance mid-transfer — it only sees committed states, before or after the transfer, never in between.",
+    diskfail: "Durability saves you (or fails you, if implemented wrong): a properly fsync'd or replicated commit survives that disk failure; this is exactly why 'commit acknowledged' must mean the data already left volatile memory.",
+    doublewrite: "Isolation saves you: the database serializes the two concurrent transactions against Amy's row (via locking or conflict detection) so they can't both read-then-write the same balance and silently overwrite each other's debit."
+  };
+  function render() {
+    output.textContent = advice[scenarioEl.value];
+  }
+  scenarioEl.addEventListener('change', render);
+  render();
+
+  // ─── Diagram: Atomicity timeline + Isolation leak ───
+  function drawDiagram() {
+    const svg = document.getElementById('acid-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    const rs = rough.svg(svg);
+
+    function label(x, y, text, color) {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('fill', color || '#94a3b8');
+      t.setAttribute('font-family', 'Inter, sans-serif');
+      t.setAttribute('font-size', '12');
+      t.setAttribute('font-weight', '700');
+      t.setAttribute('letter-spacing', '0.05em');
+      t.textContent = text;
+      svg.appendChild(t);
+    }
+    function small(x, y, text, color, size) {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('fill', color || '#cbd5e1');
+      t.setAttribute('font-family', 'Inter, sans-serif');
+      t.setAttribute('font-size', size || '10.5');
+      t.textContent = text;
+      svg.appendChild(t);
+    }
+
+    // LEFT: Atomicity timeline
+    label(190, 26, 'ATOMICITY: ALL OR NOTHING', '#f59e0b');
+    const timeline = rs.line(50, 90, 350, 90, { stroke: '#64748b', strokeWidth: 1.5, roughness: 0.8 });
+    svg.appendChild(timeline);
+
+    const startBox = rs.rectangle(50, 70, 70, 40, { stroke: '#f59e0b', strokeWidth: 1.6, roughness: 1.3, fill: '#f59e0b15', fillStyle: 'solid' });
+    svg.appendChild(startBox);
+    small(85, 94, 'Debit Amy', '#fde68a', 9.5);
+
+    const crashBox = rs.rectangle(160, 70, 70, 40, { stroke: '#ef4444', strokeWidth: 1.8, roughness: 1.3, fill: '#ef444420', fillStyle: 'solid' });
+    svg.appendChild(crashBox);
+    small(195, 94, '💥 CRASH', '#fca5a5', 10);
+
+    const creditBox = rs.rectangle(270, 70, 70, 40, { stroke: '#475569', strokeWidth: 1.4, roughness: 1.3, strokeLineDash: [4,3] });
+    svg.appendChild(creditBox);
+    small(305, 94, 'Credit Bo', '#64748b', 9.5);
+    small(305, 110, '(never ran)', '#64748b', 8.5);
+
+    small(190, 145, 'WAL replay on restart:', '#fbbf24', 9.5);
+    small(190, 162, 'undo Amy\'s debit completely.', '#fbbf24', 9.5);
+    small(190, 178, 'Net effect: as if nothing happened.', '#86efac', 9.5);
+
+    // Divider
+    const divider = rs.line(400, 15, 400, 265, { stroke: '#334155', strokeWidth: 1, roughness: 0.6, strokeLineDash: [4, 4] });
+    svg.appendChild(divider);
+
+    // RIGHT: Isolation leak (dirty read) vs prevented
+    label(610, 26, 'ISOLATION: NO PEEKING MID-TRANSACTION', '#22c55e');
+
+    const txBox = rs.rectangle(450, 55, 140, 75, { stroke: '#22c55e', strokeWidth: 1.6, roughness: 1.3, fill: '#22c55e15', fillStyle: 'solid' });
+    svg.appendChild(txBox);
+    small(520, 72, 'Transaction A', '#bbf7d0', 9.5);
+    small(520, 90, 'debit Amy →', '#bbf7d0', 9);
+    small(520, 105, '(not yet credit Bo)', '#bbf7d0', 9);
+
+    const reportBox = rs.rectangle(630, 55, 140, 75, { stroke: '#64748b', strokeWidth: 1.6, roughness: 1.3, fill: '#1e293b', fillStyle: 'solid' });
+    svg.appendChild(reportBox);
+    small(700, 72, 'Transaction B', '#cbd5e1', 9.5);
+    small(700, 90, 'reads Amy\'s', '#cbd5e1', 9);
+    small(700, 105, 'balance', '#cbd5e1', 9);
+
+    const blockedArrow = rs.line(595, 92, 625, 92, { stroke: '#ef4444', strokeWidth: 2.2, roughness: 0.8 });
+    svg.appendChild(blockedArrow);
+    small(610, 80, '🚫', '#ef4444', 14);
+
+    small(610, 145, 'Read Committed+ blocks this peek —', '#94a3b8', 9.5);
+    small(610, 162, 'B only sees Amy\'s balance', '#94a3b8', 9.5);
+    small(610, 178, 'before OR after A, never mid-flight.', '#86efac', 9.5);
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawDiagram, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawDiagram);
+  }
+})();
+</script>
+
+</body>
+</html>

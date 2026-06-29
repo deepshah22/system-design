@@ -75,7 +75,7 @@ why everything is being pushed to `main` directly.
 | Day | Topic | Status |
 |-----|-------|--------|
 | 08 | SQL vs NoSQL: When to Use What | 📦 Staged (in `staging/`, awaiting next Mon/Wed/Fri publish) |
-| 09 | ACID Properties & Transactions | ⏳ Scheduled |
+| 09 | ACID Properties & Transactions | 📦 Staged (in `staging/`, awaiting next Mon/Wed/Fri publish) |
 | 10 | CAP Theorem & PACELC | ⏳ Scheduled |
 | 11 | Database Indexing Strategies | ⏳ Scheduled |
 | 12 | Database Replication | ⏳ Scheduled |
@@ -237,6 +237,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-06-29 | Day 9 (staged) | Day 9: ACID Properties & Transactions — authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish. Also found and fixed a bug: every single scheduled run of the publish workflow had been failing silently (`git push` rejected as non-fast-forward whenever a manual commit landed on `main` between checkout and push) — Days 1-8's "published" status was actually flipped by manual pushes, never by the cron. Fixed by adding fetch+rebase+retry to the workflow's push step. |
 | 2026-06-26 | Day 8 (staged) | Day 8: SQL vs NoSQL: When to Use What — authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish. |
 | 2026-06-26 | Day 7 | Day 7: Redis & Memcached Deep Dive |
 | 2026-06-19 | Day 6 | Day 6: Caching Strategies & Patterns |
@@ -263,5 +264,7 @@ system-design/
 - [x] Course history merged onto `main` (was stuck on an unmerged feature branch — the live site and the publish cron only work from `main`, so this was the actual blocker, now resolved)
 - [x] Day 7 (Redis & Memcached Deep Dive) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Day 8 (SQL vs NoSQL: When to Use What) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
-- [ ] Days 9–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
+- [x] Day 9 (ACID Properties & Transactions) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
+- [x] Fixed publish workflow race condition (non-fast-forward push failures) by adding fetch+rebase+retry to `.github/workflows/daily-publish.yml` — every prior scheduled run had been failing
+- [ ] Days 10–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
 - [x] GitHub Pages enabled on `main` branch — confirmed via the active `pages-build-deployment` Actions workflow on the repo
