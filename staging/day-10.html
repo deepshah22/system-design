@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 10: CAP Theorem &amp; PACELC | System Design Mastery</title>
+  <meta name="description" content="A backhoe cuts the cable between your two data centers. Do you keep serving traffic or refuse to answer? CAP theorem and PACELC, taught through story and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .objectives { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+    .objectives-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.6rem; }
+    .objectives ul { padding-left: 1.25rem; margin: 0; }
+    .objectives li { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.3rem; }
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 10</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 10 of 90</span>
+      <span class="meta-pill">⏱ ~30 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 2 — Storage Fundamentals</span>
+    </div>
+    <h1>CAP Theorem &amp; PACELC<br><span style="color:var(--accent)">The Tradeoff You Cannot Engineer Your Way Out Of</span></h1>
+    <p class="lead">
+      Yesterday, Database Dave's notary desk enforced ACID with total confidence — one desk, one
+      set of rules, no ambiguity. Today his bank opens a second office on another continent, and the
+      single phone line connecting them goes dead. Dave has to make a decision no amount of clever
+      engineering can dodge. This is the one theorem every principal engineer is expected to reason
+      about from memory, correctly, under pressure, for every data store they've ever touched.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#hook">The Hook</a>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#depth">CAP In Depth</a>
+        <a href="#pacelc">PACELC</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#feynman">Feynman Test</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <div class="objectives">
+        <div class="objectives-title">Learning Objectives</div>
+        <ul>
+          <li>State the CAP theorem precisely and explain why "pick 2 of 3" is a misleading simplification</li>
+          <li>Walk through a concrete network-partition scenario and defend a CP or AP choice with real tradeoffs</li>
+          <li>Explain PACELC — the extension that covers the far more common case where there's no partition</li>
+          <li>Classify real systems (DynamoDB, MongoDB, Spanner, Cassandra) by their CAP/PACELC behavior</li>
+          <li>Use this framework to justify a data-store choice out loud, in an interview, under follow-up questions</li>
+        </ul>
+      </div>
+
+      <section id="hook">
+        <div class="hook">
+          Your database runs across two data centers, New York and London, for redundancy. A backhoe
+          three states away slices through the undersea cable connecting them. Both data centers are
+          still alive. Both are still getting user traffic. They just can't talk to each other
+          anymore. A user in New York asks to buy the last concert ticket. Do you sell it to them?
+        </div>
+        <p>
+          There is no clever answer that avoids the question. If you say yes, you might also sell the
+          same last ticket to someone in London — the two data centers can't compare notes to know it
+          was already sold. If you say no, the New York system is now refusing money it could
+          otherwise take, from a customer who did nothing wrong. Every distributed data store you
+          will ever use has already made this exact choice on your behalf, permanently, in its
+          architecture. Today's job is knowing which choice it made, and why.
+        </p>
+      </section>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🌉🪓</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Two island offices connected by a single rope bridge. Someone cuts the bridge. Each
+            island still has its own staff, its own desk, its own copy of the ledger — but they can no
+            longer shout updates across the gap. Each island now has to decide, alone: keep serving
+            customers using whatever the ledger said last (and risk it being wrong), or close the
+            counter and turn everyone away until the bridge is rebuilt. That decision, made islet by
+            islet, is the entire CAP theorem in one scene.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="cap-diagram" width="820" height="300" viewBox="0 0 820 300"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Database Dave</span> now runs two notary offices — one in
+            New York, one in London — kept in sync over a single phone line so both offices always
+            agree on every account balance. One morning, the line goes dead. Both offices are open.
+            Both have customers at the counter. Dave, in New York, gets a request to debit an account
+            that London's copy of the ledger says has $50, but Dave has no way to confirm London
+            hasn't already spent that same $50 in the last ten minutes. He has exactly two options,
+            and no third one exists.
+          </p>
+          <p>
+            Option one: Dave refuses the transaction. "I can't reach London to confirm this balance is
+            still accurate, so I won't touch it." His ledger stays provably correct — but a paying
+            customer standing right in front of him gets turned away for a phone line he doesn't
+            control. That's choosing <strong>Consistency</strong> over <strong>Availability</strong>
+            during the partition — CP.
+          </p>
+          <p>
+            Option two: Dave serves the customer anyway, using his last-known local copy of the
+            balance. The counter stays open, nobody gets turned away — but if London already spent
+            that money in the last ten minutes, Dave's ledger and London's ledger now disagree, and
+            someone has to reconcile that mess once the phone line comes back. That's choosing
+            <strong>Availability</strong> over <strong>Consistency</strong> during the partition — AP.
+          </p>
+          <p>
+            The theorem's third letter, <strong>Partition tolerance</strong>, isn't really a choice at
+            all — it's the fact that the phone line <em>will</em> go dead sometime, whether Dave likes
+            it or not. Cables get cut, routers fail, data centers lose power. A system that isn't
+            partition-tolerant isn't really distributed; it just hasn't had its bad day yet. CAP isn't
+            "pick any 2 of 3" — it's "partitions are a fact of life, so pick C or A for the moments
+            when one happens."
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">CAP theorem: when a network partition happens (and eventually
+          it will), a distributed system must choose between staying Consistent (refuse requests it
+          can't verify) or staying Available (serve requests using possibly-stale local data) — it
+          cannot do both at the same time, for the same data, during that partition.</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself</h2>
+        <div class="sim-box">
+          <p>The New York–London phone line just went dead. A customer at the New York counter wants
+          to spend money London's copy of the ledger says they have. Pick Dave's strategy and see
+          exactly what it costs.</p>
+          <div class="sim-controls">
+            <label for="sim-strategy" style="min-width:160px;font-size:.85rem;">Dave's strategy during the partition:</label>
+            <select id="sim-strategy" style="background:var(--bg-card); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:.4rem .6rem;">
+              <option value="cp">Refuse the transaction (choose Consistency)</option>
+              <option value="ap">Serve it anyway from local data (choose Availability)</option>
+              <option value="quorum">Only serve it if a majority of replicas agree (quorum read/write)</option>
+            </select>
+          </div>
+          <div class="sim-output" id="sim-output">Loading…</div>
+        </div>
+      </section>
+
+      <section id="depth">
+        <h2>CAP In Depth</h2>
+
+        <h3>Consistency — every read sees the latest write</h3>
+        <p>In CAP, Consistency means <strong>linearizability</strong>: once a write succeeds anywhere,
+        every subsequent read from any node returns that value (or a newer one) — never a stale one.
+        This is a stronger, more specific claim than ACID's "Consistency," which is about respecting
+        constraints, not about which value a read returns across replicas. Conflating the two is the
+        single most common CAP mistake engineers make in interviews.</p>
+
+        <h3>Availability — every request gets a response</h3>
+        <p>Every request to a non-failing node must receive a response — not an error, not a timeout,
+        not silence. Note what this doesn't promise: it says nothing about whether the response
+        contains the <em>latest</em> data, only that a response comes back at all.</p>
+
+        <h3>Partition tolerance — the system keeps working despite dropped/delayed messages</h3>
+        <p>A network partition is any situation where messages between nodes are lost or arbitrarily
+        delayed — not just a dramatic backhoe scenario, but also a congested link, a slow router, or a
+        node that's alive but temporarily unreachable. Because partitions are a physical inevitability
+        at any real scale, partition tolerance isn't really optional the way C and A are — it's the
+        precondition that makes the C-vs-A choice show up in the first place. This is why the honest
+        framing is "CP or AP," not "pick any 2 of CAP" — a system that isn't partition-tolerant simply
+        isn't a distributed system operating at scale.</p>
+
+        <h3>The classic mistake: CAP is not a permanent, system-wide label</h3>
+        <p>Real systems don't pin a single CAP letter to themselves forever. Many systems are tunable
+        <em>per operation</em> (Cassandra lets you choose a consistency level per query), and almost
+        all "AP" systems are still fully consistent 99.9% of the time — CAP only forces a choice
+        <em>during</em> an actual partition. The useful interview move is naming what a system does
+        specifically when a partition happens, not reciting "it's AP" as a trivia fact.</p>
+      </section>
+
+      <section id="pacelc">
+        <h2>PACELC: The Part CAP Leaves Out</h2>
+        <p>CAP only describes what happens <strong>during a partition (P)</strong> — but partitions
+        are rare; most traffic, most of the time, hits a perfectly healthy network. PACELC (coined by
+        Daniel Abadi) extends the theorem to cover that far more common case: <strong>if a Partition
+        happens, choose Availability or Consistency (as in CAP) — Else (network is fine), choose
+        Latency or Consistency.</strong> Even with zero partitions, a system still has to decide
+        whether to wait for every replica to confirm a write (more Consistency, more Latency) or
+        acknowledge as soon as one node has it (less Latency, weaker Consistency).</p>
+        <table class="algo-table">
+          <tr><th>System</th><th>PACELC classification</th><th>What it means in practice</th></tr>
+          <tr><td><strong>DynamoDB / Cassandra</strong></td><td>PA/EL</td><td>Available over consistent during a partition; low-latency over strict consistency the rest of the time — writes ack fast, replicas catch up asynchronously.</td></tr>
+          <tr><td><strong>MongoDB (default)</strong></td><td>PC/EC</td><td>Consistent over available during a partition (no primary, no writes); waits for enough replication to stay strongly consistent even when healthy.</td></tr>
+          <tr><td><strong>Google Spanner</strong></td><td>PC/EC (with very high practical availability)</td><td>Strongly consistent always, using synchronized atomic clocks (TrueTime) to make consistency cheap enough that the latency cost is small — a rare case where excellent engineering narrows, not eliminates, the tradeoff.</td></tr>
+          <tr><td><strong>MySQL with synchronous replication</strong></td><td>PC/EC</td><td>Waits for replica acknowledgment on every commit — consistent, at a real latency cost even absent any partition.</td></tr>
+        </table>
+        <p>This is the table a principal engineer actually reaches for — "is this system AP or CP" is
+        an incomplete question; "what does it do during a partition, <em>and</em> what does it trade
+        for latency when healthy" is the complete one.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You've left the notary's desk and stepped into the hallway beyond it.</h4>
+          <div class="palace-room"><span class="palace-icon">📜</span><div><strong>The Notary's Desk</strong> — <span>ACID Transactions (Day 9). One office, no ambiguity.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🌉</span><div><strong>The Hallway's Rope Bridge</strong> — <span>CAP Theorem &amp; PACELC (today). Two islands, one bridge, and the choice you make the instant it's cut.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🗂️</span><div><strong>The Card Catalog Beyond the Bridge</strong> — <span>Database Indexing (Day 11). How Dave finds anything on either island fast.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">👥</span><div><strong>The Second Island Itself</strong> — <span>Database Replication (Day 12). How Dave keeps London's ledger a copy of New York's in the first place.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">ACID &amp; Transactions (Day 9)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">CAP Theorem &amp; PACELC (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Database Replication (Day 12)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">CAP Theorem &amp; PACELC (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Consistent Hashing (Day 14)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Consensus: Paxos &amp; Raft (Days 31–32)</span>
+        </div>
+        <p>Today's C-vs-A choice is what Replication (Day 12) has to physically implement, what
+        Consistent Hashing (Day 14) has to route around, and what Paxos/Raft (Days 31–32) exist to
+        make <em>safe</em> — consensus algorithms are, at their core, a disciplined way to pick
+        Consistency without fully giving up Availability, by requiring only a majority of nodes to
+        agree rather than all of them.</p>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ During an active network partition, what are the only two options a distributed system has — and what does each one cost? (click to reveal)</div>
+          <div class="recall-answer">It can stay Consistent by refusing requests it can't verify against
+          every replica (cost: reduced availability — real users get errors), or it can stay Available
+          by serving requests from local, possibly-stale data (cost: reduced consistency — different
+          nodes may disagree until the partition heals and the data reconciles). There is no third
+          option that gets both during the partition itself.</div>
+        </div>
+      </section>
+
+      <section id="feynman">
+        <h2>Feynman Test</h2>
+        <div class="feynman-box">
+          <p><strong>Explain to a 10-year-old why two people using the same banking app in different
+          countries might briefly see different account balances, even though nothing is "broken."</strong>
+          Write it below, then compare.</p>
+          <textarea placeholder="It's like a..."></textarea>
+          <button class="btn btn-outline feynman-reveal-btn" style="margin-top:.75rem;">Reveal model answer</button>
+          <div class="feynman-model">"Imagine two friends each keeping a copy of the same notebook, but
+          they can only compare notes by phone. If the phone line goes down for a minute, each friend
+          still has to answer questions using whatever their notebook said last — they can't magically
+          know what the other one just wrote. Once the phone line is back, they compare notes and fix
+          any difference. For that one minute, they might give slightly different answers — not
+          because anyone made a mistake, but because they physically couldn't check with each other in
+          time."</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">📦 Amazon DynamoDB</div><p>Descended directly from the original Dynamo paper — chooses Availability during a partition, using vector clocks and "last write wins" or application-level conflict resolution to reconcile divergent replicas afterward. Built for shopping carts, where "always accept the write" matters more than instant global agreement.</p></div>
+          <div class="realworld-card"><div class="rw-company">🍃 MongoDB</div><p>Chooses Consistency by default — if a primary can't reach a majority of its replica set, it steps down and the partition-isolated minority refuses writes entirely, rather than risk divergent data.</p></div>
+          <div class="realworld-card"><div class="rw-company">🌐 Google Spanner</div><p>Famous for appearing to sidestep CAP by staying strongly consistent with very high availability — achieved through TrueTime, GPS/atomic-clock-synchronized timestamps that let Spanner order transactions globally without waiting on ordinary network round-trips. It's still bound by CAP during a true partition; it just makes the "else" branch of PACELC extremely cheap.</p></div>
+          <div class="realworld-card"><div class="rw-company">🪶 Apache Cassandra</div><p>Doesn't pick one CAP letter globally — the consistency level (ONE, QUORUM, ALL) is chosen per read and per write, letting one team optimize a query for Availability and another optimize a different query on the same cluster for Consistency.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: State the CAP theorem in one sentence.</div>
+          <div class="fc-a">A: During a network partition, a distributed system must choose between staying Consistent (reject unverifiable requests) or staying Available (serve possibly-stale data) — it cannot fully have both at once.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is "pick any 2 of C, A, P" a misleading way to state CAP?</div>
+          <div class="fc-a">A: Because partitions are a physical inevitability at scale, not an optional design choice — the real decision is only ever CP vs. AP for the moments a partition is actually happening.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What does PACELC add on top of CAP?</div>
+          <div class="fc-a">A: It covers the far more common non-partition case: even with a healthy network, a system still trades Latency vs. Consistency (the "Else" branch) — e.g. wait for full replica acknowledgment (consistent, slower) or ack after one node (fast, weaker consistency).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Classify DynamoDB and MongoDB by PACELC, in short.</div>
+          <div class="fc-a">A: DynamoDB is PA/EL (available during a partition, low-latency when healthy). MongoDB (default) is PC/EC (consistent during a partition, consistent when healthy, at a latency cost).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>State the CAP theorem precisely, and explain why "pick 2 of 3" oversimplifies it.</li>
+          <li>Walk through the New York/London partition scenario: what does Dave lose by choosing CP, and what does he risk by choosing AP?</li>
+          <li>What question does PACELC answer that CAP doesn't even ask?</li>
+          <li>Classify DynamoDB, MongoDB, and Spanner by their partition-time and non-partition-time tradeoffs.</li>
+          <li>Why does Cassandra not have a single, fixed CAP classification?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: CAP isn't "pick 2 of 3" — partitions are a fact of physics,
+          not a choice, so the real decision every distributed data store makes is CP or AP for the
+          moment a partition hits, and PACELC is the reminder that even on a good day, that same
+          system is still quietly trading latency for consistency on every single write.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-09.html">← Day 09: ACID Properties &amp; Transactions</a>
+        <a href="day-11.html" class="coming-soon-link">Day 11: Database Indexing Strategies →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 10 of 90 — CAP Theorem &amp; PACELC</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ─── Try It Yourself: partition strategy → outcome ───
+  const strategyEl = document.getElementById('sim-strategy');
+  const output = document.getElementById('sim-output');
+  const advice = {
+    cp: "You chose Consistency (CP): New York refuses the transaction because it can't verify the balance with London. The customer walks away empty-handed, but the ledger never disagrees with itself — no reconciliation needed once the line comes back.",
+    ap: "You chose Availability (AP): New York serves the transaction from its last-known local balance. The counter never closes — but if London already spent the same money in the last ten minutes, the two ledgers now disagree, and someone has to reconcile them once the partition heals.",
+    quorum: "You chose a quorum strategy: the transaction only proceeds if a majority of replicas can confirm it. With only two data centers and one down, a strict majority quorum actually behaves like CP here (no majority reachable, so it refuses) — this is exactly why real systems use 3+ replicas, so a single partition can't strand every request the same way."
+  };
+  function render() {
+    output.textContent = advice[strategyEl.value];
+  }
+  strategyEl.addEventListener('change', render);
+  render();
+
+  // ─── Diagram: partitioned network + CP vs AP outcomes ───
+  function drawDiagram() {
+    const svg = document.getElementById('cap-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    const rs = rough.svg(svg);
+
+    function label(x, y, text, color) {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('fill', color || '#94a3b8');
+      t.setAttribute('font-family', 'Inter, sans-serif');
+      t.setAttribute('font-size', '12');
+      t.setAttribute('font-weight', '700');
+      t.setAttribute('letter-spacing', '0.05em');
+      t.textContent = text;
+      svg.appendChild(t);
+    }
+    function small(x, y, text, color, size) {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('fill', color || '#cbd5e1');
+      t.setAttribute('font-family', 'Inter, sans-serif');
+      t.setAttribute('font-size', size || '10.5');
+      t.textContent = text;
+      svg.appendChild(t);
+    }
+
+    // TOP: two nodes with a cut cable between them
+    const nyBox = rs.rectangle(60, 20, 110, 55, { stroke: '#3b82f6', strokeWidth: 1.6, roughness: 1.3, fill: '#3b82f615', fillStyle: 'solid' });
+    svg.appendChild(nyBox);
+    small(115, 43, 'New York', '#93c5fd', 11);
+    small(115, 60, 'node', '#93c5fd', 9);
+
+    const ldBox = rs.rectangle(650, 20, 110, 55, { stroke: '#a855f7', strokeWidth: 1.6, roughness: 1.3, fill: '#a855f715', fillStyle: 'solid' });
+    svg.appendChild(ldBox);
+    small(705, 43, 'London', '#d8b4fe', 11);
+    small(705, 60, 'node', '#d8b4fe', 9);
+
+    const cableLeft = rs.line(170, 47, 340, 47, { stroke: '#64748b', strokeWidth: 1.6, roughness: 0.9 });
+    svg.appendChild(cableLeft);
+    const cableRight = rs.line(400, 47, 650, 47, { stroke: '#64748b', strokeWidth: 1.6, roughness: 0.9, strokeLineDash: [3,4] });
+    svg.appendChild(cableRight);
+    small(370, 25, '✂️', '#ef4444', 18);
+    small(370, 78, 'PARTITION', '#fca5a5', 10);
+
+    // Divider between CP and AP halves
+    const divider = rs.line(400, 105, 400, 285, { stroke: '#334155', strokeWidth: 1, roughness: 0.6, strokeLineDash: [4, 4] });
+    svg.appendChild(divider);
+
+    // LEFT: CP outcome
+    label(190, 128, 'CP: CHOOSE CONSISTENCY', '#22c55e');
+    const cpBox = rs.rectangle(80, 148, 220, 55, { stroke: '#ef4444', strokeWidth: 1.6, roughness: 1.3, fill: '#ef444415', fillStyle: 'solid' });
+    svg.appendChild(cpBox);
+    small(190, 172, '🚫 Request refused', '#fca5a5', 10.5);
+    small(190, 190, '"Can\'t verify with London"', '#fca5a5', 9);
+    small(190, 222, 'Ledger stays correct.', '#86efac', 9.5);
+    small(190, 238, 'A paying customer is turned away.', '#94a3b8', 9);
+
+    // RIGHT: AP outcome
+    label(610, 128, 'AP: CHOOSE AVAILABILITY', '#f59e0b');
+    const apBox = rs.rectangle(500, 148, 220, 55, { stroke: '#22c55e', strokeWidth: 1.6, roughness: 1.3, fill: '#22c55e15', fillStyle: 'solid' });
+    svg.appendChild(apBox);
+    small(610, 172, '✅ Served from local data', '#86efac', 10.5);
+    small(610, 190, '(may be stale)', '#86efac', 9);
+    small(610, 222, 'Counter stays open.', '#86efac', 9.5);
+    small(610, 238, 'Ledgers may disagree until reconciled.', '#94a3b8', 9);
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawDiagram, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawDiagram);
+  }
+})();
+</script>
+
+</body>
+</html>
