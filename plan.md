@@ -76,7 +76,7 @@ why everything is being pushed to `main` directly.
 |-----|-------|--------|
 | 08 | SQL vs NoSQL: When to Use What | ✅ Published |
 | 09 | ACID Properties & Transactions | ✅ Published |
-| 10 | CAP Theorem & PACELC | ⏳ Scheduled |
+| 10 | CAP Theorem & PACELC | ✅ Published |
 | 11 | Database Indexing Strategies | ⏳ Scheduled |
 | 12 | Database Replication | ⏳ Scheduled |
 | 13 | Data Partitioning & Sharding | ⏳ Scheduled |
@@ -237,6 +237,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-07-03 | Day 10 | Day 10: CAP Theorem &amp; PACELC |
 | 2026-07-01 | Day 10 (staged) | Day 10: CAP Theorem & PACELC — authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish (Friday, 2026-07-03). Confirmed via the GitHub API that the publish automation is genuinely healthy: workflow run #10 fired on schedule and published Day 9 for real. |
 | 2026-07-01 | Day 9 | Day 9: ACID Properties &amp; Transactions |
 | 2026-06-29 | Day 8 | Day 8: SQL vs NoSQL: When to Use What |
