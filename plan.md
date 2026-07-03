@@ -77,7 +77,7 @@ why everything is being pushed to `main` directly.
 | 08 | SQL vs NoSQL: When to Use What | ✅ Published |
 | 09 | ACID Properties & Transactions | ✅ Published |
 | 10 | CAP Theorem & PACELC | ✅ Published |
-| 11 | Database Indexing Strategies | ⏳ Scheduled |
+| 11 | Database Indexing Strategies | 📝 Staged |
 | 12 | Database Replication | ⏳ Scheduled |
 | 13 | Data Partitioning & Sharding | ⏳ Scheduled |
 | 14 | Consistent Hashing | ⏳ Scheduled |
@@ -237,6 +237,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-07-03 | Day 11 (staged) | Day 11: Database Indexing Strategies — authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish (Monday, 2026-07-06). Full Memorable Learning Framework: card-catalog story, interactive scan-vs-B-tree cost simulator (row slider + live speedup), roughjs B+tree lookup-path diagram, leftmost-prefix rule, write-amplification cost section, and LSM-tree real-world contrast. |
 | 2026-07-03 | Day 10 | Day 10: CAP Theorem &amp; PACELC |
 | 2026-07-01 | Day 10 (staged) | Day 10: CAP Theorem & PACELC — authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish (Friday, 2026-07-03). Confirmed via the GitHub API that the publish automation is genuinely healthy: workflow run #10 fired on schedule and published Day 9 for real. |
 | 2026-07-01 | Day 9 | Day 9: ACID Properties &amp; Transactions |
@@ -271,5 +272,6 @@ system-design/
 - [x] Day 9 (ACID Properties & Transactions) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Fixed publish workflow race condition (non-fast-forward push failures) by adding fetch+rebase+retry to `.github/workflows/daily-publish.yml` — every prior scheduled run had been failing
 - [x] Day 10 (CAP Theorem & PACELC) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
-- [ ] Days 11–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
+- [x] Day 11 (Database Indexing Strategies) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
+- [ ] Days 12–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
 - [x] GitHub Pages enabled on `main` branch — confirmed via the active `pages-build-deployment` Actions workflow on the repo
