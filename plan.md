@@ -4,7 +4,7 @@
 **Scope:** 90 lessons total (~30 min each)  
 **Publish cadence:** 3x/week (Mon, Wed, Fri) — not literally tied to a 3-month calendar window; at 3 lessons/week, 90 lessons takes ~30 weeks (~7 months) of real time, paced for actual retention rather than rushing daily.  
 **Target:** Principal Engineer level interview preparation  
-**Last Updated:** 2026-06-23
+**Last Updated:** 2026-07-06
 
 ---
 
@@ -78,7 +78,7 @@ why everything is being pushed to `main` directly.
 | 09 | ACID Properties & Transactions | ✅ Published |
 | 10 | CAP Theorem & PACELC | ✅ Published |
 | 11 | Database Indexing Strategies | ⏳ Scheduled |
-| 12 | Database Replication | ⏳ Scheduled |
+| 12 | Database Replication | 📝 Staged |
 | 13 | Data Partitioning & Sharding | ⏳ Scheduled |
 | 14 | Consistent Hashing | ⏳ Scheduled |
 
@@ -237,6 +237,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-07-06 | Day 12 (staged) | Day 12: Database Replication — authored into `staging/`, awaiting the next Mon/Wed/Fri auto-publish. Day 11 (Database Indexing) is already staged in open draft PR #2; this refills the pipeline behind it so the publish cron never runs dry. Full Memorable Learning Framework: fire/twin-ledger story (Database Dave + the runner), an interactive replication-mode simulator (async / sync-all / quorum × follower count → live write-latency, durability, staleness and write-availability metrics), a roughjs leader→followers diagram (solid=sync, dashed=async), the three topologies, the three replication-lag anomalies, and failover/split-brain seeding Raft/Paxos (Days 31–32). |
 | 2026-07-03 | Day 10 | Day 10: CAP Theorem &amp; PACELC |
 | 2026-07-01 | Day 10 (staged) | Day 10: CAP Theorem & PACELC — authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish (Friday, 2026-07-03). Confirmed via the GitHub API that the publish automation is genuinely healthy: workflow run #10 fired on schedule and published Day 9 for real. |
 | 2026-07-01 | Day 9 | Day 9: ACID Properties &amp; Transactions |
@@ -271,5 +272,7 @@ system-design/
 - [x] Day 9 (ACID Properties & Transactions) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Fixed publish workflow race condition (non-fast-forward push failures) by adding fetch+rebase+retry to `.github/workflows/daily-publish.yml` — every prior scheduled run had been failing
 - [x] Day 10 (CAP Theorem & PACELC) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
-- [ ] Days 11–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
+- [x] Day 11 (Database Indexing Strategies) authored into `staging/` (open draft PR #2), awaiting next Mon/Wed/Fri auto-publish
+- [x] Day 12 (Database Replication) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
+- [ ] Days 13–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
 - [x] GitHub Pages enabled on `main` branch — confirmed via the active `pages-build-deployment` Actions workflow on the repo
