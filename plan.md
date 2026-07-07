@@ -22,7 +22,7 @@ A progressive, 90-lesson system design course that builds from fundamentals to p
 Every lesson from Day 5 forward follows the same 11-part structure designed for long-term
 retention rather than passive reading:
 
-1. **Introductio** - Proper introduction of the topic in simple words.
+1. **Introduction** - Proper introduction of the topic in simple words.
 1. **Visual Memory Anchor** — one scene that represents the whole concept
 2. **Actual Description in Detail** — one scene that represents the whole concept
 3. **Memory Palace** — the running "Distributed Systems House" every concept lives in
