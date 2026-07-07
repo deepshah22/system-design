@@ -22,17 +22,12 @@ A progressive, 90-lesson system design course that builds from fundamentals to p
 Every lesson from Day 5 forward follows the same 11-part structure designed for long-term
 retention rather than passive reading:
 
-1. **Hook** — a curiosity-trigger question, never a textbook intro
-2. **Visual Memory Anchor** — one emoji + one scene that represents the whole concept
-3. **Story** — recurring characters (LB Lola, Cache Cathy, Database Dave, Queue Quinn, API Alex…)
-4. **Mental Model Card** — the one-sentence version to keep in your head
-5. **Interactive Simulation** — sliders/live math you can manipulate, not just read
-6. **Memory Palace** — the running "Distributed Systems House" every concept lives in
-7. **Connection Graph** — how today's concept links to concepts already learned
-8. **Active Recall** — a hidden-answer question you must attempt before revealing
-9. **Feynman Test** — explain it simply yourself, then compare to a model answer
-10. **Real-World Engineering** — how Netflix/Amazon/Uber/Google actually use it
-11. **Flashcards + Memory Test + Takeaway** — spaced-repetition deck (saved to `localStorage`) and a one-line "if you only remember one thing"
+1. **Introductio** - Proper introduction of the topic in simple words.
+1. **Visual Memory Anchor** — one scene that represents the whole concept
+2. **Actual Description in Detail** — one scene that represents the whole concept
+3. **Memory Palace** — the running "Distributed Systems House" every concept lives in
+4. **Connection Graph** — how today's concept links to concepts already learned
+5. **Real-World Engineering** — how Netflix/Amazon/Uber/Google actually use it
 
 Days 1–4 were written before this framework existed and use a more traditional structure; they
 remain published as-is and are candidates for a future rewrite pass.
