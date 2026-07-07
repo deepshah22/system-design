@@ -19,8 +19,22 @@ A progressive, 90-lesson system design course that builds from fundamentals to p
 - **Progress:** Tracked in browser `localStorage`, no backend required
 
 ### Memorable Learning Framework (Day 5 onward)
-Every lesson from Day 5 forward follows the same 11-part structure designed for long-term
-retention rather than passive reading:
+Every lesson from Day 5 forward follows the same structure, designed for long-term retention
+rather than passive reading. **As of 2026-07-07, "Learning Objectives," "The Hook," and "Feynman
+Test" were removed from every lesson (past and future)** — the course opens directly with the
+Visual Memory Anchor instead of a curiosity-trigger question or an upfront objectives list. Do not
+add these three back into new lessons.
+
+> **⚠️ Open discrepancy (2026-07-07, unresolved):** the list below was edited directly on GitHub
+> (commits `8dc9393`/`3c42a6b`/`b488fdb`) to a much leaner 5-item structure — Introduction, Visual
+> Memory Anchor, Concept Explanation, Memory Palace, Connection Graph, Real-World Engineering —
+> dropping Story, Mental Model Card, Interactive Simulation, Active Recall, and
+> Flashcards/Memory Test/Takeaway entirely. **That edit has not yet been applied to any actual
+> lesson file** — Days 5–11 still contain Story, Mental Model Card, Interactive Simulation, Active
+> Recall, and Flashcards. Do not silently rewrite every lesson to match the leaner list below
+> without confirming that's actually the intent — it's a large, one-way content change across 7+
+> published lessons. The list is preserved as-written pending that confirmation rather than
+> reverted back to the fuller 9-part version.
 
 1. **Introduction** - Proper introduction of the topic in simple words.
 1. **Visual Memory Anchor** — one scene that represents the whole concept
@@ -29,8 +43,13 @@ retention rather than passive reading:
 4. **Connection Graph** — how today's concept links to concepts already learned
 5. **Real-World Engineering** — how Netflix/Amazon/Uber/Google actually use it
 
-Days 1–4 were written before this framework existed and use a more traditional structure; they
-remain published as-is and are candidates for a future rewrite pass.
+Days 8–10 were also rewritten in-place (2026-07-07) for principal-engineer depth — see the
+Progress Log — and now additionally include a "Common Mistakes & Misconceptions" table, which is
+a good pattern to reuse for future lessons where a topic has genuine, common misconceptions.
+
+Days 1–4 predate this framework and use an older, simpler structure (their own inline objectives
+block was removed in the same 2026-07-07 pass, but they were not otherwise rewritten); they remain
+published as-is and are candidates for a future full rewrite pass.
 
 ### Publish Automation (3x/week: Mon, Wed, Fri)
 Lessons are authored ahead of time into `staging/day-NN.html` (so quality isn't rushed), but they
@@ -68,7 +87,10 @@ checklist rather than re-deriving the process from scratch:
 3. **If `staging/` is empty, author exactly one lesson** for the next unpublished day (see
    `days/day-09.html` or `days/day-10.html` as the reference template) using the full Memorable
    Learning Framework below. Do not write multiple days ahead in one sitting — staging holds at
-   most one lesson at a time by convention, so the release cadence stays real.
+   most one lesson at a time by convention, so the release cadence stays real. **Do not include a
+   "Learning Objectives" block, a "The Hook" section, or a "Feynman Test" section** — these were
+   deliberately removed from every lesson on 2026-07-07; the lesson should open directly with the
+   Visual Memory Anchor.
 4. **Match the file structure exactly:** `staging/day-NN.html`, using `days/day-09.html`/`day-10.html`
    as the literal template (same `<style>` block, same section IDs, same `page-nav` pattern with
    `coming-soon-link` on the "next" link, same footer/script includes). `index.html` already has a
@@ -282,6 +304,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-07-07 | — | User feedback: removed "Learning Objectives," "The Hook," and "Feynman Test" from every lesson (Days 1–11, published and staged) — lessons now open directly with the Visual Memory Anchor. Also reframed `index.html` away from "interview prep" positioning toward "system design learning": reworded the hero eyebrow/subtitle/footer/meta-description, and removed the Stats Row and Progress Widget sections entirely per an explicit request to trim the homepage down to course overview + roadmap (Phases section) + navigation to every lesson (Curriculum grid) and nothing else. Verified with a headless-browser render that all pages (old Day 1–4 template and new Day 5+ template) still load with zero script errors after the removals. |
 | 2026-07-07 | Days 8–10 (rewritten) | Rewrote the published Days 8, 9, and 10 for principal-engineer depth (user feedback: too shallow). Day 8 gets single-table design, the hot-partition problem, GSI eventual-consistency, and a live read/write-amplification calculator. Day 9 gets write skew (with the on-call-doctors example), the 2PL-vs-MVCC mechanism, and concrete anomaly walkthroughs. Day 10 gets N/W/R quorum math with a live calculator, sloppy quorums/hinted handoff, and vector-clock conflict resolution. Each also gains a "Common Mistakes & Misconceptions" table matching Day 11's pattern. Verified via a headless-browser render (Playwright) that all new JS/sliders compute correctly with no script errors before pushing. |
 | 2026-07-07 | — | Added the Session Runbook to `plan.md` and populated `README.md`, so future sessions have a documented routine instead of re-deriving it. Also investigated the local "commit unverified" stop-hook warning: root-caused to an empty `commit_signing_key.pub` in this sandbox (no public key material available for local signature verification) — real signatures are attached to every commit, this is a local-verification-only gap, and it is not fixable via `--amend`/`--reset-author`. Documented as a known limitation so it isn't re-investigated each session. |
 | 2026-07-03 | Day 11 (staged) | Day 11: Database Indexing Strategies — authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish (Monday, 2026-07-06). Full Memorable Learning Framework: card-catalog story, interactive scan-vs-B-tree cost simulator (row slider + live speedup), roughjs B+tree lookup-path diagram, leftmost-prefix rule, write-amplification cost section, and LSM-tree real-world contrast. |

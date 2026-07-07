@@ -95,7 +95,6 @@
     <aside class="toc-sidebar">
       <nav class="toc">
         <div class="toc-title">On this page</div>
-        <a href="#hook">The Hook</a>
         <a href="#anchor">Visual Anchor</a>
         <a href="#story">The Story</a>
         <a href="#model">Mental Model</a>
@@ -107,7 +106,6 @@
         <a href="#palace">Memory Palace</a>
         <a href="#graph">Connections</a>
         <a href="#recall">Active Recall</a>
-        <a href="#feynman">Feynman Test</a>
         <a href="#realworld">Real-World Engineering</a>
         <a href="#flashcards">Flashcards</a>
         <a href="#practice">Memory Test</a>
@@ -116,36 +114,6 @@
     </aside>
 
     <main>
-
-      <div class="objectives">
-        <div class="objectives-title">Learning Objectives</div>
-        <ul>
-          <li>State the CAP theorem precisely and explain why "pick 2 of 3" is a misleading simplification</li>
-          <li>Walk through a concrete network-partition scenario and defend a CP or AP choice with real tradeoffs</li>
-          <li>Explain PACELC — the extension that covers the far more common case where there's no partition</li>
-          <li>Classify real systems (DynamoDB, MongoDB, Spanner, Cassandra) by their CAP/PACELC behavior</li>
-          <li>Use this framework to justify a data-store choice out loud, in an interview, under follow-up questions</li>
-          <li>Do the actual N/W/R quorum math and explain exactly when a quorum system guarantees strong consistency</li>
-          <li>Explain sloppy quorums, hinted handoff, and vector-clock conflict resolution — the mechanisms real AP systems use to make "eventually consistent" concrete instead of hand-wavy</li>
-        </ul>
-      </div>
-
-      <section id="hook">
-        <div class="hook">
-          Your database runs across two data centers, New York and London, for redundancy. A backhoe
-          three states away slices through the undersea cable connecting them. Both data centers are
-          still alive. Both are still getting user traffic. They just can't talk to each other
-          anymore. A user in New York asks to buy the last concert ticket. Do you sell it to them?
-        </div>
-        <p>
-          There is no clever answer that avoids the question. If you say yes, you might also sell the
-          same last ticket to someone in London — the two data centers can't compare notes to know it
-          was already sold. If you say no, the New York system is now refusing money it could
-          otherwise take, from a customer who did nothing wrong. Every distributed data store you
-          will ever use has already made this exact choice on your behalf, permanently, in its
-          architecture. Today's job is knowing which choice it made, and why.
-        </p>
-      </section>
 
       <section id="anchor">
         <h2>Visual Memory Anchor</h2>
@@ -401,24 +369,6 @@
           by serving requests from local, possibly-stale data (cost: reduced consistency — different
           nodes may disagree until the partition heals and the data reconciles). There is no third
           option that gets both during the partition itself.</div>
-        </div>
-      </section>
-
-      <section id="feynman">
-        <h2>Feynman Test</h2>
-        <div class="feynman-box">
-          <p><strong>Explain to a 10-year-old why two people using the same banking app in different
-          countries might briefly see different account balances, even though nothing is "broken."</strong>
-          Write it below, then compare.</p>
-          <textarea placeholder="It's like a..."></textarea>
-          <button class="btn btn-outline feynman-reveal-btn" style="margin-top:.75rem;">Reveal model answer</button>
-          <div class="feynman-model">"Imagine two friends each keeping a copy of the same notebook, but
-          they can only compare notes by phone. If the phone line goes down for a minute, each friend
-          still has to answer questions using whatever their notebook said last — they can't magically
-          know what the other one just wrote. Once the phone line is back, they compare notes and fix
-          any difference. For that one minute, they might give slightly different answers — not
-          because anyone made a mistake, but because they physically couldn't check with each other in
-          time."</div>
         </div>
       </section>
 

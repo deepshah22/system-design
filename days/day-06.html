@@ -82,7 +82,6 @@
     <aside class="toc-sidebar">
       <nav class="toc">
         <div class="toc-title">On this page</div>
-        <a href="#hook">The Hook</a>
         <a href="#anchor">Visual Anchor</a>
         <a href="#story">The Story</a>
         <a href="#model">Mental Model</a>
@@ -92,7 +91,6 @@
         <a href="#palace">Memory Palace</a>
         <a href="#graph">Connections</a>
         <a href="#recall">Active Recall</a>
-        <a href="#feynman">Feynman Test</a>
         <a href="#realworld">Real-World Engineering</a>
         <a href="#flashcards">Flashcards</a>
         <a href="#practice">Memory Test</a>
@@ -101,30 +99,6 @@
     </aside>
 
     <main>
-
-      <div class="objectives">
-        <div class="objectives-title">Learning Objectives</div>
-        <ul>
-          <li>Explain why caching is usually the highest-leverage scaling decision in a system</li>
-          <li>Compare cache-aside, write-through, and write-back patterns</li>
-          <li>Reason about TTLs, eviction policies (LRU, LFU), and stale-data tradeoffs</li>
-          <li>Identify cache stampede / thundering herd and how to prevent it</li>
-          <li>Apply this to interview questions about reducing database load</li>
-        </ul>
-      </div>
-
-      <section id="hook">
-        <div class="hook">
-          Why does Netflix's homepage load in <span>under 100ms</span>, when the data behind it lives
-          in databases on the other side of the country?
-        </div>
-        <p>
-          Because almost nothing on that screen is actually being computed when you load the page.
-          It was computed once, recently, by someone else's request — and saved somewhere much
-          closer and much faster than the database. That's caching: the art of not doing the same
-          expensive work twice.
-        </p>
-      </section>
 
       <section id="anchor">
         <h2>Visual Memory Anchor</h2>
@@ -231,18 +205,6 @@
           <div class="recall-q recall-toggle">❓ What problem does caching solve, in one sentence? (click to reveal)</div>
           <div class="recall-answer">It avoids repeating expensive work (usually a database read) by
           storing the result somewhere faster, cutting both latency and load on the source of truth.</div>
-        </div>
-      </section>
-
-      <section id="feynman">
-        <h2>Feynman Test</h2>
-        <div class="feynman-box">
-          <p><strong>Explain Redis to a 10-year-old.</strong> Write it below, then compare.</p>
-          <textarea placeholder="It's like a..."></textarea>
-          <button class="btn btn-outline feynman-reveal-btn" style="margin-top:.75rem;">Reveal model answer</button>
-          <div class="feynman-model">"Imagine Redis as a super-fast assistant sitting right beside
-          your desk who remembers the last few things you asked for, while the database is a giant
-          filing cabinet across the building that has everything but takes longer to walk to."</div>
         </div>
       </section>
 

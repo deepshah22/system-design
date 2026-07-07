@@ -95,7 +95,6 @@
     <aside class="toc-sidebar">
       <nav class="toc">
         <div class="toc-title">On this page</div>
-        <a href="#hook">The Hook</a>
         <a href="#anchor">Visual Anchor</a>
         <a href="#story">The Story</a>
         <a href="#model">Mental Model</a>
@@ -106,7 +105,6 @@
         <a href="#palace">Memory Palace</a>
         <a href="#graph">Connections</a>
         <a href="#recall">Active Recall</a>
-        <a href="#feynman">Feynman Test</a>
         <a href="#realworld">Real-World Engineering</a>
         <a href="#flashcards">Flashcards</a>
         <a href="#practice">Memory Test</a>
@@ -115,35 +113,6 @@
     </aside>
 
     <main>
-
-      <div class="objectives">
-        <div class="objectives-title">Learning Objectives</div>
-        <ul>
-          <li>Explain the relational model, normalization, and why ACID guarantees exist</li>
-          <li>Name the four major NoSQL data models and give a real product example of each</li>
-          <li>Reason about when joins/transactions/strong consistency make SQL the right call</li>
-          <li>Reason about when flexible schema, horizontal scale, or access-pattern modeling make NoSQL the right call</li>
-          <li>Apply a concrete decision framework to "SQL or NoSQL?" interview questions, and explain polyglot persistence</li>
-          <li>Quantify the real trade — read amplification (joins) vs. write amplification (denormalized copies) — instead of hand-waving "NoSQL is faster"</li>
-          <li>Explain single-table design and the hot-partition problem, the two things that actually separate a junior NoSQL schema from a principal one</li>
-        </ul>
-      </div>
-
-      <section id="hook">
-        <div class="hook">
-          Why does your bank store your balance in a rigid, decades-old relational database — but
-          Amazon stores your shopping cart in something that looks nothing like a spreadsheet at all?
-        </div>
-        <p>
-          Because a bank balance and a shopping cart are answering completely different questions.
-          A balance has to survive a power outage mid-transfer with exactly one correct answer —
-          there is no "approximately your balance." A shopping cart just needs to be there,
-          instantly, for one specific user, at the scale of hundreds of millions of carts a day, and
-          it's fine if a cart write takes a few hundred milliseconds to fully replicate. SQL vs
-          NoSQL isn't "old vs new" or "boring vs cool" — it's a real engineering tradeoff between
-          structure and scale, and picking wrong shows up immediately in an interview.
-        </p>
-      </section>
 
       <section id="anchor">
         <h2>Visual Memory Anchor</h2>
@@ -443,22 +412,6 @@
           transactional guarantees at the cost of harder horizontal scaling; NoSQL gives up some of
           those guarantees (joins, strict schema, sometimes strong consistency) in exchange for a
           data shape modeled directly around one access pattern and much easier horizontal scale.</div>
-        </div>
-      </section>
-
-      <section id="feynman">
-        <h2>Feynman Test</h2>
-        <div class="feynman-box">
-          <p><strong>Explain to a 10-year-old why a bank uses a different kind of database than a
-          social media "like" counter.</strong> Write it below, then compare.</p>
-          <textarea placeholder="It's like a..."></textarea>
-          <button class="btn btn-outline feynman-reveal-btn" style="margin-top:.75rem;">Reveal model answer</button>
-          <div class="feynman-model">"A bank is like a filing cabinet where every form has to be
-          filled out completely and correctly before it gets filed — because if your money disappears
-          halfway through a transfer, that's a disaster. A 'like' counter is like a jar of marbles at
-          every cash register in every store in the country — it's totally fine if one register's
-          jar is a few marbles behind for a second, as long as it catches up, because nobody's life
-          is ruined by a like count being off by one for a moment."</div>
         </div>
       </section>
 

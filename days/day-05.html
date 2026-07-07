@@ -83,7 +83,6 @@
     <aside class="toc-sidebar">
       <nav class="toc">
         <div class="toc-title">On this page</div>
-        <a href="#hook">The Hook</a>
         <a href="#anchor">Visual Anchor</a>
         <a href="#story">The Story</a>
         <a href="#model">Mental Model</a>
@@ -94,7 +93,6 @@
         <a href="#palace">Memory Palace</a>
         <a href="#graph">Connections</a>
         <a href="#recall">Active Recall</a>
-        <a href="#feynman">Feynman Test</a>
         <a href="#realworld">Real-World Engineering</a>
         <a href="#flashcards">Flashcards</a>
         <a href="#practice">Memory Test</a>
@@ -103,30 +101,6 @@
     </aside>
 
     <main>
-
-      <div class="objectives">
-        <div class="objectives-title">Learning Objectives</div>
-        <ul>
-          <li>Explain why every distributed system needs a load balancer before it needs anything else</li>
-          <li>Compare round robin, weighted round robin, least connections, and consistent hashing</li>
-          <li>Distinguish Layer 4 (transport) from Layer 7 (application) load balancing</li>
-          <li>Reason about health checks, sticky sessions, and load balancer high availability</li>
-          <li>Apply this to interview questions: "how does traffic get distributed across your servers?"</li>
-        </ul>
-      </div>
-
-      <section id="hook">
-        <div class="hook">
-          Why didn't Amazon's homepage fall over on Black Friday, when <span>10 million people</span>
-          hit "Buy Now" inside the same 60 seconds?
-        </div>
-        <p>
-          It's not because Amazon has one giant, impossibly powerful server. It's because no single
-          request ever talks to "the server" — it talks to a thin layer that instantly decides
-          <em>which</em> of thousands of identical servers should handle it. That layer is the load
-          balancer, and it is almost always the first box drawn in a system design interview.
-        </p>
-      </section>
 
       <section id="anchor">
         <h2>Visual Memory Anchor</h2>
@@ -256,18 +230,6 @@
           <div class="recall-answer">It prevents any single server from being overwhelmed by spreading
           incoming requests across a fleet of servers, while routing around any server that's
           unhealthy.</div>
-        </div>
-      </section>
-
-      <section id="feynman">
-        <h2>Feynman Test</h2>
-        <div class="feynman-box">
-          <p><strong>Explain a load balancer to a 10-year-old.</strong> Write it below, then compare.</p>
-          <textarea placeholder="It's like a..."></textarea>
-          <button class="btn btn-outline feynman-reveal-btn" style="margin-top:.75rem;">Reveal model answer</button>
-          <div class="feynman-model">"Imagine one cash register at a busy store with a huge line. Now
-          imagine three registers open, and a helper at the front pointing each customer to whichever
-          register is shortest. That helper is the load balancer."</div>
         </div>
       </section>
 

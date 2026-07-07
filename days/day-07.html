@@ -84,7 +84,6 @@
     <aside class="toc-sidebar">
       <nav class="toc">
         <div class="toc-title">On this page</div>
-        <a href="#hook">The Hook</a>
         <a href="#anchor">Visual Anchor</a>
         <a href="#story">The Story</a>
         <a href="#model">Mental Model</a>
@@ -94,7 +93,6 @@
         <a href="#palace">Memory Palace</a>
         <a href="#graph">Connections</a>
         <a href="#recall">Active Recall</a>
-        <a href="#feynman">Feynman Test</a>
         <a href="#realworld">Real-World Engineering</a>
         <a href="#flashcards">Flashcards</a>
         <a href="#practice">Memory Test</a>
@@ -103,31 +101,6 @@
     </aside>
 
     <main>
-
-      <div class="objectives">
-        <div class="objectives-title">Learning Objectives</div>
-        <ul>
-          <li>Explain the core architectural difference between Redis and Memcached</li>
-          <li>Compare them on data structures, persistence, replication, and clustering</li>
-          <li>Reason about when a rich data structure (sorted set, list, hash) beats a plain key-blob store</li>
-          <li>Understand Redis persistence (RDB vs AOF) and Redis Cluster sharding at a high level</li>
-          <li>Apply this to interview questions like "would you use Redis or Memcached here, and why?"</li>
-        </ul>
-      </div>
-
-      <section id="hook">
-        <div class="hook">
-          Why does Twitter use Redis to store your timeline, but a plain CDN-fronted app might be
-          perfectly happy with <span>Memcached</span> for session tokens?
-        </div>
-        <p>
-          Because not all caching jobs are the same job. Some caching jobs just need a fast box to
-          stash a blob of bytes and forget about it. Others need the cache to actually understand
-          the shape of the data — to know it's a sorted list of recent tweet IDs, or a set of
-          followers, or a hash of user fields — so it can update a tiny slice of it without
-          re-fetching and re-writing the whole thing. That distinction is Redis vs Memcached.
-        </p>
-      </section>
 
       <section id="anchor">
         <h2>Visual Memory Anchor</h2>
@@ -293,19 +266,6 @@
           persistence or built-in structure; Redis stores typed data structures (lists, sets,
           hashes, sorted sets) that the server can manipulate directly, and can optionally persist
           and replicate them.</div>
-        </div>
-      </section>
-
-      <section id="feynman">
-        <h2>Feynman Test</h2>
-        <div class="feynman-box">
-          <p><strong>Explain why a leaderboard needs Redis instead of Memcached, to a 10-year-old.</strong> Write it below, then compare.</p>
-          <textarea placeholder="It's like a..."></textarea>
-          <button class="btn btn-outline feynman-reveal-btn" style="margin-top:.75rem;">Reveal model answer</button>
-          <div class="feynman-model">"Memcached is a box of labeled jars — to update a ranking
-          you'd have to take the whole jar out, fix the list by hand, and put it back. Redis is
-          more like a whiteboard where the scores are already sorted for you, so asking 'who's in
-          the top 10 right now?' is instant, even as scores keep changing."</div>
         </div>
       </section>
 

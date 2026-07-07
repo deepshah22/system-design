@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>System Design Mastery — Principal Engineer Course</title>
-  <meta name="description" content="A 90-day progressive system design course built for principal engineer interview prep. From fundamentals to distributed systems mastery." />
+  <meta name="description" content="A 90-day progressive system design course for building real understanding of distributed systems, from fundamentals to principal-engineer-level mastery." />
   <link rel="stylesheet" href="assets/style.css" />
   <style>
     /* ─── INDEX-SPECIFIC STYLES ─── */
@@ -330,15 +330,15 @@
 <!-- ─── HERO ──────────────────────────────────────────────────── -->
 <section class="hero">
   <div class="hero-eyebrow">
-    ✦ 90-Day Interview Prep Course
+    ✦ 90-Day System Design Course
   </div>
   <h1 class="fade-in">
     System Design Mastery<br/>
     <span class="gradient-text">From Zero to Principal Engineer</span>
   </h1>
   <p class="hero-sub fade-in fade-in-delay-1">
-    A structured, progressive course covering every concept you need to confidently ace
-    system design interviews at top tech companies — from fundamentals to advanced distributed systems.
+    A structured, progressive course for building real, lasting understanding of distributed
+    systems — one concept at a time, from first principles up to principal-engineer-level depth.
   </p>
   <div class="hero-actions fade-in fade-in-delay-2">
     <div class="start-btn-wrapper">
@@ -349,66 +349,7 @@
     </div>
     <a href="#curriculum" class="btn btn-outline btn-large">View Curriculum</a>
   </div>
-
-  <!-- Stats Row -->
-  <div class="stats-row fade-in fade-in-delay-3">
-    <div class="stat">
-      <div class="stat-value gradient-text">90</div>
-      <div class="stat-label">Lessons (3x/week)</div>
-    </div>
-    <div class="stat-divider"></div>
-    <div class="stat">
-      <div class="stat-value gradient-text">~30</div>
-      <div class="stat-label">Min / Day</div>
-    </div>
-    <div class="stat-divider"></div>
-    <div class="stat">
-      <div class="stat-value" id="stat-completed" style="color:var(--success)">0</div>
-      <div class="stat-label">Days Done</div>
-    </div>
-    <div class="stat-divider"></div>
-    <div class="stat">
-      <div class="stat-value" style="color:var(--phase3)" id="stat-streak">0</div>
-      <div class="stat-label">Day Streak</div>
-    </div>
-    <div class="stat-divider"></div>
-    <div class="stat">
-      <div class="stat-value" id="stat-pct" style="color:var(--accent-light)">0%</div>
-      <div class="stat-label">Complete</div>
-    </div>
-  </div>
 </section>
-
-<!-- ─── PROGRESS WIDGET ──────────────────────────────────────── -->
-<div class="container" style="padding-top:0">
-  <div class="progress-widget">
-    <div class="progress-ring-wrapper">
-      <svg width="128" height="128" class="progress-ring">
-        <defs>
-          <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" style="stop-color:var(--accent)" />
-            <stop offset="100%" style="stop-color:var(--phase2)" />
-          </linearGradient>
-        </defs>
-        <circle cx="64" cy="64" r="54" class="progress-ring-bg" />
-        <circle cx="64" cy="64" r="54" class="progress-ring-fill" style="stroke-dasharray:339.3;stroke-dashoffset:339.3;" />
-      </svg>
-      <div class="progress-center" id="stat-pct2">0%</div>
-    </div>
-    <h3>Your Progress</h3>
-    <p style="font-size:0.875rem;margin:0.5rem 0">Track your journey through 90 days of system design mastery</p>
-    <div class="progress-stats">
-      <div class="stat">
-        <div class="stat-value" id="stat-completed2" style="font-size:1.5rem;color:var(--success)">0</div>
-        <div class="stat-label">Completed</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value" id="stat-remaining" style="font-size:1.5rem;color:var(--phase3)">90</div>
-        <div class="stat-label">Remaining</div>
-      </div>
-    </div>
-  </div>
-</div>
 
 <!-- ─── PHASES ────────────────────────────────────────────────── -->
 <section class="phases-section" id="phases">
@@ -684,8 +625,8 @@
 
 <!-- ─── FOOTER ────────────────────────────────────────────────── -->
 <footer>
-  <p>System Design Mastery — 90-Day Principal Engineer Course &nbsp;·&nbsp;
-  Built for serious interview prep &nbsp;·&nbsp;
+  <p>System Design Mastery — 90-Day System Design Course &nbsp;·&nbsp;
+  Built for real, lasting understanding of distributed systems &nbsp;·&nbsp;
   <a href="https://github.com/deepshah22/system-design">GitHub</a>
   </p>
 </footer>
@@ -708,29 +649,9 @@
     });
   });
 
-  // Sync both stat elements
-  function syncStats() {
-    const count = getCompletedCount ? getCompletedCount() : 0;
-    const pct = Math.round((count / 90) * 100);
-    const el2 = document.getElementById('stat-completed2');
-    const el3 = document.getElementById('stat-remaining');
-    const el4 = document.getElementById('stat-pct2');
-    if (el2) el2.textContent = count;
-    if (el3) el3.textContent = 90 - count;
-    if (el4) el4.textContent = pct + '%';
-    // Ring
-    const ring = document.querySelector('.progress-ring-fill');
-    if (ring) {
-      const r = 54, circ = 2 * Math.PI * r;
-      ring.style.strokeDasharray = circ;
-      ring.style.strokeDashoffset = circ - (pct / 100) * circ;
-    }
-  }
-
   // Init
   document.addEventListener('DOMContentLoaded', () => {
     initIndexPage();
-    syncStats();
   });
 </script>
 </body>

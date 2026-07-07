@@ -95,7 +95,6 @@
     <aside class="toc-sidebar">
       <nav class="toc">
         <div class="toc-title">On this page</div>
-        <a href="#hook">The Hook</a>
         <a href="#anchor">Visual Anchor</a>
         <a href="#story">The Story</a>
         <a href="#model">Mental Model</a>
@@ -107,7 +106,6 @@
         <a href="#palace">Memory Palace</a>
         <a href="#graph">Connections</a>
         <a href="#recall">Active Recall</a>
-        <a href="#feynman">Feynman Test</a>
         <a href="#realworld">Real-World Engineering</a>
         <a href="#flashcards">Flashcards</a>
         <a href="#practice">Memory Test</a>
@@ -116,36 +114,6 @@
     </aside>
 
     <main>
-
-      <div class="objectives">
-        <div class="objectives-title">Learning Objectives</div>
-        <ul>
-          <li>Define each ACID letter precisely and name the specific bug it prevents</li>
-          <li>Walk through a concrete bank-transfer failure scenario for each letter</li>
-          <li>Explain the four standard SQL isolation levels and the read anomaly each one fixes</li>
-          <li>Reason about the cost/throughput tradeoff of stronger isolation</li>
-          <li>Connect ACID to BASE and preview why CAP theorem (Day 10) makes "always ACID, everywhere" impossible at scale</li>
-          <li>Explain <strong>write skew</strong> and why Repeatable Read does not actually make your application safe from all race conditions</li>
-          <li>Distinguish Two-Phase Locking from MVCC as the two real mechanisms databases use to implement isolation, and why most production databases picked MVCC</li>
-        </ul>
-      </div>
-
-      <section id="hook">
-        <div class="hook">
-          You transfer $500 to a friend. The power goes out at your bank's data center at the exact
-          millisecond after your account is debited but before your friend's account is credited.
-          When the power comes back — where did the $500 go?
-        </div>
-        <p>
-          The honest, infuriating answer should be: nowhere. It should be exactly as if the transfer
-          never started at all. Not "your $500 is debited and we're investigating," not "your friend
-          got the money twice because the retry doubled up" — the transfer either completes
-          completely, or it's as if you clicked nothing. That single guarantee, repeated correctly
-          under crashes, concurrent transactions, and partial failures, is what ACID actually buys
-          you. Most engineers can recite the acronym; principal engineers can tell you exactly which
-          letter breaks in a given incident report.
-        </p>
-      </section>
 
       <section id="anchor">
         <h2>Visual Memory Anchor</h2>
@@ -388,23 +356,6 @@
           half-finished transfer. Durability is related but answers a different question: once the
           transfer is fully committed, Durability is what guarantees that result survives a
           <em>later</em> crash — the two letters cover different moments in the transaction's life.</div>
-        </div>
-      </section>
-
-      <section id="feynman">
-        <h2>Feynman Test</h2>
-        <div class="feynman-box">
-          <p><strong>Explain to a 10-year-old why your bank app doesn't just "save as it goes" the
-          way a video game auto-saves.</strong> Write it below, then compare.</p>
-          <textarea placeholder="It's like a..."></textarea>
-          <button class="btn btn-outline feynman-reveal-btn" style="margin-top:.75rem;">Reveal model answer</button>
-          <div class="feynman-model">"A video game auto-save is fine if it sometimes loses the last
-          ten seconds of progress — annoying, not catastrophic. A bank transfer is two separate edits
-          (take from one person, give to another) that have to count as ONE thing. If the bank just
-          saved as it went, a crash between the two edits would make money disappear forever. So
-          instead, the bank writes down its plan first, does both edits, and only then says 'done' —
-          and if anything interrupts it partway, it can always undo back to exactly where it
-          started, like nothing happened."</div>
         </div>
       </section>
 

@@ -104,7 +104,6 @@
     <aside class="toc-sidebar">
       <nav class="toc">
         <div class="toc-title">On this page</div>
-        <a href="#hook">The Hook</a>
         <a href="#anchor">Visual Anchor</a>
         <a href="#story">The Story</a>
         <a href="#model">Mental Model</a>
@@ -116,7 +115,6 @@
         <a href="#graph">Connections</a>
         <a href="#mistakes">Common Mistakes</a>
         <a href="#recall">Active Recall</a>
-        <a href="#feynman">Feynman Test</a>
         <a href="#realworld">Real-World Engineering</a>
         <a href="#flashcards">Flashcards</a>
         <a href="#practice">Memory Test</a>
@@ -125,33 +123,6 @@
     </aside>
 
     <main>
-
-      <div class="objectives">
-        <div class="objectives-title">Learning Objectives</div>
-        <ul>
-          <li>Explain, from first principles, why a full table scan gets catastrophically slow — and how an index dodges it</li>
-          <li>Describe how a B-tree / B+tree index turns a billion-row lookup into a handful of steps</li>
-          <li>Choose the right index type: B-tree vs hash, single-column vs composite, clustered vs secondary, covering</li>
-          <li>Apply the leftmost-prefix rule and explain why column order in a composite index changes everything</li>
-          <li>Quantify the write cost of indexes and articulate when adding one hurts more than it helps</li>
-          <li>Reason about cardinality/selectivity to predict whether the query planner will even use your index</li>
-        </ul>
-      </div>
-
-      <section id="hook">
-        <div class="hook">
-          You look up a word in a 2,000-page dictionary. You do not start on page 1 and read every
-          word until you hit the one you want — you'd still be reading tomorrow. You flip roughly to
-          where it should be, narrow in, and land on it in seconds. Now: why does your database, given
-          a billion rows and asked for exactly one, so often do the equivalent of reading from page 1?
-        </div>
-        <p>
-          The answer is that a database only knows how to flip-to-roughly-the-right-place if someone
-          built it the dictionary's thumb-tabs first. That structure is called an <strong>index</strong>,
-          and building it is not automatic — it's a decision, with a cost. Today is about making that
-          decision like an engineer instead of guessing.
-        </p>
-      </section>
 
       <section id="anchor">
         <h2>Visual Memory Anchor</h2>
@@ -401,26 +372,6 @@
         <div class="recall-box">
           <div class="recall-q recall-toggle">❓ You add an index and reads get faster — name the two costs you just silently signed up for, and one situation where the index makes things worse overall. (click to reveal)</div>
           <div class="recall-answer">Cost 1: <strong>write amplification</strong> — every insert/update/delete must also keep this index sorted, so writes get slower. Cost 2: <strong>storage/memory</strong> — the index is an extra sorted copy of its columns competing for disk and cache. It makes things worse overall on a <strong>write-heavy table</strong> (the write tax outweighs the read win) or on a <strong>low-cardinality column</strong> (it barely filters, so the planner scans anyway and you paid the write cost for nothing).</div>
-        </div>
-      </section>
-
-      <section id="feynman">
-        <h2>Feynman Test</h2>
-        <div class="feynman-box">
-          <p><strong>Explain to a 10-year-old how a database can find one specific customer out of a
-          billion almost instantly, when there are way too many to check one by one.</strong>
-          Write it below, then compare.</p>
-          <textarea placeholder="It's like a..."></textarea>
-          <button class="btn btn-outline feynman-reveal-btn" style="margin-top:.75rem;">Reveal model answer</button>
-          <div class="feynman-model">"It's like the little list at the back of a big book. If you want
-          every page about dinosaurs, you don't read the whole book — you flip to the back where all
-          the words are in ABC order, run your finger to 'dinosaur,' and it tells you the exact pages.
-          The database keeps a tidy sorted list like that of just the thing you're searching for, plus
-          a note saying where the full information is. Because the list is sorted, it can keep cutting
-          it in half — 'too high, too low, too high' — and get to the answer in just a few jumps instead
-          of checking a billion things. The only catch: every time a new customer is added, it has to
-          squeeze them into the right spot on that sorted list too, which takes a tiny bit of extra
-          work."</div>
         </div>
       </section>
 
