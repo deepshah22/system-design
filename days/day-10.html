@@ -101,7 +101,9 @@
         <a href="#model">Mental Model</a>
         <a href="#sim">Try It Yourself</a>
         <a href="#depth">CAP In Depth</a>
+        <a href="#quorum">Quorum Systems</a>
         <a href="#pacelc">PACELC</a>
+        <a href="#mistakes">Common Mistakes</a>
         <a href="#palace">Memory Palace</a>
         <a href="#graph">Connections</a>
         <a href="#recall">Active Recall</a>
@@ -123,6 +125,8 @@
           <li>Explain PACELC — the extension that covers the far more common case where there's no partition</li>
           <li>Classify real systems (DynamoDB, MongoDB, Spanner, Cassandra) by their CAP/PACELC behavior</li>
           <li>Use this framework to justify a data-store choice out loud, in an interview, under follow-up questions</li>
+          <li>Do the actual N/W/R quorum math and explain exactly when a quorum system guarantees strong consistency</li>
+          <li>Explain sloppy quorums, hinted handoff, and vector-clock conflict resolution — the mechanisms real AP systems use to make "eventually consistent" concrete instead of hand-wavy</li>
         </ul>
       </div>
 
@@ -260,6 +264,71 @@
         specifically when a partition happens, not reciting "it's AP" as a trivia fact.</p>
       </section>
 
+      <section id="quorum">
+        <h2>Quorum Systems: Making "Available" and "Consistent" Precise</h2>
+        <p>"Choose availability or consistency" sounds binary, but production systems don't actually
+        flip a single switch — most distributed data stores let you tune the tradeoff per read and
+        per write using <strong>quorums</strong>, defined by three numbers:</p>
+        <table class="algo-table">
+          <tr><th>Symbol</th><th>Meaning</th></tr>
+          <tr><td><strong>N</strong></td><td>Total number of replicas the data is stored on.</td></tr>
+          <tr><td><strong>W</strong></td><td>Number of replicas that must acknowledge a <em>write</em> before it's considered successful.</td></tr>
+          <tr><td><strong>R</strong></td><td>Number of replicas that must respond to a <em>read</em> before returning a result.</td></tr>
+        </table>
+        <p>The rule that determines strong consistency: if <strong>W + R &gt; N</strong>, every read
+        quorum and every write quorum are guaranteed to overlap by at least one replica — so any read
+        is guaranteed to see the most recent write, because at least one node in the read set must
+        have participated in the write set. If <strong>W + R ≤ N</strong>, it's possible for a read to
+        hit only replicas that haven't received the latest write yet — you've explicitly chosen to
+        allow stale reads in exchange for lower latency (fewer replicas to wait for) and higher
+        availability (fewer replicas that need to be reachable). This is the actual mechanism behind
+        "eventually consistent" — it's not vague, it's arithmetic.</p>
+
+        <div class="sim-box">
+          <p><strong>Try it:</strong> pick N, W, and R and see exactly what you get — strong
+          consistency, and how many node failures you can still tolerate for reads and for writes.</p>
+          <div class="sim-controls" style="flex-direction:column; align-items:stretch; gap:1rem;">
+            <div>
+              <label for="sim-n" style="font-size:.85rem;">N — total replicas: <strong id="sim-n-val">3</strong></label>
+              <input type="range" id="sim-n" min="1" max="9" step="1" value="3" style="width:100%;" />
+            </div>
+            <div>
+              <label for="sim-w" style="font-size:.85rem;">W — write quorum: <strong id="sim-w-val">2</strong></label>
+              <input type="range" id="sim-w" min="1" max="9" step="1" value="2" style="width:100%;" />
+            </div>
+            <div>
+              <label for="sim-r" style="font-size:.85rem;">R — read quorum: <strong id="sim-r-val">2</strong></label>
+              <input type="range" id="sim-r" min="1" max="9" step="1" value="2" style="width:100%;" />
+            </div>
+          </div>
+          <div class="sim-output" id="sim-quorum-output">Loading…</div>
+        </div>
+
+        <h3>Sloppy quorums &amp; hinted handoff</h3>
+        <p>What happens when a strict quorum can't be reached because a node is genuinely down, not
+        just partitioned? Amazon's original Dynamo paper introduced <strong>sloppy quorums</strong>:
+        instead of blocking the write because one of the "correct" N nodes is unreachable, the
+        coordinator temporarily writes to a different, healthy node instead, along with a
+        <strong>hint</strong> saying "this write actually belongs to node X." Once node X comes back,
+        the hint is replayed to it (<strong>hinted handoff</strong>) and the temporary copy is
+        removed. This is precisely how DynamoDB-style systems keep accepting writes during a partial
+        outage instead of returning errors — it trades strict quorum membership for availability, and
+        it's why two replicas can end up with genuinely conflicting versions of the same key that need
+        reconciliation later.</p>
+
+        <h3>Resolving conflicts: vector clocks</h3>
+        <p>Once sloppy quorums (or any AP replication scheme) allow concurrent, conflicting writes to
+        the same key, something has to decide which version wins when they're compared. A
+        <strong>vector clock</strong> is a small per-key map of <code>{replica_id: counter}</code> that
+        each write increments. Comparing two vector clocks tells you one of two things: one version is
+        a strict descendant of the other (safe to discard the older one automatically), or the two
+        versions are <strong>concurrent</strong> — genuinely conflicting, requiring either a
+        last-write-wins timestamp rule (simple, can silently drop a real update) or handing both
+        versions back to the application to merge (what Dynamo does — a shopping cart with two
+        conflicting versions gets <em>unioned</em>, not overwritten, so you don't lose an item someone
+        added offline).</p>
+      </section>
+
       <section id="pacelc">
         <h2>PACELC: The Part CAP Leaves Out</h2>
         <p>CAP only describes what happens <strong>during a partition (P)</strong> — but partitions
@@ -279,6 +348,18 @@
         <p>This is the table a principal engineer actually reaches for — "is this system AP or CP" is
         an incomplete question; "what does it do during a partition, <em>and</em> what does it trade
         for latency when healthy" is the complete one.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"CAP means pick any 2 of Consistency, Availability, Partition tolerance."</td><td>Partitions aren't optional at scale, so the real, only choice is CP vs. AP during the moments a partition is actually happening — not a permanent 2-of-3 selection.</td></tr>
+          <tr><td>"A system is either CP or AP, full stop."</td><td>Many systems (Cassandra, DynamoDB) tune this per read/write via N/W/R quorums, not as one global label — one query can be strongly consistent while another on the same cluster is eventually consistent.</td></tr>
+          <tr><td>"Using synchronous replication automatically makes a system CP."</td><td>It raises consistency, but the system still has to decide what to do when a replica is unreachable — refuse (CP) or fail over and risk divergence (leans AP). Replication mode and CAP behavior are related but not the same decision.</td></tr>
+          <tr><td>"Eventually consistent means the data might just be wrong."</td><td>It means there's a bounded, typically sub-second window where reads can be stale before converging — governed by concrete mechanisms (quorums, vector clocks, anti-entropy/read-repair), not randomness.</td></tr>
+          <tr><td>"Spanner proves CAP is wrong / can be beaten."</td><td>Spanner is still bound by CAP during a genuine partition — it just uses synchronized clocks (TrueTime) to make the "Else" (non-partition) branch of PACELC extremely cheap, so consistency rarely costs visible latency in practice.</td></tr>
+        </table>
       </section>
 
       <section id="palace">
@@ -373,6 +454,16 @@
           <div class="fc-a">A: DynamoDB is PA/EL (available during a partition, low-latency when healthy). MongoDB (default) is PC/EC (consistent during a partition, consistent when healthy, at a latency cost).</div>
           <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
         </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What's the quorum rule for guaranteed strong consistency, in terms of N, W, R?</div>
+          <div class="fc-a">A: W + R > N guarantees every read quorum overlaps every write quorum by at least one replica, so a read always sees the latest write. W + R ≤ N allows stale reads in exchange for lower latency/higher availability.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What are sloppy quorums and hinted handoff for?</div>
+          <div class="fc-a">A: When a "correct" replica is unreachable, a sloppy quorum lets a coordinator write to a different healthy node instead, tagged with a hint. Hinted handoff replays that write to the correct node once it recovers. Trades strict quorum membership for availability during partial failures — and is why conflicting versions can occur.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
       </section>
 
       <section id="practice">
@@ -383,6 +474,8 @@
           <li>What question does PACELC answer that CAP doesn't even ask?</li>
           <li>Classify DynamoDB, MongoDB, and Spanner by their partition-time and non-partition-time tradeoffs.</li>
           <li>Why does Cassandra not have a single, fixed CAP classification?</li>
+          <li>State the quorum rule for guaranteed strong consistency in terms of N, W, and R, and explain why it works.</li>
+          <li>Explain sloppy quorums and hinted handoff, and why they can produce conflicting versions of a key.</li>
         </ul>
       </section>
 
@@ -431,6 +524,40 @@
   }
   strategyEl.addEventListener('change', render);
   render();
+
+  // ─── N/W/R quorum calculator ───
+  const nEl = document.getElementById('sim-n');
+  const wEl = document.getElementById('sim-w');
+  const rEl = document.getElementById('sim-r');
+  const nVal = document.getElementById('sim-n-val');
+  const wVal = document.getElementById('sim-w-val');
+  const rVal = document.getElementById('sim-r-val');
+  const quorumOutput = document.getElementById('sim-quorum-output');
+
+  function renderQuorum() {
+    let N = parseInt(nEl.value, 10);
+    let W = parseInt(wEl.value, 10);
+    let R = parseInt(rEl.value, 10);
+    // Clamp W and R to N (can't require more acks than replicas exist).
+    W = Math.min(W, N); R = Math.min(R, N);
+    wEl.value = W; rEl.value = R;
+    nVal.textContent = N; wVal.textContent = W; rVal.textContent = R;
+
+    const strong = (W + R) > N;
+    const writeFailuresTolerated = N - W;
+    const readFailuresTolerated = N - R;
+    const color = strong ? '#22c55e' : '#f59e0b';
+    const verdict = strong
+      ? `Strongly consistent: W + R = ${W + R} > N = ${N}. Every read quorum is guaranteed to overlap every write quorum by at least 1 replica — reads always see the latest write.`
+      : `Eventually consistent (stale reads possible): W + R = ${W + R} ≤ N = ${N}. A read quorum can miss every replica that had the latest write.`;
+
+    quorumOutput.innerHTML = `<span style="color:${color}; font-weight:700;">${verdict}</span><br><br>` +
+      `Writes tolerate up to <strong>${writeFailuresTolerated}</strong> unreachable replica(s) and still succeed.<br>` +
+      `Reads tolerate up to <strong>${readFailuresTolerated}</strong> unreachable replica(s) and still succeed.<br><br>` +
+      `Common real-world picks: N=3,W=2,R=2 (strong, tolerates 1 failure on each side — Cassandra QUORUM default) · N=3,W=1,R=1 (fast, eventually consistent, tolerates 2 failures) · N=3,W=3,R=1 (strong, but a single dead replica blocks every write).`;
+  }
+  [nEl, wEl, rEl].forEach(el => el.addEventListener('input', renderQuorum));
+  renderQuorum();
 
   // ─── Diagram: partitioned network + CP vs AP outcomes ───
   function drawDiagram() {

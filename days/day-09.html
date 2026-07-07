@@ -102,6 +102,8 @@
         <a href="#sim">Try It Yourself</a>
         <a href="#depth">ACID In Depth</a>
         <a href="#isolation">Isolation Levels</a>
+        <a href="#mechanism">2PL vs MVCC</a>
+        <a href="#mistakes">Common Mistakes</a>
         <a href="#palace">Memory Palace</a>
         <a href="#graph">Connections</a>
         <a href="#recall">Active Recall</a>
@@ -123,6 +125,8 @@
           <li>Explain the four standard SQL isolation levels and the read anomaly each one fixes</li>
           <li>Reason about the cost/throughput tradeoff of stronger isolation</li>
           <li>Connect ACID to BASE and preview why CAP theorem (Day 10) makes "always ACID, everywhere" impossible at scale</li>
+          <li>Explain <strong>write skew</strong> and why Repeatable Read does not actually make your application safe from all race conditions</li>
+          <li>Distinguish Two-Phase Locking from MVCC as the two real mechanisms databases use to implement isolation, and why most production databases picked MVCC</li>
         </ul>
       </div>
 
@@ -279,6 +283,71 @@
         Serializable isolation under high concurrency tanks throughput. The interview-relevant skill
         isn't memorizing the table — it's knowing that "isolation" is a dial, not a switch, and being
         able to argue which level a given feature actually needs.</p>
+
+        <h3>Write skew: the anomaly Repeatable Read does <em>not</em> prevent</h3>
+        <p>This is the isolation-level nuance that separates a textbook answer from a principal-level
+        one. A hospital rule requires at least one doctor on call at all times; Alice and Bob are both
+        on call. At Repeatable Read (or Postgres's snapshot-isolation flavor of it), Alice's
+        transaction reads "2 doctors on call, safe for me to go off-call" and Bob's transaction —
+        running concurrently, reading from its own consistent snapshot — reads the exact same thing.
+        Both commit. Now <strong>zero</strong> doctors are on call, and the constraint was silently
+        violated, even though neither transaction ever read the other's uncommitted data, and neither
+        row was literally double-booked. This is <strong>write skew</strong>: two transactions read
+        overlapping data, make disjoint writes based on what they read, and the combination violates
+        an invariant that neither write alone would. Repeatable Read / snapshot isolation cannot catch
+        this because each transaction, in isolation, did nothing wrong — only true
+        <strong>Serializable</strong> isolation (or an explicit application-level lock, like
+        <code>SELECT ... FOR UPDATE</code> on a shared row) closes this gap. This is precisely why
+        "we run Repeatable Read, so we're safe from race conditions" is a dangerous half-truth.</p>
+
+        <h3>Concrete anomaly walkthrough</h3>
+        <table class="algo-table">
+          <tr><th>Anomaly</th><th>What actually happens</th></tr>
+          <tr><td><strong>Dirty read</strong></td><td>Transaction A sets a row's value but hasn't committed. Transaction B reads that uncommitted value. A then rolls back — B just made a decision based on data that, officially, never existed.</td></tr>
+          <tr><td><strong>Non-repeatable read</strong></td><td>Transaction A reads a row (balance = $100). Transaction B updates and commits that same row (balance = $80). A reads the row again in the <em>same</em> transaction and now sees $80 — the "repeated" read wasn't stable.</td></tr>
+          <tr><td><strong>Phantom read</strong></td><td>Transaction A runs "count all orders over $50" and gets 12. Transaction B inserts a new $60 order and commits. A re-runs the exact same query and gets 13 — a row "phantom-appeared" that A never touched directly.</td></tr>
+          <tr><td><strong>Write skew</strong></td><td>Two transactions each read the same overlapping data, then each writes to a <em>different</em> row based on what they read — individually valid, jointly invalid. Standard Repeatable Read does not prevent this (see above).</td></tr>
+        </table>
+      </section>
+
+      <section id="mechanism">
+        <h2>How Isolation Is Actually Implemented: 2PL vs. MVCC</h2>
+        <p>Isolation levels describe <em>what</em> a database promises. They don't say <em>how</em>.
+        There are two fundamentally different mechanisms in production use, and knowing which one a
+        given database uses explains almost all of its concurrency behavior.</p>
+
+        <h3>Two-Phase Locking (2PL)</h3>
+        <p>A transaction acquires a lock before touching a row (shared lock for reads, exclusive lock
+        for writes) and holds every lock until it commits or rolls back — it never releases a lock
+        early to acquire a new one (that's the "two-phase" part: a growing phase, then a shrinking
+        phase, with no interleaving). This gives true serializability, but readers block writers and
+        writers block readers, which tanks throughput under contention — a long-running read can stall
+        an unrelated write on the same row. SQL Server's default isolation historically leaned on
+        locking; it's simple to reason about and expensive under load.</p>
+
+        <h3>Multi-Version Concurrency Control (MVCC)</h3>
+        <p>Instead of locking rows, the database keeps <strong>multiple versions</strong> of each row
+        (each tagged with the transaction ID that created it) and gives every transaction a consistent
+        <strong>snapshot</strong> of the data as of when it started. Readers never block writers and
+        writers never block readers — a reader just gets an older version instead of waiting. This is
+        how Postgres, MySQL/InnoDB, and Oracle all implement isolation in practice, which is exactly
+        why real-world "Repeatable Read" in these databases is stronger than the SQL standard's
+        minimum bar (InnoDB's Repeatable Read, for example, uses gap locking to actually prevent
+        phantom reads, going beyond what the standard requires) — but as shown above, MVCC snapshots
+        still don't save you from write skew, because each transaction's snapshot is individually
+        self-consistent even when the combination isn't.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Repeatable Read means my transaction is fully safe from race conditions."</td><td>It prevents dirty and non-repeatable reads, but not write skew — two transactions can each read valid data and write valid-looking changes that combine into a broken state. Only Serializable (or explicit row locking) closes that gap.</td></tr>
+          <tr><td>"Higher isolation is strictly safer, so just always use Serializable."</td><td>Serializable isolation increases aborts/retries under contention and can meaningfully reduce throughput — it's a tool for specific invariant-sensitive operations, not a free default for an entire high-traffic application.</td></tr>
+          <tr><td>"ACID's Consistency and CAP's Consistency mean the same thing."</td><td>ACID Consistency means "never violates a constraint." CAP Consistency means "every read sees the latest write" (linearizability). They are unrelated concepts that happen to share a word — Day 10 draws this line explicitly.</td></tr>
+          <tr><td>"A long-running transaction is fine as long as it eventually commits."</td><td>Under 2PL it holds locks the whole time, blocking other transactions; under MVCC it can force the database to retain old row versions for the duration, bloating storage and slowing vacuum/garbage collection. Long transactions are a common cause of production incidents, not a neutral choice.</td></tr>
+          <tr><td>"The database enforces atomicity, so I don't need idempotency in my application."</td><td>Atomicity guarantees one transaction is all-or-nothing — it says nothing about what happens when a client retries a request whose response was lost after the transaction already committed. That's a separate problem (see Day 9's Stripe example), and it needs its own solution.</td></tr>
+        </table>
       </section>
 
       <section id="palace">
@@ -371,6 +440,16 @@
           <div class="fc-a">A: Serializable isolation requires heavy locking or conflict detection, which reduces concurrency/throughput — most systems pick Read Committed or snapshot-based Repeatable Read as the practical default.</div>
           <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
         </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is write skew, and why doesn't Repeatable Read prevent it?</div>
+          <div class="fc-a">A: Two transactions each read the same overlapping data and write to different rows based on it — each write is individually valid but the combination violates an invariant. Repeatable Read gives each transaction a self-consistent snapshot, but doesn't detect conflicts across transactions' disjoint writes; only Serializable isolation (or explicit locking) does.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What's the core difference between Two-Phase Locking (2PL) and MVCC?</div>
+          <div class="fc-a">A: 2PL acquires and holds locks for the transaction's duration — readers and writers block each other. MVCC keeps multiple row versions and gives each transaction a consistent snapshot — readers never block writers and vice versa, at the cost of extra storage/version bookkeeping. Postgres, MySQL/InnoDB, and Oracle all use MVCC in practice.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
       </section>
 
       <section id="practice">
@@ -381,6 +460,8 @@
           <li>Name the four SQL isolation levels in order and the one new anomaly each level closes off.</li>
           <li>Why is "Consistency" in ACID a different concept from "Consistency" in CAP theorem?</li>
           <li>Why do most production databases not default to full Serializable isolation?</li>
+          <li>Describe a concrete write-skew scenario and explain why Repeatable Read doesn't stop it.</li>
+          <li>Contrast how 2PL and MVCC implement isolation, and why most production databases chose MVCC.</li>
         </ul>
       </section>
 

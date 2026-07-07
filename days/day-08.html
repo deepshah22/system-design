@@ -102,6 +102,7 @@
         <a href="#families">The Four NoSQL Families</a>
         <a href="#sim">Try It Yourself</a>
         <a href="#depth">SQL In Depth</a>
+        <a href="#mistakes">Common Mistakes</a>
         <a href="#palace">Memory Palace</a>
         <a href="#graph">Connections</a>
         <a href="#recall">Active Recall</a>
@@ -123,6 +124,8 @@
           <li>Reason about when joins/transactions/strong consistency make SQL the right call</li>
           <li>Reason about when flexible schema, horizontal scale, or access-pattern modeling make NoSQL the right call</li>
           <li>Apply a concrete decision framework to "SQL or NoSQL?" interview questions, and explain polyglot persistence</li>
+          <li>Quantify the real trade — read amplification (joins) vs. write amplification (denormalized copies) — instead of hand-waving "NoSQL is faster"</li>
+          <li>Explain single-table design and the hot-partition problem, the two things that actually separate a junior NoSQL schema from a principal one</li>
         </ul>
       </div>
 
@@ -259,6 +262,28 @@
           </div>
           <div class="sim-output" id="sim-output">Loading…</div>
         </div>
+
+        <div class="sim-box" style="margin-top:1.5rem;">
+          <p><strong>Now quantify the actual trade-off.</strong> Drag the sliders to model one piece
+          of data (say, a customer's display name) that's read very often but occasionally needs to
+          change — see exactly when normalizing (pay per read) beats denormalizing (pay per write),
+          in real operation counts, not vibes.</p>
+          <div class="sim-controls" style="flex-direction:column; align-items:stretch; gap:1rem;">
+            <div>
+              <label for="sim-reads" style="font-size:.85rem;">Reads per day: <strong id="sim-reads-val">100,000</strong></label>
+              <input type="range" id="sim-reads" min="100" max="10000000" step="100" value="100000" style="width:100%;" />
+            </div>
+            <div>
+              <label for="sim-copies" style="font-size:.85rem;">Number of embedded copies this value would be duplicated into (e.g. orders containing this customer's name): <strong id="sim-copies-val">50</strong></label>
+              <input type="range" id="sim-copies" min="1" max="2000" step="1" value="50" style="width:100%;" />
+            </div>
+            <div>
+              <label for="sim-writes" style="font-size:.85rem;">Writes (updates to the source value) per day: <strong id="sim-writes-val">2</strong></label>
+              <input type="range" id="sim-writes" min="0" max="1000" step="1" value="2" style="width:100%;" />
+            </div>
+          </div>
+          <div class="sim-output" id="sim-cost-output">Loading…</div>
+        </div>
       </section>
 
       <section id="depth">
@@ -312,6 +337,71 @@
         maybe a graph store for recommendations. <strong>Polyglot persistence</strong> is the name
         for deliberately running several storage engines side by side instead of forcing one engine
         to do every job adequately.</p>
+
+        <h3>The real cost model: read amplification vs. write amplification</h3>
+        <p>"NoSQL is faster" is not an engineering statement — it's marketing. What actually happens
+        is a cost gets <em>moved</em>, not eliminated. A normalized SQL schema pays a <strong>read</strong>
+        cost: fetching a customer with their last 10 orders and each order's line items is 1 query
+        with 2–3 joins (or 3 round trips without a join), scaling with how many related tables the
+        read touches. A denormalized NoSQL document that embeds those same orders pays a
+        <strong>write</strong> cost instead: if a customer's name changes and that name is duplicated
+        into 400 embedded order documents, correcting it means finding and rewriting all 400 copies
+        (or living with staleness until they're naturally rewritten). Neither cost disappears —
+        picking a data model is picking <em>which</em> operation gets to be cheap, and that should be
+        driven by which operation happens more often in production. A product catalog is read
+        thousands of times per write (denormalize freely). A ledger is corrected rarely but must
+        always be exactly right when read (normalize, pay the join).</p>
+
+        <h3>Single-table design: NoSQL modeling is query-first, not entity-first</h3>
+        <p>The single most common junior mistake moving from SQL to NoSQL is mentally porting the
+        relational schema over — one DynamoDB table per "entity" (a Users table, an Orders table),
+        then trying to join them at read time in application code. That throws away the entire point
+        of a key-value/document store, which has no efficient join. The principal-level technique
+        is <strong>single-table design</strong>: model the table around your <em>access patterns</em>,
+        not your entities. A single DynamoDB table might store a customer item
+        (<code>PK=CUSTOMER#123, SK=PROFILE</code>) and all of that customer's orders
+        (<code>PK=CUSTOMER#123, SK=ORDER#2024-01-15</code>) under the <em>same partition key</em>, so
+        "get a customer and their recent orders" is one query against one partition — zero joins,
+        one network round trip — at the cost of designing the key schema around the exact queries the
+        application actually needs before you write a line of code. Get the access patterns wrong up
+        front, and you're stuck re-modeling data at scale later.</p>
+
+        <h3>The hot-partition problem</h3>
+        <p>NoSQL stores get horizontal scale by <strong>partitioning</strong> data across many nodes
+        by a partition/shard key, spreading both storage and request load. That only works if the key
+        you chose spreads traffic evenly. Pick a low-cardinality or skewed partition key — say,
+        partitioning a multiplayer game's events by <code>region</code> when 80% of players are in
+        one region, or partitioning by <code>date</code> when today's date gets 1000x the traffic of
+        any other date — and one partition absorbs almost all the reads/writes while the rest of the
+        cluster sits idle. DynamoDB enforces this concretely: each partition has a hard ceiling
+        (historically ~3,000 read capacity units / ~1,000 write capacity units per partition,
+        regardless of how much capacity the whole table is provisioned with), so a hot partition
+        throttles your application even while the table's aggregate metrics look perfectly healthy.
+        The fix is almost always <strong>key salting</strong> — appending a random or hashed suffix
+        to spread one logical hot key across several physical partitions, then fanning the read back
+        in at the application layer.</p>
+
+        <h3>Secondary indexes: the eventual-consistency catch</h3>
+        <p>SQL indexes are updated inside the same transaction as the write — a read right after a
+        write always sees the index. Distributed NoSQL secondary indexes (e.g. DynamoDB Global
+        Secondary Indexes, Cassandra secondary indexes) are frequently <strong>asynchronously</strong>
+        propagated: the base table write succeeds, then the index catches up milliseconds later. A
+        query against the index right after the write can miss the row entirely. This is a classic
+        interview trap — "just add a secondary index" sounds free, but you've silently introduced a
+        new eventual-consistency window into a system that might otherwise be strongly consistent on
+        primary-key reads.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"NoSQL is just faster than SQL."</td><td>NoSQL doesn't eliminate cost, it moves it from read time (joins) to write time (keeping denormalized copies in sync). Which one is "faster" depends entirely on your read:write ratio.</td></tr>
+          <tr><td>"I'll model NoSQL the same way I modeled SQL — one table per entity."</td><td>That throws away the point of the model. NoSQL schemas should be designed around access patterns first (single-table design), not around entities.</td></tr>
+          <tr><td>"Adding a secondary index is basically free, like in SQL."</td><td>In most distributed NoSQL stores, secondary indexes update asynchronously — a read immediately after a write can miss it. You've traded correctness for query flexibility without realizing it.</td></tr>
+          <tr><td>"If a table is partitioned across N nodes, I automatically get N-way scale."</td><td>Only if the partition key distributes traffic evenly. A skewed key (e.g. date, region, a celebrity's user ID) creates a hot partition that throttles regardless of the cluster's total capacity.</td></tr>
+          <tr><td>"BASE means the data is basically wrong until it 'eventually' fixes itself."</td><td>Eventually consistent doesn't mean unreliable — it means there's a bounded (usually sub-second) window where replicas can disagree before converging, which is an explicit, tunable design choice, not a bug.</td></tr>
+        </table>
       </section>
 
       <section id="palace">
@@ -404,6 +494,16 @@
           <div class="fc-a">A: Deliberately using multiple storage engines (e.g. SQL for billing, NoSQL for sessions) in one system, picking storage per workload instead of forcing one engine to do every job.</div>
           <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
         </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is single-table design, and what mistake does it prevent?</div>
+          <div class="fc-a">A: Modeling a NoSQL table around your access patterns (what queries you'll actually run) instead of one table per entity — it prevents needing application-side "joins" across tables, which defeats the point of a key-value/document store.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What causes a "hot partition," and what's the standard fix?</div>
+          <div class="fc-a">A: A partition/shard key that doesn't distribute traffic evenly (e.g. today's date, a popular region) sends most load to one physical partition regardless of total cluster capacity. Fix: key salting — append a random/hashed suffix to spread one logical key across several physical partitions.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
       </section>
 
       <section id="practice">
@@ -414,6 +514,8 @@
           <li>Give one workload where ACID transactions are non-negotiable, and one where BASE/eventual consistency is perfectly fine.</li>
           <li>What is polyglot persistence, and why do most large systems end up using it?</li>
           <li>Walk through the decision framework: how would you decide between SQL and NoSQL for a new feature, step by step?</li>
+          <li>Explain single-table design and why porting a relational schema directly into DynamoDB is a common junior mistake.</li>
+          <li>What causes a hot partition, and why can it throttle an application even when the cluster's aggregate capacity looks fine?</li>
         </ul>
       </section>
 
@@ -464,6 +566,42 @@
   }
   usecaseEl.addEventListener('change', render);
   render();
+
+  // ─── Quantified read/write amplification calculator ───
+  const readsEl = document.getElementById('sim-reads');
+  const copiesEl = document.getElementById('sim-copies');
+  const writesEl = document.getElementById('sim-writes');
+  const readsVal = document.getElementById('sim-reads-val');
+  const copiesVal = document.getElementById('sim-copies-val');
+  const writesVal = document.getElementById('sim-writes-val');
+  const costOutput = document.getElementById('sim-cost-output');
+  const fmt = n => n.toLocaleString('en-US');
+
+  function renderCost() {
+    const reads = parseInt(readsEl.value, 10);
+    const copies = parseInt(copiesEl.value, 10);
+    const writes = parseInt(writesEl.value, 10);
+    readsVal.textContent = fmt(reads);
+    copiesVal.textContent = fmt(copies);
+    writesVal.textContent = fmt(writes);
+
+    // Normalized (SQL join): every read pays one extra join lookup. Writes are free (1 place to update).
+    const normalizedDailyOps = reads * 1; // 1 join hop per read
+    // Denormalized (embedded copies): every read is O(1) direct. Every write must fan out to all copies.
+    const denormalizedDailyOps = writes * copies;
+
+    let verdict, color;
+    if (denormalizedDailyOps < normalizedDailyOps) {
+      verdict = `Denormalize wins here: ${fmt(denormalizedDailyOps)} total write-fanout ops/day vs. ${fmt(normalizedDailyOps)} join ops/day. At this read:write ratio, paying to keep ${fmt(copies)} copies in sync is cheaper than joining on every single read.`;
+      color = '#22c55e';
+    } else {
+      verdict = `Normalize wins here: ${fmt(normalizedDailyOps)} join ops/day vs. ${fmt(denormalizedDailyOps)} write-fanout ops/day. At this read:write ratio, the join cost per read is cheaper than re-syncing ${fmt(copies)} embedded copies every time the source value changes.`;
+      color = '#f59e0b';
+    }
+    costOutput.innerHTML = `<span style="color:${color}; font-weight:700;">${verdict}</span><br><br>Normalized approach: ${fmt(reads)} reads × 1 join = <strong>${fmt(normalizedDailyOps)} ops/day</strong>.<br>Denormalized approach: ${fmt(writes)} writes × ${fmt(copies)} copies to fan out to = <strong>${fmt(denormalizedDailyOps)} ops/day</strong>.<br><br>This is why product catalogs (read millions of times, written rarely) denormalize aggressively, and why ledger entries (written and read at comparable rates, and must never be stale) stay normalized.`;
+  }
+  [readsEl, copiesEl, writesEl].forEach(el => el.addEventListener('input', renderCost));
+  renderCost();
 
   // ─── Diagram: SQL (fixed rows + joins) vs NoSQL (flexible documents) ───
   function drawDiagram() {
