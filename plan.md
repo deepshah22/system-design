@@ -24,7 +24,7 @@ retention rather than passive reading:
 
 1. **Introduction** - Proper introduction of the topic in simple words.
 1. **Visual Memory Anchor** — one scene that represents the whole concept
-2. **Actual Description in Detail** — one scene that represents the whole concept
+2. **Concept Explanation** — Explanation represents the whole concept in detail.
 3. **Memory Palace** — the running "Distributed Systems House" every concept lives in
 4. **Connection Graph** — how today's concept links to concepts already learned
 5. **Real-World Engineering** — how Netflix/Amazon/Uber/Google actually use it
