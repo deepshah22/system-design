@@ -4,7 +4,7 @@
 **Scope:** 90 lessons total (~30 min each)  
 **Publish cadence:** 3x/week (Mon, Wed, Fri) — not literally tied to a 3-month calendar window; at 3 lessons/week, 90 lessons takes ~30 weeks (~7 months) of real time, paced for actual retention rather than rushing daily.  
 **Target:** Principal Engineer level interview preparation  
-**Last Updated:** 2026-07-07
+**Last Updated:** 2026-07-08
 
 ---
 
@@ -304,6 +304,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-07-08 | Day 12 (staged) | Day 12: Database Replication — authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish (Friday, 2026-07-10). Full Memorable Learning Framework: two-clerks/one-courier visual anchor, a story that walks a leader crash → read replica → the read-your-own-writes bug, an interactive sync-vs-async trade simulator (mode + one-way-latency + follower-count sliders showing write latency / data-loss window / follower staleness), roughjs leader→followers WAL-stream diagram, the replication-log/statement-vs-row/WAL depth section, three topologies (single-leader / multi-leader conflicts / leaderless quorum), the lag hazards (read-your-writes, monotonic reads, consistent prefix) with their fixes, a "Common Mistakes & Misconceptions" table, and real-world Postgres/MySQL/Cassandra/Spanner engineering. Verified via a headless-browser (Playwright) render that the sim computes correctly across all three modes with no page script errors. |
 | 2026-07-08 | Day 11 | Day 11: Database Indexing Strategies |
 | 2026-07-07 | — | User feedback: removed "Learning Objectives," "The Hook," and "Feynman Test" from every lesson (Days 1–11, published and staged) — lessons now open directly with the Visual Memory Anchor. Also reframed `index.html` away from "interview prep" positioning toward "system design learning": reworded the hero eyebrow/subtitle/footer/meta-description, and removed the Stats Row and Progress Widget sections entirely per an explicit request to trim the homepage down to course overview + roadmap (Phases section) + navigation to every lesson (Curriculum grid) and nothing else. Verified with a headless-browser render that all pages (old Day 1–4 template and new Day 5+ template) still load with zero script errors after the removals. |
 | 2026-07-07 | Days 8–10 (rewritten) | Rewrote the published Days 8, 9, and 10 for principal-engineer depth (user feedback: too shallow). Day 8 gets single-table design, the hot-partition problem, GSI eventual-consistency, and a live read/write-amplification calculator. Day 9 gets write skew (with the on-call-doctors example), the 2PL-vs-MVCC mechanism, and concrete anomaly walkthroughs. Day 10 gets N/W/R quorum math with a live calculator, sloppy quorums/hinted handoff, and vector-clock conflict resolution. Each also gains a "Common Mistakes & Misconceptions" table matching Day 11's pattern. Verified via a headless-browser render (Playwright) that all new JS/sliders compute correctly with no script errors before pushing. |
@@ -344,5 +345,6 @@ system-design/
 - [x] Fixed publish workflow race condition (non-fast-forward push failures) by adding fetch+rebase+retry to `.github/workflows/daily-publish.yml` — every prior scheduled run had been failing
 - [x] Day 10 (CAP Theorem & PACELC) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Day 11 (Database Indexing Strategies) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
-- [ ] Days 12–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
+- [x] Day 12 (Database Replication) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
+- [ ] Days 13–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
 - [x] GitHub Pages enabled on `main` branch — confirmed via the active `pages-build-deployment` Actions workflow on the repo

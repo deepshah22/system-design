@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 12: Database Replication | System Design Mastery</title>
+  <meta name="description" content="One copy of your data is one power cable away from a bad day. Replication keeps live copies on other machines — but the moment you have two copies, they can disagree. Sync vs async, leader-follower vs multi-leader vs leaderless, replication lag and read-your-writes, taught through story and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .objectives { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+    .objectives-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.6rem; }
+    .objectives ul { padding-left: 1.25rem; margin: 0; }
+    .objectives li { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.3rem; }
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* replication-specific sim styling */
+    .sim-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.75rem; margin-top:1rem; }
+    .sim-metric { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.9rem 1rem; text-align:center; }
+    .sim-metric .val { font-size:1.35rem; font-weight:800; font-family:'JetBrains Mono', monospace; }
+    .sim-metric .lbl { font-size:.7rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .sim-metric.good .val { color:#22c55e; }
+    .sim-metric.bad .val { color:#ef4444; }
+    .sim-metric.neutral .val { color: var(--accent-light); }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 12</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 12 of 90</span>
+      <span class="meta-pill">⏱ ~30 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 2 — Storage Fundamentals</span>
+    </div>
+    <h1>Database Replication<br><span style="color:var(--accent)">Keeping a Live Copy on Another Machine</span></h1>
+    <p class="lead">
+      Yesterday Database Dave learned to find one row in a billion. Today the ground shifts under him:
+      the single machine holding that billion rows has one power supply, one disk, and one very bad day
+      coming. The fix is obvious — keep a full, live copy on another machine — but the moment a second
+      copy exists, the two can disagree. Everything hard and interesting about replication lives in that
+      disagreement: how fast the copy catches up, what you lose if the original dies mid-write, and who
+      is allowed to accept writes at all.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#depth">How Replication Actually Works</a>
+        <a href="#topologies">Three Topologies</a>
+        <a href="#lag">The Lag Problem</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">👥📒</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Two clerks sit in two different buildings, each keeping an <em>identical</em> ledger. Only
+            one of them — the <strong>leader</strong> — is allowed to write new entries. Every time the
+            leader writes a line, a courier immediately runs a copy of that exact line across the street
+            to the <strong>follower</strong>, who writes the same line in the same order. Most of the time
+            the two ledgers are the same. But look closely at any single instant: the courier is still
+            <em>in transit</em>, so the follower's book is always a few lines behind. That gap — the
+            courier mid-street — is <strong>replication lag</strong>, and it is the source of nearly every
+            surprising bug in a replicated system. Picture the courier frozen mid-stride and you've
+            recalled the whole concept.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="repl-diagram" width="820" height="330" viewBox="0 0 820 330"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Database Dave</span> now runs a fast, well-indexed ledger — and
+            one Tuesday the machine holding it dies. Not slowly: a power supply pops, the disk head parks,
+            and 50 million customer balances are simply <em>gone from the network</em> until someone drives
+            to the data center. For six hours, Dave's business is offline. He swears never again.
+          </p>
+          <p>
+            So Dave buys a second machine and keeps a <strong>live copy</strong> of the ledger on it. He
+            decides only the first machine — the <strong>leader</strong> — accepts new writes; the second
+            — the <strong>follower</strong> — just receives a stream of every change and applies it in the
+            same order. Now if the leader dies, Dave promotes the follower and stays online. As a bonus,
+            all those read-heavy "what's my balance?" queries can be answered by the follower, so the
+            leader is freed up to handle writes. One copy became fault tolerance <em>and</em> read scaling.
+          </p>
+          <p>
+            Then a customer complains. She transferred money, saw "success," refreshed the page — and the
+            money was gone. Not really gone: her write went to the leader, but her <em>refresh</em> was
+            answered by the follower, which hadn't received that change yet. The courier was still crossing
+            the street. Dave has just met <strong>replication lag</strong> and the <strong>read-your-own-writes</strong>
+            problem, and he's about to discover the deeper fork in the road: should the leader wait for the
+            courier to arrive before telling the customer "success" (safe, but slow), or answer instantly
+            and let the copy catch up (fast, but you can lose that write if the leader dies in the gap)?
+            That single choice — <strong>synchronous vs asynchronous</strong> — is the heart of today's lesson.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">Replication keeps live copies of your data on multiple machines,
+          for three reasons: survive failures (availability), serve reads from many copies (scale), and
+          put data near users (latency). The instant you have more than one copy, they can disagree — so
+          every replication design is really an answer to two questions: <strong>who can accept writes</strong>
+          (one leader, many leaders, or no leader), and <strong>does the leader wait for copies before
+          acknowledging a write</strong> (synchronous = safe/slow, asynchronous = fast/lossy).</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself</h2>
+        <div class="sim-box">
+          <p>Dave's leader has followers across the network. Choose how long the leader waits before it
+          tells the client "committed," and see the three-way trade snap into place:
+          <strong>write latency</strong> (what the user feels), the <strong>data-loss window</strong> if the
+          leader crashes right after acknowledging, and how <strong>stale</strong> a read from a follower is.
+          There is no setting that wins all three.</p>
+          <div class="sim-controls" style="flex-direction:column; align-items:stretch; gap:1rem;">
+            <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+              <label for="sim-mode" style="min-width:150px; font-size:.85rem;">Replication mode:</label>
+              <select id="sim-mode" style="background:var(--bg-card); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:.4rem .6rem;">
+                <option value="async" selected>Asynchronous (ack immediately)</option>
+                <option value="semi">Semi-synchronous (wait for 1 follower)</option>
+                <option value="sync">Synchronous (wait for all followers)</option>
+              </select>
+            </div>
+            <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+              <label for="sim-latency" style="min-width:150px; font-size:.85rem;">Network one-way latency:</label>
+              <input type="range" id="sim-latency" min="1" max="150" step="1" value="20" style="flex:1; min-width:180px;" />
+              <span id="sim-latency-val" style="font-family:'JetBrains Mono',monospace; min-width:70px; text-align:right; color:var(--accent-light);"></span>
+            </div>
+            <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+              <label for="sim-followers" style="min-width:150px; font-size:.85rem;">Number of followers:</label>
+              <input type="range" id="sim-followers" min="1" max="6" step="1" value="3" style="flex:1; min-width:180px;" />
+              <span id="sim-followers-val" style="font-family:'JetBrains Mono',monospace; min-width:70px; text-align:right; color:var(--accent-light);"></span>
+            </div>
+          </div>
+          <div class="sim-metrics">
+            <div class="sim-metric neutral" id="m-write"><div class="val">—</div><div class="lbl">Write latency (client)</div></div>
+            <div class="sim-metric" id="m-loss"><div class="val">—</div><div class="lbl">Data-loss window on crash</div></div>
+            <div class="sim-metric" id="m-stale"><div class="val">—</div><div class="lbl">Follower read staleness</div></div>
+          </div>
+          <div class="sim-output" id="sim-output" style="margin-top:1rem;">Loading…</div>
+        </div>
+      </section>
+
+      <section id="depth">
+        <h2>How Replication Actually Works</h2>
+
+        <h3>The replication log is the whole trick</h3>
+        <p>A follower does not "copy the database" over and over. Instead the leader keeps an ordered log
+        of every change it makes — the same <strong>write-ahead log (WAL)</strong> it already writes for
+        crash recovery — and simply <em>ships that log</em> to each follower. Each follower replays the
+        log entries in exactly the order the leader wrote them, and so arrives at an identical state. Order
+        matters enormously: "set balance = 100" then "add 50" must never be replayed as "add 50" then "set
+        balance = 100." An ordered, replayable log is what makes replicas converge deterministically.</p>
+        <p>There are a few ways to encode that log, and the choice has real consequences:</p>
+        <table class="algo-table">
+          <tr><th>Method</th><th>What ships</th><th>Gotcha</th></tr>
+          <tr><td><strong>Statement-based</strong></td><td>The literal SQL (<code>UPDATE … SET x = x+1</code>)</td><td>Non-deterministic functions (<code>NOW()</code>, <code>RAND()</code>, auto-increment) can produce different results on each replica. Compact but fragile.</td></tr>
+          <tr><td><strong>Row-based (logical)</strong></td><td>The concrete rows that changed, with their new values</td><td>Deterministic and replication-safe; the modern default (MySQL row-based binlog, Postgres logical replication). Larger log.</td></tr>
+          <tr><td><strong>WAL / physical</strong></td><td>The exact byte-level changes to disk pages</td><td>Fastest and simplest, but ties the follower to the same storage-engine version as the leader.</td></tr>
+        </table>
+
+        <h3>Synchronous vs asynchronous: the acknowledgement fork</h3>
+        <p>When a client sends a write, the leader must decide <em>when</em> to reply "committed." This is
+        the single most consequential knob in replication:</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Asynchronous.</strong><span>The leader writes locally and immediately acks the client, then ships the change to followers "whenever." Fastest possible writes, and one slow follower can't stall the system — but if the leader crashes before the change reaches any follower, that acknowledged write is <em>lost</em>. This is the default in most systems.</span></div>
+          <div class="flow-step"><strong>Synchronous.</strong><span>The leader waits until follower(s) confirm they have the change, <em>then</em> acks the client. Zero data loss on failover — but the client now waits a full network round-trip, and if a synchronous follower goes down, writes <em>block entirely</em> until it returns or is dropped.</span></div>
+          <div class="flow-step"><strong>Semi-synchronous (the pragmatic middle).</strong><span>Wait for just <em>one</em> follower to confirm, then ack. That one confirmed copy guarantees the write survives a leader crash, while the other followers stream asynchronously so a single slow node can't freeze you. This is what most production systems actually run.</span></div>
+        </div>
+        <p>Notice this is the CAP/PACELC trade from Day 10 wearing work clothes: synchronous replication buys
+        consistency and durability by spending latency (the "<strong>E</strong>lse → <strong>L</strong>atency"
+        of PACELC), and asynchronous does the reverse.</p>
+
+        <h3>Failover: promoting a follower when the leader dies</h3>
+        <p>If the leader disappears, one follower must be promoted to leader. This sounds simple and is a
+        minefield: the system must <em>detect</em> the failure (usually a timeout — how long before you
+        declare a leader dead?), <em>choose</em> the most up-to-date follower, and <em>redirect</em> all
+        writes to it. Two classic failures lurk here: <strong>losing acknowledged writes</strong> (an async
+        follower that was behind gets promoted, and the unreplicated tail is gone), and
+        <strong>split-brain</strong> — the old leader wasn't actually dead, just unreachable, and now
+        <em>two</em> nodes think they're the leader and both accept writes. Preventing split-brain is
+        exactly why we'll need consensus (Raft, Day 32) to elect leaders safely.</p>
+      </section>
+
+      <section id="topologies">
+        <h2>Three Topologies (Who Is Allowed to Write?)</h2>
+        <div class="family-grid">
+          <div class="family-card">
+            <h4>Single-leader</h4>
+            <p>One node accepts writes; all others are read-only followers. Simple, no write conflicts ever,
+            strong ordering. The default for relational databases.</p>
+            <div class="eg">Great for: read-heavy apps, strong consistency. Postgres, MySQL, most SQL DBs.</div>
+          </div>
+          <div class="family-card">
+            <h4>Multi-leader</h4>
+            <p>Several nodes (often one per region) each accept writes and replicate to the others. Great for
+            multi-datacenter write latency and offline edits — but two leaders can write the same key at
+            once, so you inherit <strong>write conflicts</strong> that must be resolved.</p>
+            <div class="eg">Great for: multi-region writes, offline-first apps. Needs conflict resolution.</div>
+          </div>
+          <div class="family-card">
+            <h4>Leaderless (quorum)</h4>
+            <p>No leader at all — the client writes to many replicas and reads from many, using quorums
+            (W + R &gt; N) to guarantee overlap. This is the Dynamo model from Day 10; conflicts are resolved
+            with version vectors and read-repair.</p>
+            <div class="eg">Great for: high availability, always-writable. Cassandra, DynamoDB, Riak.</div>
+          </div>
+        </div>
+
+        <h3>The multi-leader conflict problem</h3>
+        <p>Single-leader replication has <em>no</em> write conflicts because every write passes through one
+        node that orders them. The moment two leaders can both accept a write to the same row — say a user
+        edits their profile from a laptop in Frankfurt and a phone in Virginia at nearly the same instant —
+        you have two "true" values and must decide which wins. Options range from crude to careful:
+        <strong>last-write-wins</strong> (pick the higher timestamp — simple, but silently discards the other
+        write), <strong>application-level merge</strong> (like Google Docs merging edits), or
+        <strong>CRDTs</strong> (Day 51 — data structures mathematically guaranteed to merge without conflict).
+        There is no free lunch: multi-leader buys write availability and locality at the price of conflict
+        handling you must design for.</p>
+      </section>
+
+      <section id="lag">
+        <h2>The Lag Problem — and How to Live With It</h2>
+        <p>Asynchronous replication means followers are always slightly behind. Usually that's milliseconds
+        and nobody notices. But under load, or when a follower is catching up after a restart, lag can grow
+        to seconds or minutes — and reads from a lagging follower return stale data. Three concrete
+        consistency hazards show up, each with a standard fix:</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Read-your-own-writes.</strong><span>You post a comment, refresh, and it's gone — because the refresh hit a follower that doesn't have your write yet. Fix: read <em>your own</em> recent writes from the leader (or a follower known to be caught up), so at minimum you always see your own changes.</span></div>
+          <div class="flow-step"><strong>Monotonic reads.</strong><span>You refresh twice and the second load shows <em>older</em> data than the first — because the two requests hit followers with different lag. It looks like time ran backwards. Fix: pin a given user to the same replica so they never see the clock go in reverse.</span></div>
+          <div class="flow-step"><strong>Consistent-prefix reads.</strong><span>You see an answer before the question it replies to, because different partitions replicated at different speeds. Fix: ensure causally related writes are read in order (a real concern once data is partitioned — Day 13).</span></div>
+        </div>
+        <p>The engineering point: you don't eliminate lag, you <em>decide what the application can tolerate</em>
+        and route reads accordingly. "Send this read to a follower" is a per-query decision, not a global
+        setting — the account balance goes to the leader, the marketing blog post goes to whatever follower
+        is nearest.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You leave the room of wooden drawers and walk down the hall to a door marked with two names.</h4>
+          <div class="palace-room"><span class="palace-icon">🌉</span><div><strong>The Rope Bridge</strong> — <span>CAP Theorem &amp; PACELC (Day 10). Two islands, one bridge, one choice when it's cut.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🗂️</span><div><strong>The Card Catalog</strong> — <span>Database Indexing (Day 11). A slim, sorted set of cards that finds any row in ~4 hops.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">👥</span><div><strong>The Twin Room</strong> — <span>Database Replication (today). Two clerks, two identical ledgers, one courier crossing the street. Only the leader writes; the follower is always a few lines behind — and that gap is the lag.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">✂️</span><div><strong>The Filing Wing Beyond</strong> — <span>Partitioning &amp; Sharding (Day 13). When even one copy is too big for one machine, you cut the ledger into pieces — and each piece still needs its own twin.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">CAP &amp; PACELC (Day 10)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Replication (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Partitioning &amp; Sharding (Day 13)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Raft Consensus (Day 32)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node dim">Indexing (Day 11)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Replication (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Leaderless Quorums (Day 39)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">CRDTs (Day 51)</span>
+        </div>
+        <p>Replication is where Day 10's abstract CAP trade becomes a concrete dial you set (sync vs async).
+        The write cost you learned in Indexing (Day 11) now multiplies across every replica. Safe leader
+        election needs the consensus we'll build in Raft (Day 32); leaderless quorums extend Day 10's N/W/R
+        math; and the multi-leader conflicts we sketched today are exactly what CRDTs (Day 51) exist to
+        solve. Replication and Partitioning (Day 13) are the two independent axes of all distributed data —
+        real systems do both at once.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Replication is a backup."</td><td>No — a replica faithfully copies your mistakes too. Drop a table and it's dropped on every replica within milliseconds. Backups are point-in-time and independent; replicas are live. You need both.</td></tr>
+          <tr><td>"Add a read replica and reads are always correct."</td><td>Async replicas lag. A read from one can return data seconds old. You must decide per-query whether stale is acceptable and route to leader or follower accordingly.</td></tr>
+          <tr><td>"Synchronous replication has no downside."</td><td>It adds a full round-trip to every write, and if a synchronous follower dies, writes <em>block</em> until it recovers or is demoted. That's why most systems run semi-sync, not full sync.</td></tr>
+          <tr><td>"Automatic failover always keeps us safe."</td><td>Naive failover can lose the unreplicated tail of async writes and cause split-brain (two leaders). Safe failover needs consensus and careful timeout tuning — it's a common source of outages, not just a safety net.</td></tr>
+          <tr><td>"Multi-leader is just single-leader with more writers."</td><td>It fundamentally introduces write conflicts that single-leader never has. You must design conflict resolution (LWW, merge, or CRDTs) up front.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ Your leader acknowledges a write to the client, then crashes 5 ms later. Under asynchronous replication, what happens to that write — and what one change to the replication mode would have prevented it, at what cost? (click to reveal)</div>
+          <div class="recall-answer">Under <strong>async</strong>, the leader acked before the change reached any follower, so when a follower is promoted it never had that write — the acknowledged write is <strong>permanently lost</strong> (the "data-loss window"). Switching to <strong>semi-synchronous</strong> (wait for at least one follower to confirm before acking) would have prevented it, because at least one surviving copy is guaranteed to hold the write. The cost: every write now pays one extra network round-trip of latency, and if that one synchronous follower is unavailable, writes stall until another takes its place.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🐘 PostgreSQL</div><p>Ships streaming WAL replication with a per-standby choice of async or synchronous (<code>synchronous_commit</code>). Teams commonly run one synchronous standby for durability plus several async read replicas for scale, and use tools like Patroni to automate failover safely.</p></div>
+          <div class="realworld-card"><div class="rw-company">🐬 MySQL</div><p>Row-based binlog replication is the backbone of countless read-heavy sites. GitHub famously wrote <code>orchestrator</code> to manage MySQL failover, and semi-synchronous replication is the standard setup to bound data loss without paying full-sync latency.</p></div>
+          <div class="realworld-card"><div class="rw-company">🪶 Cassandra / DynamoDB</div><p>Leaderless: every write goes to N replicas, and tunable quorums (<code>W + R &gt; N</code>) let each query trade consistency for latency. Conflicts resolve via last-write-wins timestamps or version vectors plus read-repair — the Day 10 quorum math, in production.</p></div>
+          <div class="realworld-card"><div class="rw-company">🌍 Multi-region (Spanner, CockroachDB)</div><p>Use consensus (Paxos/Raft) to replicate each shard synchronously across regions, getting strong consistency <em>and</em> survivability — at the cost of cross-region write latency. Spanner leans on tightly synchronized clocks (TrueTime) to make this affordable at global scale.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What are the three reasons to replicate data?</div>
+          <div class="fc-a">A: (1) Availability — survive a node/disk/datacenter failure; (2) Read scaling — serve reads from many copies; (3) Latency — keep a copy geographically near users.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: State the core trade between synchronous and asynchronous replication.</div>
+          <div class="fc-a">A: Synchronous waits for follower(s) to confirm before acking — zero data loss on failover but higher write latency and it blocks if a sync follower dies. Asynchronous acks immediately — fastest writes but an acknowledged write can be lost if the leader crashes before it replicates.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why does single-leader replication have no write conflicts, and what changes with multi-leader?</div>
+          <div class="fc-a">A: One node orders every write, so there's a single source of truth. Multi-leader lets two nodes accept a write to the same key concurrently, producing conflicts that must be resolved (last-write-wins, application merge, or CRDTs).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is the read-your-own-writes problem and its fix?</div>
+          <div class="fc-a">A: A user makes a write to the leader, then a follow-up read hits a lagging follower that doesn't have it yet, so their own change appears to vanish. Fix: route a user's reads of their own recent writes to the leader (or a caught-up replica).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is a replica not a backup?</div>
+          <div class="fc-a">A: A replica copies everything including your mistakes — a dropped table replicates instantly. A backup is an independent point-in-time copy you can restore from. You need both.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Explain how a follower stays in sync with a leader without re-copying the whole database. What is shipped, and why does order matter?</li>
+          <li>Walk through what happens to an acknowledged write under async vs semi-sync vs full-sync replication when the leader crashes immediately after the ack.</li>
+          <li>Name the three topologies by "who can write," and give one advantage and one cost of each.</li>
+          <li>A user complains their post disappeared after they refreshed. Diagnose the likely cause and give the standard fix.</li>
+          <li>What is split-brain, why does automatic failover risk it, and what mechanism (coming later in the course) prevents it?</li>
+          <li>Your app has one write-heavy dashboard and a mostly-read public feed. Which reads would you route to followers and which to the leader, and why?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: replication keeps live copies so you can survive failures and
+          scale reads — but the second copy can always disagree with the first. Every design is an answer to
+          "who may write" (one leader, many, or none) and "does the leader wait for the copy before saying
+          yes" (synchronous = safe and slow, asynchronous = fast and lossy). Master the lag, route each read
+          to the copy whose staleness you can live with, and never mistake a replica for a backup.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-11.html">← Day 11: Database Indexing Strategies</a>
+        <a href="day-13.html" class="coming-soon-link">Day 13: Data Partitioning &amp; Sharding →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 12 of 90 — Database Replication</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ─── Try It Yourself: sync vs async replication trade ───
+  const modeEl = document.getElementById('sim-mode');
+  const latEl = document.getElementById('sim-latency');
+  const latVal = document.getElementById('sim-latency-val');
+  const folEl = document.getElementById('sim-followers');
+  const folVal = document.getElementById('sim-followers-val');
+  const output = document.getElementById('sim-output');
+  const mWrite = document.querySelector('#m-write .val');
+  const mLoss = document.querySelector('#m-loss .val');
+  const mStale = document.querySelector('#m-stale .val');
+  const mLossBox = document.getElementById('m-loss');
+  const mStaleBox = document.getElementById('m-stale');
+
+  const LOCAL_COMMIT = 2; // ms to write locally on the leader
+
+  function fmtMs(ms) {
+    if (ms < 1) return (ms * 1000).toFixed(0) + ' µs';
+    if (ms < 1000) return ms.toFixed(ms < 10 ? 1 : 0) + ' ms';
+    return (ms / 1000).toFixed(2) + ' s';
+  }
+
+  function render() {
+    const oneWay = Number(latEl.value);
+    const rtt = 2 * oneWay;
+    const followers = Number(folEl.value);
+    const mode = modeEl.value;
+    latVal.textContent = oneWay + ' ms';
+    folVal.textContent = followers + (followers === 1 ? ' node' : ' nodes');
+
+    let writeLatency, lossWindow, staleness, note;
+
+    if (mode === 'async') {
+      writeLatency = LOCAL_COMMIT;
+      lossWindow = rtt;              // unreplicated writes lost if leader dies
+      staleness = oneWay;           // follower is ~one hop behind
+      mLossBox.className = 'sim-metric bad';
+      mStaleBox.className = 'sim-metric bad';
+      note = 'Async: the leader commits locally in ~' + fmtMs(writeLatency) + ' and acks the client ' +
+        '<strong>immediately</strong>, streaming to the ' + followers + ' follower' + (followers>1?'s':'') +
+        ' in the background. Writes are as fast as it gets and no slow follower can stall you — but if the ' +
+        'leader crashes in the <strong>' + fmtMs(lossWindow) + '</strong> gap before the change replicates, ' +
+        'that acknowledged write is <strong>gone</strong>, and a follower read can be ~' + fmtMs(staleness) +
+        ' stale.';
+    } else if (mode === 'semi') {
+      writeLatency = LOCAL_COMMIT + rtt;   // wait for 1 follower
+      lossWindow = 0;                      // at least 1 copy guaranteed
+      staleness = oneWay;                  // other followers still async
+      mLossBox.className = 'sim-metric good';
+      mStaleBox.className = 'sim-metric bad';
+      note = 'Semi-sync: the leader waits for <strong>one</strong> follower to confirm before acking, so ' +
+        'the write costs a round-trip (~' + fmtMs(writeLatency) + ') but is <strong>guaranteed to survive</strong> ' +
+        'a leader crash (loss window = 0). The other ' + Math.max(0, followers-1) + ' follower' +
+        ((followers-1)===1?'':'s') + ' stream asynchronously, so one slow node can\'t freeze writes — but ' +
+        'reads from those async followers can still be ~' + fmtMs(staleness) + ' stale. This is what most ' +
+        'production systems actually run.';
+    } else { // sync
+      writeLatency = LOCAL_COMMIT + rtt;   // wait for slowest of all
+      lossWindow = 0;
+      staleness = 0;                       // all followers current at ack time
+      mLossBox.className = 'sim-metric good';
+      mStaleBox.className = 'sim-metric good';
+      note = 'Full sync: the leader waits for <strong>all ' + followers + '</strong> follower' +
+        (followers>1?'s':'') + ' to confirm before acking (~' + fmtMs(writeLatency) + ', bounded by the ' +
+        'slowest). Zero data loss <em>and</em> any follower read is fresh — but every write pays the ' +
+        'round-trip, and if <strong>any one</strong> of the ' + followers + ' follower' + (followers>1?'s':'') +
+        ' goes down, writes <strong>block entirely</strong> until it recovers or is dropped. Safe, but brittle ' +
+        'and slow as you add followers.';
+    }
+
+    mWrite.textContent = fmtMs(writeLatency);
+    mLoss.textContent = lossWindow === 0 ? '0 (safe)' : '≤ ' + fmtMs(lossWindow);
+    mStale.textContent = staleness === 0 ? '0 (fresh)' : '~' + fmtMs(staleness);
+    output.innerHTML = note;
+  }
+  modeEl.addEventListener('change', render);
+  latEl.addEventListener('input', render);
+  folEl.addEventListener('input', render);
+  render();
+
+  // ─── Diagram: leader → followers WAL replication + stale read ───
+  function drawDiagram() {
+    const svg = document.getElementById('repl-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    const rs = rough.svg(svg);
+
+    function txt(x, y, text, color, size, weight) {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('fill', color || '#cbd5e1');
+      t.setAttribute('font-family', 'Inter, sans-serif');
+      t.setAttribute('font-size', size || '11');
+      if (weight) t.setAttribute('font-weight', weight);
+      t.textContent = text;
+      svg.appendChild(t);
+    }
+    function node(x, y, w, h, label, kind) {
+      let stroke = '#3b82f6', fill = '#3b82f612', tcol = '#93c5fd';
+      if (kind === 'leader') { stroke = '#22c55e'; fill = '#22c55e18'; tcol = '#86efac'; }
+      if (kind === 'stale')  { stroke = '#f59e0b'; fill = '#f59e0b18'; tcol = '#fcd34d'; }
+      if (kind === 'client') { stroke = '#a78bfa'; fill = '#a78bfa18'; tcol = '#c4b5fd'; }
+      const r = rs.rectangle(x, y, w, h, { stroke: stroke, strokeWidth: kind==='leader'?2:1.5, roughness: 1.2, fill: fill, fillStyle: 'solid' });
+      svg.appendChild(r);
+      txt(x + w/2, y + h/2 + 4, label, tcol, '11', '700');
+    }
+    function arrow(x1, y1, x2, y2, color, w) {
+      const l = rs.line(x1, y1, x2, y2, { stroke: color || '#475569', strokeWidth: w || 1.4, roughness: 0.8 });
+      svg.appendChild(l);
+    }
+
+    txt(410, 16, 'Single-leader replication: one writer, a WAL stream, lagging copies', '#e2e8f0', '12.5', '700');
+
+    // Client
+    node(40, 120, 110, 40, 'CLIENT', 'client');
+    // Leader
+    node(330, 110, 150, 56, 'LEADER (writes)', 'leader');
+    // Followers
+    node(620, 45, 150, 42, 'FOLLOWER 1', 'follower');
+    node(620, 130, 150, 42, 'FOLLOWER 2', 'follower');
+    node(620, 215, 150, 42, 'FOLLOWER 3 (stale)', 'stale');
+
+    // client -> leader (write)
+    arrow(150, 140, 330, 138, '#a78bfa', 2);
+    txt(240, 128, 'write', '#c4b5fd', '10', '700');
+
+    // leader -> followers (WAL stream)
+    arrow(480, 130, 620, 70, '#22c55e', 1.8);
+    arrow(480, 138, 620, 151, '#22c55e', 1.8);
+    arrow(480, 150, 620, 232, '#22c55e', 1.4);
+    txt(560, 96, 'WAL', '#86efac', '9.5', '700');
+    txt(548, 205, 'WAL (lagging)', '#fcd34d', '9.5', '700');
+
+    // stale read from follower 3 back to client (dashed-ish)
+    arrow(620, 250, 150, 158, '#f59e0b', 1.2);
+    txt(360, 232, 'stale read ⟵ courier still crossing', '#fcd34d', '10', '700');
+
+    // legend
+    txt(120, 300, 'green = write path & replication   •   amber = replication lag / stale read', '#94a3b8', '10');
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawDiagram, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawDiagram);
+  }
+})();
+</script>
+
+</body>
+</html>
