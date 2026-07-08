@@ -144,7 +144,7 @@ registering the correct public key with GitHub outside of any Claude session's a
 | 08 | SQL vs NoSQL: When to Use What | ✅ Published |
 | 09 | ACID Properties & Transactions | ✅ Published |
 | 10 | CAP Theorem & PACELC | ✅ Published |
-| 11 | Database Indexing Strategies | 📝 Staged |
+| 11 | Database Indexing Strategies | ✅ Published |
 | 12 | Database Replication | ⏳ Scheduled |
 | 13 | Data Partitioning & Sharding | ⏳ Scheduled |
 | 14 | Consistent Hashing | ⏳ Scheduled |
@@ -304,6 +304,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-07-08 | Day 11 | Day 11: Database Indexing Strategies |
 | 2026-07-07 | — | User feedback: removed "Learning Objectives," "The Hook," and "Feynman Test" from every lesson (Days 1–11, published and staged) — lessons now open directly with the Visual Memory Anchor. Also reframed `index.html` away from "interview prep" positioning toward "system design learning": reworded the hero eyebrow/subtitle/footer/meta-description, and removed the Stats Row and Progress Widget sections entirely per an explicit request to trim the homepage down to course overview + roadmap (Phases section) + navigation to every lesson (Curriculum grid) and nothing else. Verified with a headless-browser render that all pages (old Day 1–4 template and new Day 5+ template) still load with zero script errors after the removals. |
 | 2026-07-07 | Days 8–10 (rewritten) | Rewrote the published Days 8, 9, and 10 for principal-engineer depth (user feedback: too shallow). Day 8 gets single-table design, the hot-partition problem, GSI eventual-consistency, and a live read/write-amplification calculator. Day 9 gets write skew (with the on-call-doctors example), the 2PL-vs-MVCC mechanism, and concrete anomaly walkthroughs. Day 10 gets N/W/R quorum math with a live calculator, sloppy quorums/hinted handoff, and vector-clock conflict resolution. Each also gains a "Common Mistakes & Misconceptions" table matching Day 11's pattern. Verified via a headless-browser render (Playwright) that all new JS/sliders compute correctly with no script errors before pushing. |
 | 2026-07-07 | — | Added the Session Runbook to `plan.md` and populated `README.md`, so future sessions have a documented routine instead of re-deriving it. Also investigated the local "commit unverified" stop-hook warning: root-caused to an empty `commit_signing_key.pub` in this sandbox (no public key material available for local signature verification) — real signatures are attached to every commit, this is a local-verification-only gap, and it is not fixable via `--amend`/`--reset-author`. Documented as a known limitation so it isn't re-investigated each session. |
