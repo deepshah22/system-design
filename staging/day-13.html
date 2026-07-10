@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 13: Data Partitioning &amp; Sharding | System Design Mastery</title>
+  <meta name="description" content="One machine can only hold so much. When even a single copy of your data is too big for one server, you cut it into pieces and spread them across many machines — sharding. Range vs hash partitioning, the hot-shard problem, the brutal cost of rebalancing, and why routing a query to the right piece is the whole game — taught through story and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .objectives { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+    .objectives-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.6rem; }
+    .objectives ul { padding-left: 1.25rem; margin: 0; }
+    .objectives li { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.3rem; }
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* sharding-specific sim styling */
+    .sim-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.75rem; margin-top:1rem; }
+    .sim-metric { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.9rem 1rem; text-align:center; }
+    .sim-metric .val { font-size:1.35rem; font-weight:800; font-family:'JetBrains Mono', monospace; }
+    .sim-metric .lbl { font-size:.7rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .sim-metric.good .val { color:#22c55e; }
+    .sim-metric.bad .val { color:#ef4444; }
+    .sim-metric.neutral .val { color: var(--accent-light); }
+    /* per-shard load bars */
+    .shard-bars { display:flex; align-items:flex-end; gap:.6rem; height:150px; margin:1.25rem 0 .5rem; padding:0 .25rem; }
+    .shard-bar-wrap { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; }
+    .shard-bar { width:100%; border-radius:6px 6px 0 0; background:linear-gradient(180deg,var(--accent) 0%,var(--accent-light) 100%); transition:height .3s ease, background .3s ease; min-height:3px; }
+    .shard-bar.hot { background:linear-gradient(180deg,#ef4444 0%,#f59e0b 100%); }
+    .shard-bar-lbl { font-size:.68rem; color:var(--text-muted); margin-top:.4rem; font-family:'JetBrains Mono',monospace; }
+    .shard-bar-pct { font-size:.68rem; color:var(--text-secondary); margin-bottom:.3rem; font-family:'JetBrains Mono',monospace; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 13</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 13 of 90</span>
+      <span class="meta-pill">⏱ ~30 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 2 — Storage Fundamentals</span>
+    </div>
+    <h1>Data Partitioning &amp; Sharding<br><span style="color:var(--accent)">When One Copy Is Too Big for One Machine</span></h1>
+    <p class="lead">
+      Yesterday you made a full copy of your data survive a failure. But replication has a hard ceiling:
+      every replica still holds the <em>entire</em> dataset, so when the dataset outgrows a single machine's
+      disk, RAM, or write throughput, copying it more times solves nothing. The only way forward is to
+      <strong>cut the data into pieces</strong> and put each piece on a different machine. That cut looks
+      simple and is quietly one of the most consequential decisions in all of system design — because the
+      instant you split the data, you have to answer, on every single request, "which piece holds this?"
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#depth">How Partitioning Actually Works</a>
+        <a href="#strategies">Range vs Hash vs Directory</a>
+        <a href="#rebalance">The Rebalancing Problem</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">✂️🗄️</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>One enormous filing cabinet has grown so full the drawers won't shut. So you buy three
+            smaller cabinets and split the files: cabinet A holds surnames <strong>A–H</strong>, cabinet B
+            holds <strong>I–P</strong>, cabinet C holds <strong>Q–Z</strong>. Now no single cabinet is
+            overloaded — but a new rule appears that governs <em>everything</em>: before you can file or
+            fetch a single folder, you must first know <strong>which cabinet it lives in</strong>. Get that
+            routing wrong and you'll search the wrong cabinet forever. Picture a clerk holding a folder,
+            pausing at the mouth of three cabinets, asking "which one?" — that pause is the heart of
+            sharding. The cut is easy; knowing where each piece went is the whole job.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="shard-diagram" width="820" height="360" viewBox="0 0 820 360"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Database Dave</span> has a well-indexed, well-replicated ledger,
+            and business is booming. Too well. The ledger is now 4 terabytes and growing a hundred gigabytes
+            a week. His biggest server maxes out at 2 TB of fast storage, and even the writes are backing up —
+            a single machine can only accept so many transactions per second no matter how much he replicates.
+            Replication gave him three <em>identical</em> copies, but three copies of "too big" is still too
+            big. Adding replicas doesn't add capacity; it just re-copies the same overflowing cabinet.
+          </p>
+          <p>
+            So Dave does the only thing that actually helps: he <strong>splits the data itself</strong>. He
+            takes his customer accounts and puts A–H on machine 1, I–P on machine 2, Q–Z on machine 3. Each
+            machine now holds a third of the data and takes a third of the writes. The dataset can grow to
+            three machines' worth of capacity — and if he needs more, he adds a fourth machine. This is
+            <strong>sharding</strong>: horizontal partitioning of one logical dataset across many physical
+            nodes. For the first time, capacity scales by <em>adding machines</em> rather than buying a
+            bigger one.
+          </p>
+          <p>
+            Then two things go wrong. First, Dave notices machine 3 is on fire while machine 1 sits idle —
+            it turns out a third of his customers are named "Singh" and "Smith," so the Q–Z cabinet is
+            slammed. He's created a <strong>hot shard</strong>. Second, when he adds a fourth machine to
+            relieve the pressure, he discovers that re-drawing the boundaries means physically <em>moving</em>
+            a huge fraction of his data across the network while the system is live — and every request that
+            arrives mid-move has to know the new map. Dave has just met the two demons that haunt every
+            sharded system: <strong>uneven load</strong> and <strong>rebalancing cost</strong>. Today is
+            about choosing a partitioning scheme that keeps both in check.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">Replication copies the <em>whole</em> dataset for availability and read
+          scale; partitioning (sharding) <em>splits</em> the dataset so no single machine holds it all — that's
+          how you scale <strong>capacity and write throughput</strong>. Every partitioning scheme is an answer
+          to one question — "given a key, which shard holds it?" — and is judged on three tensions:
+          <strong>balance</strong> (is load spread evenly, or is there a hot shard?), <strong>rebalancing
+          cost</strong> (when you add a node, how much data has to move?), and <strong>query routing</strong>
+          (can you find a row without asking every shard?). Real systems replicate <em>and</em> partition:
+          each shard is itself a small replicated cluster.</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself</h2>
+        <div class="sim-box">
+          <p>Dave is spreading customer records across shards. Pick a partitioning strategy, set how many
+          shards he has, and dial up how <strong>skewed</strong> the traffic is (a little celebrity effect —
+          some keys are far more popular). Watch three things move at once: how <strong>evenly</strong> load
+          lands on each shard, how many keys must <strong>move</strong> when he adds one more shard, and how
+          many shards a <strong>range query</strong> ("all users created last week") has to touch. No single
+          strategy wins all three.</p>
+          <div class="sim-controls" style="flex-direction:column; align-items:stretch; gap:1rem;">
+            <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+              <label for="sim-strategy" style="min-width:150px; font-size:.85rem;">Partitioning strategy:</label>
+              <select id="sim-strategy" style="background:var(--bg-card); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:.4rem .6rem;">
+                <option value="hash" selected>Hash partitioning (key mod N)</option>
+                <option value="range">Range partitioning (A–H, I–P, …)</option>
+              </select>
+            </div>
+            <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+              <label for="sim-shards" style="min-width:150px; font-size:.85rem;">Number of shards (N):</label>
+              <input type="range" id="sim-shards" min="2" max="8" step="1" value="4" style="flex:1; min-width:180px;" />
+              <span id="sim-shards-val" style="font-family:'JetBrains Mono',monospace; min-width:70px; text-align:right; color:var(--accent-light);"></span>
+            </div>
+            <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+              <label for="sim-skew" style="min-width:150px; font-size:.85rem;">Traffic skew (hot keys):</label>
+              <input type="range" id="sim-skew" min="0" max="100" step="1" value="35" style="flex:1; min-width:180px;" />
+              <span id="sim-skew-val" style="font-family:'JetBrains Mono',monospace; min-width:70px; text-align:right; color:var(--accent-light);"></span>
+            </div>
+          </div>
+          <div class="shard-bars" id="shard-bars"></div>
+          <div style="text-align:center; font-size:.72rem; color:var(--text-muted); font-family:'JetBrains Mono',monospace;">load per shard — a red bar is a hot shard</div>
+          <div class="sim-metrics">
+            <div class="sim-metric" id="m-balance"><div class="val">—</div><div class="lbl">Hottest shard load</div></div>
+            <div class="sim-metric" id="m-move"><div class="val">—</div><div class="lbl">Keys moved to add a shard</div></div>
+            <div class="sim-metric" id="m-scan"><div class="val">—</div><div class="lbl">Shards touched by range query</div></div>
+          </div>
+          <div class="sim-output" id="sim-output" style="margin-top:1rem;">Loading…</div>
+        </div>
+      </section>
+
+      <section id="depth">
+        <h2>How Partitioning Actually Works</h2>
+
+        <h3>Partitioning is not replication — and you need both</h3>
+        <p>It's worth nailing the difference because the two are constantly confused. <strong>Replication</strong>
+        makes N copies of the <em>same</em> data — it buys availability and read throughput, but every copy is
+        the full dataset, so it does nothing for capacity. <strong>Partitioning</strong> splits <em>one</em>
+        dataset into disjoint pieces on different machines — it buys capacity and write throughput, but a single
+        copy of each piece is now a single point of failure. So real systems do both: the data is cut into
+        shards, and <em>each shard is itself replicated</em> (a leader plus followers, exactly like Day 12).
+        A cluster of 6 machines might be 3 shards × 2 replicas. Partitioning and replication are two independent
+        axes, and production systems turn both dials at once.</p>
+
+        <h3>The partition key is the most important decision you'll make</h3>
+        <p>Everything hinges on the <strong>partition key</strong> (also called the shard key) — the field you
+        feed into the function that decides which shard a row lives on. Choose <code>user_id</code> and all of
+        one user's data sits together on one shard (great for "load this user's profile"). Choose
+        <code>timestamp</code> and all of today's data lands on one shard (great for time-range scans, terrible
+        for write load — every new write hammers the same "newest" shard). The partition key silently
+        determines which queries are cheap and which become expensive scatter-gather across every shard. It is
+        very hard to change later, because changing it means re-partitioning the entire dataset. Pick it for
+        your <em>access patterns</em>, not your data model.</p>
+
+        <h3>Routing: how a request finds its shard</h3>
+        <p>Once data is split, every request must be routed to the right shard. There are three common places
+        to put that routing logic:</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Client-side (smart client).</strong><span>The client library knows the shard map and computes the target itself. Fewest network hops, but every client must carry and refresh the map. (Cassandra drivers work this way.)</span></div>
+          <div class="flow-step"><strong>Routing tier (proxy).</strong><span>A dedicated proxy sits in front and forwards each request to the right shard. Clients stay dumb; the proxy is the one place that knows the map — at the cost of an extra hop. (Vitess, Twemproxy, most managed shards.)</span></div>
+          <div class="flow-step"><strong>Node-forwarding (request any node).</strong><span>Send the request to any node; if it doesn't own the key, it forwards to the one that does. Simple for clients, but adds internal hops. (Cassandra's coordinator pattern.)</span></div>
+        </div>
+        <p>Whatever the location, they all rely on one shared source of truth for "who owns what," and keeping
+        that map consistent as shards move is where a lot of real-world complexity (and a lot of Day 14) lives.</p>
+      </section>
+
+      <section id="strategies">
+        <h2>Range vs Hash vs Directory (How Do You Cut?)</h2>
+        <div class="family-grid">
+          <div class="family-card">
+            <h4>Range partitioning</h4>
+            <p>Assign contiguous key ranges to shards (A–H, I–P, Q–Z; or Jan, Feb, Mar). <strong>Range scans
+            are cheap</strong> — "all users M–N" hits one shard. But contiguous keys cluster, so you get
+            <strong>hot shards</strong> (everyone signs up "today"; half the surnames start with S).</p>
+            <div class="eg">Great for: time-series, range queries. Risk: hotspots. HBase, Bigtable, Spanner.</div>
+          </div>
+          <div class="family-card">
+            <h4>Hash partitioning</h4>
+            <p>Run the key through a hash and assign by the result (<code>hash(key) mod N</code>). Spreads keys
+            <strong>evenly</strong>, killing most hotspots — but destroys ordering, so a range query becomes a
+            <strong>scatter-gather</strong> across every shard, and naive <code>mod N</code> reshuffles almost
+            everything when N changes.</p>
+            <div class="eg">Great for: even load, point lookups. Risk: no range scans. DynamoDB, Cassandra.</div>
+          </div>
+          <div class="family-card">
+            <h4>Directory / lookup table</h4>
+            <p>Keep an explicit map from key (or key-group) to shard in a lookup service. Maximum flexibility —
+            you can move any group anywhere and split hotspots by hand — at the cost of an extra lookup and a
+            <strong>map that must not become a bottleneck</strong> or single point of failure.</p>
+            <div class="eg">Great for: flexibility, manual hotspot fixes. Risk: the directory itself. Vitess, many custom shards.</div>
+          </div>
+        </div>
+
+        <h3>The hot-shard problem — the one that bites everyone</h3>
+        <p>Even a perfect hash can't save you from a single <strong>hot key</strong>. If Taylor Swift's account
+        gets a million reads a second, hashing her <code>user_id</code> still lands all million on one shard —
+        hashing spreads <em>different</em> keys evenly, but it can't split <em>one</em> key across machines. The
+        real fixes are application-level: add a random suffix to fan a hot key across several sub-keys
+        (<code>celebrity#1</code>…<code>celebrity#16</code>) and merge on read, or cache the hot key hard in
+        front of the shard (Day 6). A subtler version is the <strong>hot range</strong>: partition by timestamp
+        and every write targets "now," so one shard absorbs 100% of writes while the rest idle — which is why
+        write-heavy systems almost never range-partition on time alone. The lesson: uniform <em>data</em>
+        distribution is not uniform <em>load</em> distribution. You have to design for the traffic, not just the
+        keys.</p>
+      </section>
+
+      <section id="rebalance">
+        <h2>The Rebalancing Problem — and Why Day 14 Exists</h2>
+        <p>Your dataset grows, so you add a shard. Now the map has to change — and the terrifying question is
+        <em>how much data must physically move</em> across the network while the system keeps serving traffic.
+        This is where the naive scheme falls apart:</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Naive <code>hash(key) mod N</code>.</strong><span>Change N from 4 to 5 and the modulus changes for almost <em>every</em> key — roughly 80% of your data has to move to a new home at once. It's a catastrophic, cluster-wide reshuffle. This is the single biggest reason nobody uses plain <code>mod N</code> in production.</span></div>
+          <div class="flow-step"><strong>Fixed partitions (more partitions than nodes).</strong><span>Pre-split into, say, 1000 partitions up front and hand out partitions to nodes. Adding a node just moves a <em>few whole partitions</em> to it — a bounded fraction, not the whole cluster. Elasticsearch and Riak work this way.</span></div>
+          <div class="flow-step"><strong>Consistent hashing (tomorrow, Day 14).</strong><span>Arrange shards on a ring so adding one only steals keys from its immediate neighbor — on average only <strong>1/N</strong> of the data moves, not <em>N-1/N</em>. This is the elegant fix that makes elastic, always-on sharding practical, and it's exactly where we go next.</span></div>
+        </div>
+        <p>The general principle: a good partitioning scheme makes rebalancing <em>proportional</em> — add 10%
+        more capacity, move roughly 10% of the data — and lets it happen gradually in the background without
+        downtime. When you see "80% of keys moved" in the simulator above under hash + add-a-shard, you are
+        looking at precisely the problem consistent hashing was invented to solve.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You leave the Twin Room and step through the door marked with scissors into a long wing lined with filing cabinets.</h4>
+          <div class="palace-room"><span class="palace-icon">🗂️</span><div><strong>The Card Catalog</strong> — <span>Database Indexing (Day 11). A slim, sorted set of cards that finds any row in ~4 hops.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">👥</span><div><strong>The Twin Room</strong> — <span>Database Replication (Day 12). Two clerks, two identical ledgers, one courier crossing the street — copies for survival and read scale.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">✂️</span><div><strong>The Filing Wing</strong> — <span>Partitioning &amp; Sharding (today). One overflowing cabinet cut into three: A–H, I–P, Q–Z. A clerk pauses at the mouth of the cabinets asking "which one?" — routing. Watch for the cabinet that's on fire (hot shard) and the nightmare of re-sorting when you add a fourth.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">⭕</span><div><strong>The Circular Room Ahead</strong> — <span>Consistent Hashing (Day 14). The cabinets arranged in a ring so adding one only borrows folders from its neighbor, never re-sorts the whole wing.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Replication (Day 12)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Partitioning &amp; Sharding (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Consistent Hashing (Day 14)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Design: Key-Value Store (Day 39)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node dim">Indexing (Day 11)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Partitioning (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Caching hot keys (Day 6)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Cassandra Deep Dive (Day 52)</span>
+        </div>
+        <p>Partitioning is the second of the two great axes of distributed data — Day 12's replication was the
+        first, and real systems layer them (each shard is a replicated cluster). The hot-key problem sends you
+        straight back to caching (Day 6), local indexes now live <em>per shard</em> (Day 11), and the
+        rebalancing pain you felt today is the exact motivation for Consistent Hashing (Day 14). Everything
+        clicks together when we design a Key-Value Store (Day 39) and dissect Cassandra (Day 52), which are
+        partitioning-and-replication made flesh.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Adding read replicas will fix our capacity problem."</td><td>Replicas copy the <em>whole</em> dataset, so they add read throughput but zero capacity. When the data itself is too big or writes are the bottleneck, only partitioning helps.</td></tr>
+          <tr><td>"A good hash function means perfectly balanced load."</td><td>Hashing balances <em>keys</em>, not <em>traffic</em>. One hot key (a celebrity, a viral post) still lands entirely on one shard. Even data distribution ≠ even load distribution.</td></tr>
+          <tr><td>"We'll just pick a shard key later."</td><td>The partition key decides which queries are cheap forever and is brutally expensive to change (it means re-partitioning everything). Choose it up front, for your access patterns.</td></tr>
+          <tr><td>"Sharding by <code>hash(key) mod N</code> is fine."</td><td>It's balanced until you resize: going from N to N+1 shards moves ~(N-1)/N of all keys at once. Use fixed partitions or consistent hashing so rebalancing is proportional.</td></tr>
+          <tr><td>"Once sharded, every query is fast."</td><td>Only queries that include the partition key are cheap. Any query that doesn't (or spans ranges under hash partitioning) becomes a scatter-gather across all shards — often slower than before.</td></tr>
+          <tr><td>"Cross-shard joins and transactions work like they always did."</td><td>They don't. A transaction spanning shards needs distributed coordination (2PC / Saga, Days 33–34), and cross-shard joins usually have to be avoided by design or denormalized away.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ You shard a social app by <code>hash(user_id) mod N</code> across 4 machines and load is beautifully even. Traffic doubles, so you add a 5th machine. Two things immediately go wrong — what are they, and what would you have done differently? (click to reveal)</div>
+          <div class="recall-answer">First, changing N from 4 to 5 changes <code>mod N</code> for <strong>almost every key</strong> (~80%), so the cluster has to physically move most of its data across the network at once — a massive, disruptive reshuffle while live. Second, hash partitioning means any query that isn't a point lookup by <code>user_id</code> — e.g. "all users who signed up this week" — is a <strong>scatter-gather across all 5 shards</strong>, so it doesn't get faster with more machines, it gets slower. The fix: don't use naive <code>mod N</code>. Use <strong>consistent hashing</strong> (Day 14) or a <strong>fixed large number of partitions</strong> spread over nodes, so adding a machine moves only ~1/N of the data; and choose the partition key to match your real access patterns so the important queries stay single-shard.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🎥 YouTube / Vitess</div><p>YouTube outgrew a single MySQL and built <strong>Vitess</strong> — a sharding layer that presents many MySQL shards as one logical database, with a routing tier (VTGate) that parses queries and sends them to the right shard. It's now the open-source standard for sharding MySQL at scale.</p></div>
+          <div class="realworld-card"><div class="rw-company">📄 MongoDB</div><p>Ships sharding as a first-class feature: you choose a shard key, and a <code>mongos</code> router splits data into <em>chunks</em> and moves them between shards automatically as they grow. Its docs are one long warning that a bad shard key (monotonic, low-cardinality) creates hot shards.</p></div>
+          <div class="realworld-card"><div class="rw-company">🪶 Cassandra / DynamoDB</div><p>Both hash-partition by a partition key onto a ring (consistent hashing) so nodes join and leave with minimal data movement. DynamoDB's "hot partition" throttling is the hot-shard problem surfaced as a billing/limits concern you design around.</p></div>
+          <div class="realworld-card"><div class="rw-company">🔎 Elasticsearch</div><p>Splits an index into a fixed number of <em>primary shards</em> chosen at creation (you can't easily change it later — a real design constraint), each replicated. Adding nodes rebalances whole shards across the cluster, the fixed-partition approach in practice.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What problem does partitioning solve that replication cannot?</div>
+          <div class="fc-a">A: Capacity and write throughput. Replication copies the whole dataset (helping availability and reads), but every copy is still the full size. Partitioning splits the dataset so it can exceed one machine's disk/RAM/write limits.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Contrast range partitioning and hash partitioning on their two key trade-offs.</div>
+          <div class="fc-a">A: Range keeps keys ordered → efficient range scans (one shard) but clusters cause hot shards. Hash spreads keys evenly → balanced load and fast point lookups, but range queries become scatter-gather across all shards and range scans are lost.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why does a good hash function still leave you with hot shards?</div>
+          <div class="fc-a">A: Hashing balances distinct keys, not traffic. A single hot key (a celebrity account, a viral post) hashes to exactly one shard, so all its load lands there. Fixes are app-level: split the hot key with suffixes, or cache it hard in front.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is <code>hash(key) mod N</code> a bad way to assign shards in practice?</div>
+          <div class="fc-a">A: When N changes (add/remove a node), the modulus changes for almost every key, so ~(N-1)/N of all data must move at once — a cluster-wide reshuffle. Use consistent hashing or a fixed large partition count so only ~1/N moves.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is choosing the partition (shard) key the most important sharding decision?</div>
+          <div class="fc-a">A: It determines which queries stay single-shard (cheap) and which become scatter-gather (expensive), and whether load is balanced. It's very costly to change later because changing it re-partitions the entire dataset — so pick it for access patterns, not the data model.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Explain the difference between replication and partitioning in one sentence each, and why production systems use both together.</li>
+          <li>Give one query pattern where range partitioning wins and one where hash partitioning wins, and say why.</li>
+          <li>A social feed is sharded by <code>hash(user_id)</code>. A celebrity with 50M followers is melting one shard. Diagnose why hashing didn't help and give two concrete fixes.</li>
+          <li>You have 4 shards using <code>mod N</code> and need to add a 5th. Estimate how much data moves and explain what scheme you'd use instead.</li>
+          <li>What is the partition key, and why is it so expensive to change after launch?</li>
+          <li>Name the three places routing logic can live (which shard owns a key), with one trade-off of each.</li>
+          <li>Why do cross-shard joins and transactions become a design problem, and what later tools address them?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: replication copies the whole dataset, partitioning cuts it into
+          pieces so it can outgrow any single machine — and the instant you cut it, every request must answer
+          "which piece holds this?" Judge any scheme on three tensions: is the load balanced (beware the hot
+          key), how much data moves when you add a node (beware plain <code>mod N</code>), and can you find a
+          row without asking every shard (choose the partition key for your access patterns). Master those, and
+          tomorrow's consistent hashing will feel like the obvious cure it is.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-12.html">← Day 12: Database Replication</a>
+        <a href="day-14.html" class="coming-soon-link">Day 14: Consistent Hashing →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 13 of 90 — Data Partitioning &amp; Sharding</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ─── Try It Yourself: partitioning strategy trade simulator ───
+  const stratEl = document.getElementById('sim-strategy');
+  const shardsEl = document.getElementById('sim-shards');
+  const shardsVal = document.getElementById('sim-shards-val');
+  const skewEl = document.getElementById('sim-skew');
+  const skewVal = document.getElementById('sim-skew-val');
+  const output = document.getElementById('sim-output');
+  const barsEl = document.getElementById('shard-bars');
+  const mBalance = document.querySelector('#m-balance .val');
+  const mMove = document.querySelector('#m-move .val');
+  const mScan = document.querySelector('#m-scan .val');
+  const mBalanceBox = document.getElementById('m-balance');
+  const mMoveBox = document.getElementById('m-move');
+  const mScanBox = document.getElementById('m-scan');
+
+  // Build a per-shard load distribution (fractions that sum to 1) for the chosen
+  // strategy. skew (0..1) concentrates traffic into one region of the keyspace.
+  function loadDistribution(strategy, n, skew) {
+    const base = 1 / n;
+    const loads = new Array(n).fill(base);
+    if (strategy === 'range') {
+      // Range partitioning: contiguous hot region lands on ONE shard, so skew
+      // piles onto shard 0 while the rest share what's left.
+      const hot = base + skew * (1 - base);
+      const rest = (1 - hot) / (n - 1);
+      for (let i = 0; i < n; i++) loads[i] = (i === 0) ? hot : rest;
+    } else {
+      // Hash partitioning: a hot *region* of keys is scattered across shards, so
+      // skew barely dents balance. A tiny residual imbalance remains (a single
+      // hot key can't be split), modeled as a small bump on one shard.
+      const residual = skew * 0.12;                 // hashing can't split one hot key
+      const hot = base + residual * (1 - base);
+      const rest = (1 - hot) / (n - 1);
+      for (let i = 0; i < n; i++) loads[i] = (i === 0) ? hot : rest;
+    }
+    return loads;
+  }
+
+  function render() {
+    const strategy = stratEl.value;
+    const n = Number(shardsEl.value);
+    const skew = Number(skewEl.value) / 100;
+    shardsVal.textContent = n + (n === 1 ? ' shard' : ' shards');
+    skewVal.textContent = Number(skewEl.value) + '%';
+
+    const loads = loadDistribution(strategy, n, skew);
+    const maxLoad = Math.max.apply(null, loads);
+    const ideal = 1 / n;
+    const hotThreshold = ideal * 1.5;  // >1.5x fair share = "hot"
+
+    // draw bars
+    barsEl.innerHTML = '';
+    loads.forEach((load, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'shard-bar-wrap';
+      const pct = document.createElement('div');
+      pct.className = 'shard-bar-pct';
+      pct.textContent = Math.round(load * 100) + '%';
+      const bar = document.createElement('div');
+      bar.className = 'shard-bar' + (load > hotThreshold ? ' hot' : '');
+      bar.style.height = Math.max(3, (load / maxLoad) * 120) + 'px';
+      const lbl = document.createElement('div');
+      lbl.className = 'shard-bar-lbl';
+      lbl.textContent = 'S' + i;
+      wrap.appendChild(pct); wrap.appendChild(bar); wrap.appendChild(lbl);
+      barsEl.appendChild(wrap);
+    });
+
+    // metric 1: hottest shard load (vs fair share)
+    const hottestPct = Math.round(maxLoad * 100);
+    const fairPct = Math.round(ideal * 100);
+    mBalance.textContent = hottestPct + '%';
+    mBalanceBox.className = 'sim-metric ' + (maxLoad > hotThreshold ? 'bad' : 'good');
+
+    // metric 2: fraction of keys that move when adding one shard (N -> N+1)
+    let movePct, moveNote;
+    if (strategy === 'range') {
+      // splitting one range to seed the new shard moves ~1/(N+1)
+      movePct = Math.round(100 / (n + 1));
+      mMoveBox.className = 'sim-metric good';
+    } else {
+      // naive hash(key) mod N: changing modulus reshuffles ~N/(N+1)
+      movePct = Math.round(100 * n / (n + 1));
+      mMoveBox.className = 'sim-metric bad';
+    }
+    mMove.textContent = '~' + movePct + '%';
+
+    // metric 3: shards touched by a range query ("users created last week")
+    let scanShards;
+    if (strategy === 'range') {
+      scanShards = 1;
+      mScanBox.className = 'sim-metric good';
+    } else {
+      scanShards = n;              // scatter-gather across all shards
+      mScanBox.className = 'sim-metric bad';
+    }
+    mScan.textContent = scanShards + (scanShards === 1 ? ' shard' : ' shards');
+
+    // narrative
+    if (strategy === 'range') {
+      output.innerHTML = 'Range partitioning keeps keys <strong>ordered</strong>, so a range query hits ' +
+        '<strong>just one shard</strong> and adding a shard only splits one range (~' + movePct + '% of keys ' +
+        'move). The catch is right there in the bars: with ' + Number(skewEl.value) + '% skew the hot region ' +
+        'piles onto <strong>S0 at ' + hottestPct + '%</strong> of load while a fair share would be ' + fairPct +
+        '%. Push skew up and watch S0 go red — that\'s the classic "everyone writes to <em>today</em>\'s shard" ' +
+        'hotspot.';
+    } else {
+      output.innerHTML = 'Hash partitioning <strong>scatters</strong> keys, so even at ' + Number(skewEl.value) +
+        '% skew the load stays near-flat (hottest ' + hottestPct + '% vs a ' + fairPct + '% fair share) — a hot ' +
+        '<em>region</em> is spread out (a single hot <em>key</em> still can\'t be split). But you pay twice: a ' +
+        'range query becomes a <strong>scatter-gather across all ' + n + ' shards</strong>, and adding one shard ' +
+        'with naive <code>mod N</code> reshuffles <strong>~' + movePct + '% of all keys</strong> at once. That ' +
+        'rebalancing bill is exactly what consistent hashing (Day 14) exists to shrink to ~' + Math.round(100/(n+1)) + '%.';
+    }
+  }
+  stratEl.addEventListener('change', render);
+  shardsEl.addEventListener('input', render);
+  skewEl.addEventListener('input', render);
+  render();
+
+  // ─── Diagram: one big table split into shards, each a replicated cluster ───
+  function drawDiagram() {
+    const svg = document.getElementById('shard-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    const rs = rough.svg(svg);
+
+    function txt(x, y, text, color, size, weight) {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('fill', color || '#cbd5e1');
+      t.setAttribute('font-family', 'Inter, sans-serif');
+      t.setAttribute('font-size', size || '11');
+      if (weight) t.setAttribute('font-weight', weight);
+      t.textContent = text;
+      svg.appendChild(t);
+    }
+    function node(x, y, w, h, label, kind) {
+      let stroke = '#3b82f6', fill = '#3b82f612', tcol = '#93c5fd';
+      if (kind === 'router') { stroke = '#a78bfa'; fill = '#a78bfa18'; tcol = '#c4b5fd'; }
+      if (kind === 'leader') { stroke = '#22c55e'; fill = '#22c55e18'; tcol = '#86efac'; }
+      if (kind === 'hot')    { stroke = '#f59e0b'; fill = '#f59e0b18'; tcol = '#fcd34d'; }
+      const r = rs.rectangle(x, y, w, h, { stroke: stroke, strokeWidth: kind==='router'?2:1.5, roughness: 1.2, fill: fill, fillStyle: 'solid' });
+      svg.appendChild(r);
+      txt(x + w/2, y + h/2 + 4, label, tcol, '11', '700');
+    }
+    function arrow(x1, y1, x2, y2, color, w) {
+      const l = rs.line(x1, y1, x2, y2, { stroke: color || '#475569', strokeWidth: w || 1.4, roughness: 0.8 });
+      svg.appendChild(l);
+    }
+
+    txt(410, 16, 'One dataset split into 3 shards — and each shard is itself replicated', '#e2e8f0', '12.5', '700');
+
+    // Router / query
+    node(320, 44, 180, 44, 'ROUTER  (which shard?)', 'router');
+
+    // Three shard columns: leader + follower each
+    const cols = [
+      { x: 70,  label: 'Shard A  (A–H)', kind: 'leader' },
+      { x: 330, label: 'Shard B  (I–P)', kind: 'leader' },
+      { x: 590, label: 'Shard C  (Q–Z)', kind: 'hot' }
+    ];
+    cols.forEach(function(c, i) {
+      // leader
+      node(c.x, 150, 160, 44, c.label, c.kind === 'hot' ? 'hot' : 'leader');
+      // follower (replica)
+      node(c.x, 240, 160, 40, 'replica', 'follower');
+      // router -> shard leader
+      arrow(410, 88, c.x + 80, 150, '#a78bfa', 1.6);
+      // leader -> replica (replication, Day 12)
+      arrow(c.x + 80, 194, c.x + 80, 240, '#22c55e', 1.4);
+    });
+
+    txt(150, 128, 'route by partition key', '#c4b5fd', '9.5', '700');
+    txt(670, 138, 'hot shard 🔥', '#fcd34d', '10', '700');
+    txt(410, 306, 'partitioning (→ across, splits data)  ×  replication (↓ down, copies each piece)', '#94a3b8', '10');
+    txt(410, 330, 'green ↓ = replication within a shard   •   amber = a hot shard taking too much load', '#94a3b8', '9.5');
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawDiagram, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawDiagram);
+  }
+})();
+</script>
+
+</body>
+</html>
