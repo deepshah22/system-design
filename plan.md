@@ -4,7 +4,7 @@
 **Scope:** 90 lessons total (~30 min each)  
 **Publish cadence:** 3x/week (Mon, Wed, Fri) — not literally tied to a 3-month calendar window; at 3 lessons/week, 90 lessons takes ~30 weeks (~7 months) of real time, paced for actual retention rather than rushing daily.  
 **Target:** Principal Engineer level interview preparation  
-**Last Updated:** 2026-07-10
+**Last Updated:** 2026-07-13
 
 ---
 
@@ -304,6 +304,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-07-13 | Day 14 (staged) | Day 14: Consistent Hashing — authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish (Wednesday, 2026-07-15). Full Memorable Learning Framework: a clock-face/ring visual anchor ("each key belongs to the first machine clockwise"), a story that continues Dave from Day 13's `mod N` reshuffle disaster → the ring → the raw-ring balance snag → virtual nodes as the fix, an interactive ring simulator (physical-machines × virtual-nodes-per-machine sliders with live per-machine load bars that flatten as vnodes rise, plus honest before/after-diff metrics: hottest-machine load, keys-moved-when-adding-a-machine, and what plain `mod N` would move), a roughjs two-ring diagram (clockwise ownership on the left, adding M4 stealing one arc on the right), the ring/clockwise-lookup/`O(log N)`-binary-search depth, the 1/N-movement proof, a virtual-nodes section (balance / graceful failure / heterogeneous hardware), a limits section (hot keys, replication pairing, bounded loads, rendezvous/jump hashing), a "Common Mistakes & Misconceptions" table, and real-world DynamoDB/Cassandra/Discord/CDN engineering. Verified via a headless-browser (Playwright) render that the simulator computes correctly across machine-count × vnode sliders (hottest 47%→24%, keys-moved ~12–22% vs `mod N` 83%) with no page script errors (only the sandbox-blocked roughjs CDN, which loads fine on Pages and whose ring draw degrades gracefully). |
 | 2026-07-13 | Day 13 | Day 13: Data Partitioning &amp; Sharding |
 | 2026-07-10 | Day 13 (staged) | Day 13: Data Partitioning & Sharding — authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish (Monday, 2026-07-13). Full Memorable Learning Framework: a filing-cabinet-cut-in-three visual anchor (A–H / I–P / Q–Z with a clerk pausing at "which cabinet?" = routing), a story that walks Dave from "3 copies of too-big is still too-big" → sharding → the hot-shard fire → the rebalance nightmare, an interactive strategy simulator (range vs hash × shard-count × traffic-skew sliders showing hottest-shard load with live per-shard bars that turn red when hot, keys-moved-on-resize, and shards-touched-by-a-range-query), a roughjs diagram showing one dataset split into 3 shards each itself replicated (partitioning × replication as two axes), the replication-vs-partitioning distinction, the partition-key decision, the three routing locations, range/hash/directory strategies, the hot-key problem, the rebalancing problem (naive `mod N` ~80% reshuffle → fixed-partitions → consistent hashing as the Day 14 cure), a "Common Mistakes & Misconceptions" table, and real-world Vitess/MongoDB/Cassandra/Elasticsearch engineering. Verified via a headless-browser (Playwright) render that the simulator computes correctly across range/hash × skew × shard-count with no page script errors (only the sandbox-blocked roughjs CDN, which loads fine on Pages and whose draw code degrades gracefully). |
 | 2026-07-10 | Day 12 | Day 12: Database Replication |
@@ -350,5 +351,6 @@ system-design/
 - [x] Day 11 (Database Indexing Strategies) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Day 12 (Database Replication) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Day 13 (Data Partitioning & Sharding) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
-- [ ] Days 14–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
+- [x] Day 14 (Consistent Hashing) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
+- [ ] Days 15–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
 - [x] GitHub Pages enabled on `main` branch — confirmed via the active `pages-build-deployment` Actions workflow on the repo
