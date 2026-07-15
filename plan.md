@@ -4,7 +4,7 @@
 **Scope:** 90 lessons total (~30 min each)  
 **Publish cadence:** 3x/week (Mon, Wed, Fri) — not literally tied to a 3-month calendar window; at 3 lessons/week, 90 lessons takes ~30 weeks (~7 months) of real time, paced for actual retention rather than rushing daily.  
 **Target:** Principal Engineer level interview preparation  
-**Last Updated:** 2026-07-10
+**Last Updated:** 2026-07-15
 
 ---
 
@@ -152,7 +152,7 @@ registering the correct public key with GitHub outside of any Claude session's a
 ### Week 3: Communication Patterns
 | Day | Topic | Status |
 |-----|-------|--------|
-| 15 | REST API Design Best Practices | ⏳ Scheduled |
+| 15 | REST API Design Best Practices | 📝 Staged |
 | 16 | GraphQL Architecture | ⏳ Scheduled |
 | 17 | gRPC & Protocol Buffers | ⏳ Scheduled |
 | 18 | Message Queues & Pub/Sub | ⏳ Scheduled |
@@ -304,6 +304,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-07-15 | Day 15 (staged) | Day 15: REST API Design Best Practices — authored into `staging/`, awaiting the Mon/Wed/Fri auto-publish. Picks up where Days 13–14 (Sharding, Consistent Hashing) left off: once data is spread across machines, everything needs a doorway in. Full Memorable Learning Framework: a library-with-4-verbs / amnesiac-librarian visual anchor, the "Database Dave" story walking 300 bespoke RPC endpoints → resources-as-nouns → the stateless-server bug → versioning/pagination/idempotency lessons, an interactive **endpoint-explosion simulator** (resource-types × operations-per-resource sliders showing RPC surface `R×O` vs REST surface `R×2` with live comparison bars and a reduction ratio), a roughjs diagram contrasting RPC chaos vs the REST uniform interface plus a stateless load-balanced-replicas + shared-store layout, the uniform-interface / safe-idempotent-cacheable methods table, statelessness → horizontal scaling, status-code families, the Richardson Maturity Model, a design-decisions grid (versioning / offset-vs-cursor pagination / filtering / errors + idempotency keys), the over-fetch/under-fetch limits that motivate GraphQL (Day 16) & gRPC (Day 17), a Common Mistakes table, and real-world Stripe/GitHub/X/Google-AWS engineering. Verified via headless-browser (Playwright) render that the simulator computes correctly (20×8 → 160 vs 40, ~4.0×; 2×2 → 4 vs 4, 1.0×) with no page script errors (only the sandbox-blocked roughjs CDN, which loads on Pages and degrades gracefully via the `typeof rough` guard). **Pipeline note for the next session:** Day 14 (Consistent Hashing) is authored and sitting in open **draft PR #4** (branch `claude/charming-dirac-ojp94o`), not yet merged to `main` — Day 15 here is authored one lesson behind it on a fresh branch, mirroring the per-session-branch cadence of PRs #2/#3/#4. |
 | 2026-07-13 | Day 13 | Day 13: Data Partitioning &amp; Sharding |
 | 2026-07-10 | Day 13 (staged) | Day 13: Data Partitioning & Sharding — authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish (Monday, 2026-07-13). Full Memorable Learning Framework: a filing-cabinet-cut-in-three visual anchor (A–H / I–P / Q–Z with a clerk pausing at "which cabinet?" = routing), a story that walks Dave from "3 copies of too-big is still too-big" → sharding → the hot-shard fire → the rebalance nightmare, an interactive strategy simulator (range vs hash × shard-count × traffic-skew sliders showing hottest-shard load with live per-shard bars that turn red when hot, keys-moved-on-resize, and shards-touched-by-a-range-query), a roughjs diagram showing one dataset split into 3 shards each itself replicated (partitioning × replication as two axes), the replication-vs-partitioning distinction, the partition-key decision, the three routing locations, range/hash/directory strategies, the hot-key problem, the rebalancing problem (naive `mod N` ~80% reshuffle → fixed-partitions → consistent hashing as the Day 14 cure), a "Common Mistakes & Misconceptions" table, and real-world Vitess/MongoDB/Cassandra/Elasticsearch engineering. Verified via a headless-browser (Playwright) render that the simulator computes correctly across range/hash × skew × shard-count with no page script errors (only the sandbox-blocked roughjs CDN, which loads fine on Pages and whose draw code degrades gracefully). |
 | 2026-07-10 | Day 12 | Day 12: Database Replication |
@@ -350,5 +351,7 @@ system-design/
 - [x] Day 11 (Database Indexing Strategies) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Day 12 (Database Replication) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Day 13 (Data Partitioning & Sharding) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
-- [ ] Days 14–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
+- [x] Day 14 (Consistent Hashing) authored — in open draft PR #4 (`claude/charming-dirac-ojp94o`), awaiting merge to `main` + auto-publish
+- [x] Day 15 (REST API Design Best Practices) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
+- [ ] Days 16–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
 - [x] GitHub Pages enabled on `main` branch — confirmed via the active `pages-build-deployment` Actions workflow on the repo
