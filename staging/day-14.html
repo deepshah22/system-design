@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 14: Consistent Hashing | System Design Mastery</title>
+  <meta name="description" content="Yesterday you split your data across machines — and discovered that adding one more machine forces you to move almost everything. Consistent hashing is the elegant fix: arrange nodes on a ring so growing or shrinking the cluster only moves about 1/N of the data. The ring, the clockwise walk, virtual nodes, and why every large-scale key-value store is built on this one idea — taught through story and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .objectives { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+    .objectives-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.6rem; }
+    .objectives ul { padding-left: 1.25rem; margin: 0; }
+    .objectives li { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.3rem; }
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* consistent-hashing sim styling */
+    .sim-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.75rem; margin-top:1rem; }
+    .sim-metric { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.9rem 1rem; text-align:center; }
+    .sim-metric .val { font-size:1.35rem; font-weight:800; font-family:'JetBrains Mono', monospace; }
+    .sim-metric .lbl { font-size:.7rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .sim-metric.good .val { color:#22c55e; }
+    .sim-metric.bad .val { color:#ef4444; }
+    .sim-metric.neutral .val { color: var(--accent-light); }
+    /* per-node load bars */
+    .shard-bars { display:flex; align-items:flex-end; gap:.6rem; height:150px; margin:1.25rem 0 .5rem; padding:0 .25rem; }
+    .shard-bar-wrap { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; }
+    .shard-bar { width:100%; border-radius:6px 6px 0 0; background:linear-gradient(180deg,var(--accent) 0%,var(--accent-light) 100%); transition:height .3s ease, background .3s ease; min-height:3px; }
+    .shard-bar.hot { background:linear-gradient(180deg,#ef4444 0%,#f59e0b 100%); }
+    .shard-bar-lbl { font-size:.68rem; color:var(--text-muted); margin-top:.4rem; font-family:'JetBrains Mono',monospace; }
+    .shard-bar-pct { font-size:.68rem; color:var(--text-secondary); margin-bottom:.3rem; font-family:'JetBrains Mono',monospace; }
+    /* the live ring canvas */
+    .ring-wrap { display:flex; justify-content:center; margin:1rem 0 .25rem; }
+    .ring-wrap svg { max-width:100%; height:auto; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 14</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 14 of 90</span>
+      <span class="meta-pill">⏱ ~30 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 2 — Storage Fundamentals</span>
+    </div>
+    <h1>Consistent Hashing<br><span style="color:var(--accent)">Add a Machine Without Moving the World</span></h1>
+    <p class="lead">
+      Yesterday you cut your data into shards and immediately hit a wall: with plain
+      <code>hash(key) mod N</code>, adding a single machine changes the answer for <em>almost every key</em>,
+      forcing the cluster to shove ~80% of its data across the network while still serving traffic. That's not
+      a growing pain — it's a reason teams are terrified to scale. Consistent hashing is the beautiful idea that
+      fixes it: lay your machines out on a <strong>ring</strong> so that adding or removing one only disturbs
+      its immediate neighbor. Grow the cluster by 10%, move about 10% of the data — no more, no less.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#depth">How the Ring Actually Works</a>
+        <a href="#vnodes">Virtual Nodes</a>
+        <a href="#variants">Variants &amp; Alternatives</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🕛⭕</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Imagine a giant <strong>clock face</strong>. Your machines are pinned onto the rim at
+            different hours — one at 12, one at 4, one at 8. Now every piece of data also gets a spot on the
+            same rim (wherever its hash lands). To find which machine owns a piece, you drop it onto the rim and
+            <strong>walk clockwise</strong> until you bump into the first machine — that machine owns it.
+            Here's the magic: if you add a new machine at, say, 2 o'clock, the only data that changes hands is
+            the slice sitting between 12 and 2 — the new machine quietly steals that arc from its neighbor, and
+            <em>every other machine keeps exactly what it had</em>. No cluster-wide reshuffle. Picture that
+            clock, the clockwise walk, and one new hand sliding in to grab just the wedge behind it — that
+            single image <em>is</em> consistent hashing.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="ring-diagram" width="820" height="380" viewBox="0 0 820 380"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Database Dave</span> walked away from yesterday with a working sharded
+            cluster and one terrifying number burned into his memory: when he added a 5th machine to his 4-shard
+            setup, roughly <strong>80% of his keys had to move</strong>. His <code>hash(key) mod N</code> scheme
+            was balanced and fast — right up until the moment he needed to grow, at which point it turned every
+            capacity upgrade into a white-knuckle, all-night data migration. His teammates started avoiding
+            scaling entirely, over-provisioning huge machines just to never touch N again. That's the tell of a
+            broken design: people bending the whole system to avoid one operation.
+          </p>
+          <p>
+            A senior engineer drew a circle on the whiteboard. "Stop thinking of shards as slots numbered 0 to
+            N-1," she said. "Think of one big <strong>ring</strong> of hash values, from zero wrapping all the
+            way back to zero. Hash each <em>machine</em> to a point on the ring. Hash each <em>key</em> to a
+            point on the ring too. A key belongs to the first machine you hit walking clockwise from it." Dave
+            squinted. "So where a key lives no longer depends on <em>how many</em> machines there are — only on
+            <em>where the machines sit</em> on the ring." Exactly. And that one change is everything: adding a
+            machine drops a new point on the ring, and it only takes over the arc between itself and the
+            previous machine. Every key outside that arc doesn't move at all.
+          </p>
+          <p>
+            Dave rebuilt his router around the ring and added a 6th machine live. This time the monitoring
+            showed only <strong>~17% of keys moving</strong> — the one arc the new machine claimed — and the
+            rest of the cluster never noticed. But he hit one snag: with only a handful of machines dropped
+            randomly on the ring, the arcs came out lopsided. One machine landed in a big empty stretch and
+            ended up owning nearly half the data. The senior engineer smiled — "That's the last piece. We don't
+            place each machine once; we place it a <em>hundred</em> times, as a hundred tiny points scattered
+            around the ring. The arcs average out, and load goes flat." Those hundred phantom points are called
+            <strong>virtual nodes</strong>, and they're the difference between consistent hashing in theory and
+            consistent hashing that actually works.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">Plain <code>mod N</code> ties a key's home to the <em>count</em> of
+          machines, so changing the count re-homes almost everything. Consistent hashing ties a key's home to a
+          machine's <em>position on a ring</em> instead — so adding or removing a machine only re-homes the keys
+          in <strong>one arc</strong>, about <strong>1/N of the data</strong>, and everything else stays put.
+          The price of admission is that a few randomly-placed machines create lopsided arcs, so you give each
+          machine many <strong>virtual nodes</strong> (points scattered around the ring) to smooth the load out.
+          Ring + clockwise walk + virtual nodes = elastic, always-on sharding.</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself</h2>
+        <div class="sim-box">
+          <p>This is a real hash ring with 2,000 keys hashed onto it. Set how many <strong>machines</strong>
+          sit on the ring and how many <strong>virtual nodes</strong> each one gets. Watch two stories unfold at
+          once. First, the <strong>load bars</strong>: with 1 virtual node per machine the arcs are lopsided and
+          some bars go red (hot) — crank virtual nodes up and watch the bars flatten. Second, the
+          <strong>rebalancing cost</strong>: the sim measures what fraction of keys actually move when you add
+          one more machine, and shows it right next to what naive <code>mod N</code> would have moved. That gap
+          is the entire reason this idea exists.</p>
+          <div class="sim-controls" style="flex-direction:column; align-items:stretch; gap:1rem;">
+            <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+              <label for="sim-nodes" style="min-width:170px; font-size:.85rem;">Machines on the ring (N):</label>
+              <input type="range" id="sim-nodes" min="2" max="8" step="1" value="4" style="flex:1; min-width:180px;" />
+              <span id="sim-nodes-val" style="font-family:'JetBrains Mono',monospace; min-width:90px; text-align:right; color:var(--accent-light);"></span>
+            </div>
+            <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+              <label for="sim-vnodes" style="min-width:170px; font-size:.85rem;">Virtual nodes per machine:</label>
+              <input type="range" id="sim-vnodes" min="0" max="7" step="1" value="0" style="flex:1; min-width:180px;" />
+              <span id="sim-vnodes-val" style="font-family:'JetBrains Mono',monospace; min-width:90px; text-align:right; color:var(--accent-light);"></span>
+            </div>
+          </div>
+
+          <div class="ring-wrap">
+            <svg id="ring-live" width="300" height="300" viewBox="0 0 300 300"></svg>
+          </div>
+          <div style="text-align:center; font-size:.72rem; color:var(--text-muted); font-family:'JetBrains Mono',monospace;">each colored dot is a (virtual) node on the ring — clumpy dots = lopsided load</div>
+
+          <div class="shard-bars" id="node-bars"></div>
+          <div style="text-align:center; font-size:.72rem; color:var(--text-muted); font-family:'JetBrains Mono',monospace;">load per machine — a red bar owns more than 1.5× its fair share</div>
+          <div class="sim-metrics">
+            <div class="sim-metric" id="m-balance"><div class="val">—</div><div class="lbl">Hottest machine load</div></div>
+            <div class="sim-metric" id="m-move"><div class="val">—</div><div class="lbl">Keys moved to add a machine (ring)</div></div>
+            <div class="sim-metric" id="m-naive"><div class="val">—</div><div class="lbl">Keys moved with naive mod N</div></div>
+          </div>
+          <div class="sim-output" id="sim-output" style="margin-top:1rem;">Loading…</div>
+        </div>
+      </section>
+
+      <section id="depth">
+        <h2>How the Ring Actually Works</h2>
+
+        <h3>Step 1 — turn the hash space into a circle</h3>
+        <p>A hash function like MD5 or MurmurHash turns any input into a big number in a fixed range — say 0 to
+        2<sup>32</sup>−1. Normally we'd take that number <code>mod N</code> to pick a shard. Consistent hashing
+        does something different: it treats the whole range as a <strong>circle</strong>, where the largest
+        value wraps back around to 0, like the 12 on a clock sitting next to the 1. Nothing physical changes —
+        it's the same hash numbers — we've just agreed to think of them as points on a ring instead of a line.</p>
+
+        <h3>Step 2 — place the machines on the ring</h3>
+        <p>Each machine gets hashed too. You feed something stable about it — its name or IP, e.g.
+        <code>hash("node-A")</code> — into the same function, and that lands the machine at a point on the ring.
+        Three machines might land at positions equivalent to 12 o'clock, 4 o'clock, and 8 o'clock. These
+        positions are what the whole scheme hangs on, and crucially they <em>don't depend on how many other
+        machines exist</em> — <code>hash("node-A")</code> is the same whether the cluster has 3 machines or 300.</p>
+
+        <h3>Step 3 — a key belongs to the next machine clockwise</h3>
+        <p>To find a key's home, hash the key to a point on the ring, then <strong>walk clockwise</strong> until
+        you reach the first machine. That machine owns the key. In code it's a sorted list of machine positions
+        and a binary search for "the first position ≥ the key's position" (wrapping to the first machine if you
+        run off the end). Each machine therefore owns the <strong>arc</strong> of the ring between the previous
+        machine and itself.</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Lookup.</strong><span>hash the key → binary-search the sorted ring for the next node clockwise. O(log V) where V is the number of (virtual) node points. No coordination, no central lookup on the hot path.</span></div>
+          <div class="flow-step"><strong>Add a machine.</strong><span>drop its point(s) on the ring. It claims the keys in the arc <em>just behind</em> it — those, and only those, migrate from the single neighbor that used to own that arc. Everyone else is untouched.</span></div>
+          <div class="flow-step"><strong>Remove a machine.</strong><span>delete its point(s). Its arc simply falls to the next machine clockwise. Again, only that one neighbor gains keys; the rest of the ring doesn't move.</span></div>
+        </div>
+
+        <h3>Why only 1/N moves</h3>
+        <p>Here's the intuition in one line. With N machines evenly spread, each owns about 1/N of the ring.
+        Add one machine and it carves out one fresh arc of roughly 1/(N+1) of the ring — taken entirely from the
+        single machine whose territory it landed in. So only that ~1/(N+1) slice of keys changes owner; the
+        other N−1 machines don't move a single byte. Compare that to <code>mod N</code>, where bumping N to N+1
+        changes the remainder for nearly every key at once. Same goal — spread keys over machines — but one
+        design makes growth <em>proportional</em> and the other makes it <em>catastrophic</em>.</p>
+      </section>
+
+      <section id="vnodes">
+        <h2>Virtual Nodes — The Part That Makes It Actually Work</h2>
+        <p>The plain ring has a quiet flaw you saw in the simulator at "1 virtual node": with only a few points
+        dropped at random, the arcs come out uneven. One machine lands in a wide-open stretch and owns 40% of
+        the ring while another owns 8%. Randomness is lumpy at small counts. Worse, when a machine dies, its
+        <em>entire</em> arc dumps onto the single next machine — instantly doubling that one neighbor's load
+        instead of spreading the pain.</p>
+        <p>The fix is <strong>virtual nodes</strong> (also called vnodes or replicas-on-the-ring): instead of
+        placing each machine at one point, place it at many — <code>hash("node-A#1")</code>,
+        <code>hash("node-A#2")</code>, … <code>hash("node-A#150")</code> — all owned by the same physical
+        machine. Now each machine is represented by a spray of points all around the ring, and two good things
+        happen:</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Load evens out.</strong><span>Averaging 150 small random arcs per machine gives a far smoother total than one big random arc. Load imbalance shrinks roughly with 1/√(vnodes) — which is exactly why the bars in the sim flatten as you raise the slider.</span></div>
+          <div class="flow-step"><strong>Failure spreads out.</strong><span>When a machine dies, its 150 little arcs each fall to a <em>different</em> neighbor, so the departed load is shared across the whole cluster instead of crushing one node.</span></div>
+          <div class="flow-step"><strong>Heterogeneous hardware.</strong><span>Give a machine twice the RAM? Give it twice the vnodes. The number of points is a clean dial for "how much of the ring should this machine own."</span></div>
+        </div>
+        <p>The cost is modest: more points means a slightly bigger ring structure and more memory for the map,
+        but lookups are still O(log V). In practice systems use anywhere from a handful to a few hundred vnodes
+        per machine. This is why "consistent hashing" in the wild almost always means "consistent hashing
+        <em>with</em> virtual nodes" — the bare ring is a teaching tool; vnodes are the production version.</p>
+      </section>
+
+      <section id="variants">
+        <h2>Variants &amp; Alternatives (There's More Than One Ring)</h2>
+        <div class="family-grid">
+          <div class="family-card">
+            <h4>Classic ring + vnodes</h4>
+            <p>The Amazon Dynamo design: a hash ring where each node holds many virtual nodes. Simple, elastic,
+            battle-tested. The default mental model and what most systems mean by "consistent hashing."</p>
+            <div class="eg">Great for: general elastic sharding. Used by: Cassandra, DynamoDB, Riak, memcached (ketama).</div>
+          </div>
+          <div class="family-card">
+            <h4>Rendezvous (HRW) hashing</h4>
+            <p>Skip the ring entirely: for a key, compute <code>hash(key + node)</code> for every node and pick
+            the <strong>highest</strong> score. Same ~1/N movement guarantee, naturally weighted, and no ring
+            structure to maintain — at the cost of an O(N) scan per lookup (fine for small N).</p>
+            <div class="eg">Great for: smaller node counts, weighted routing. Used by: some CDNs, GlusterFS.</div>
+          </div>
+          <div class="family-card">
+            <h4>Jump consistent hash</h4>
+            <p>A tiny, allocation-free algorithm (a few lines of math) that maps a key to one of N buckets with
+            perfectly even load and minimal movement — but buckets are numbered 0..N-1, so you can only add/remove
+            at the <em>end</em>, not remove an arbitrary node.</p>
+            <div class="eg">Great for: fixed-identity shards, sharded storage where you only grow. From: Google.</div>
+          </div>
+          <div class="family-card">
+            <h4>Bounded-load consistent hashing</h4>
+            <p>Classic hashing can still let one node run hot under skewed traffic. This variant adds a
+            <strong>cap</strong>: if the clockwise-next node is already at its load limit, the key spills to the
+            following node. Guarantees no node exceeds ~(1+ε) of average.</p>
+            <div class="eg">Great for: request routing with hot keys. Used by: Google's load balancers, Vimeo.</div>
+          </div>
+        </div>
+        <p>The through-line: they all chase the same two properties — <strong>even load</strong> and
+        <strong>minimal movement when the node set changes</strong>. Which one you pick depends on how big N is,
+        whether nodes have different capacities, and whether you need to remove arbitrary nodes or only grow.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You leave the Filing Wing, where three cabinets sit in a straight line, and step through a door into a perfectly round room with a clock painted on the floor.</h4>
+          <div class="palace-room"><span class="palace-icon">👥</span><div><strong>The Twin Room</strong> — <span>Database Replication (Day 12). Two clerks, two identical ledgers, one courier — copies for survival and read scale.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">✂️</span><div><strong>The Filing Wing</strong> — <span>Partitioning &amp; Sharding (Day 13). One overflowing cabinet cut into three (A–H, I–P, Q–Z). A clerk pauses asking "which one?" — routing — and adding a fourth cabinet meant re-sorting nearly everything.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">⭕</span><div><strong>The Clock Room</strong> — <span>Consistent Hashing (today). Machines pinned around a clock face; drop a folder and walk clockwise to the first machine. Slide a new machine in at 2 o'clock and it only borrows the wedge behind it — the rest of the room never moves. Look closely: each machine is actually a hundred faint pins scattered all around the rim (virtual nodes) so no wedge is too big.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🔑</span><div><strong>The Vault Ahead</strong> — <span>Design: Key-Value Store (Day 39). The clock room and the twin room combined into one machine — this ring, with each arc replicated — is literally how Dynamo-style stores are built.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Partitioning &amp; Sharding (Day 13)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Consistent Hashing (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Design: Key-Value Store (Day 39)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Cassandra Deep Dive (Day 52)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node dim">Replication (Day 12)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Consistent Hashing (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Load Balancing (Day 5)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Distributed Cache (Day 40)</span>
+        </div>
+        <p>Consistent hashing is the direct cure for Day 13's rebalancing nightmare, and it's rarely used alone:
+        each arc on the ring is itself <em>replicated</em> (Day 12) to survive a node death, which is exactly the
+        Dynamo pattern you'll build in the Key-Value Store (Day 39) and dissect in Cassandra (Day 52). The same
+        ring shows up in <strong>load balancing</strong> (Day 5) as "sticky" routing that keeps a user on the
+        same server even as servers come and go, and it's how a <strong>distributed cache</strong> (Day 40)
+        adds cache nodes without cold-flushing the entire fleet. One idea, wired into half the systems ahead.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Consistent hashing makes load perfectly even."</td><td>The bare ring with one point per node is actually quite lumpy — some nodes can own 40%+ of the ring. Even load comes from <em>virtual nodes</em>, not the ring itself. Without them the scheme is barely usable.</td></tr>
+          <tr><td>"It's called consistent hashing, so it gives strong consistency (CAP)."</td><td>Different word. Here "consistent" means the key→node mapping stays <em>stable</em> as nodes change. It has nothing to do with the C in CAP (Day 10) — you still choose your consistency model separately.</td></tr>
+          <tr><td>"The ring solves the hot-key problem too."</td><td>No. A single hot key still hashes to exactly one arc, so it still lands on one node. Consistent hashing balances <em>many</em> keys and makes <em>scaling</em> cheap — hot keys still need caching or key-splitting (Day 13), or bounded-load variants.</td></tr>
+          <tr><td>"Adding a node moves exactly 1/N of the data."</td><td>It's ~1/N <em>on average</em>. Which keys move depends on where the new node's points land; with few vnodes the actual amount is noisy. More vnodes make it both smaller-variance and closer to the ideal.</td></tr>
+          <tr><td>"More virtual nodes is always strictly better."</td><td>Load smooths out, but the ring structure grows and lookups/metadata cost a bit more. There's a sweet spot (often tens to a few hundred), not "infinity."</td></tr>
+          <tr><td>"You can just swap in consistent hashing and be done."</td><td>Migrating a live cluster from <code>mod N</code> to a ring still means moving data once, and you must keep the ring/vnode map consistent across all routers as nodes join and leave — that coordination is real work.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ You run a distributed cache with 10 nodes using <code>hash(key) mod 10</code>. One node dies. What happens to your cache hit rate, why, and how would a hash ring with virtual nodes change the outcome? (click to reveal)</div>
+          <div class="recall-answer">With <code>mod 10</code>, losing a node drops you to <code>mod 9</code>, which changes the target node for <strong>~90% of keys</strong>. Almost every lookup now hits a node that never cached that key, so your hit rate <strong>collapses to near zero</strong> and the whole fleet stampedes the database at once (a cache-avalanche / thundering herd). With a <strong>hash ring</strong>, the dead node's keys fall only to its clockwise neighbors, so just <strong>~1/10 of keys</strong> need re-fetching — the other 90% still hit warm caches. Add <strong>virtual nodes</strong> and that dead node's load spreads across <em>all</em> surviving nodes evenly instead of dumping onto one, so no single survivor gets crushed. This exact scenario — resilient cache membership — is one of the original motivations for consistent hashing (Akamai's CDN, 1997).</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🪶 Amazon DynamoDB / Cassandra</div><p>Both descend from the 2007 <strong>Dynamo</strong> paper, which put consistent hashing at its core: nodes sit on a ring with virtual nodes ("tokens"), each key's arc is replicated to the next few nodes clockwise, and nodes join/leave with minimal data movement. This is the canonical production use.</p></div>
+          <div class="realworld-card"><div class="rw-company">🌐 Akamai CDN</div><p>Consistent hashing was <em>invented</em> here (MIT, 1997) to map web objects to caching servers so that adding or losing an edge server didn't blow away the entire cache. Every CDN since routes requests to cache nodes this way.</p></div>
+          <div class="realworld-card"><div class="rw-company">💬 Discord</div><p>Discord routes millions of live voice/gateway sessions and uses consistent hashing (with rendezvous/HRW hashing for some layers) to map users to service nodes so that scaling the fleet doesn't reshuffle everyone's live connection.</p></div>
+          <div class="realworld-card"><div class="rw-company">🗃️ memcached clients (ketama)</div><p>The classic <strong>ketama</strong> algorithm made consistent hashing the default for sharded memcached: add or remove a cache server and only a small slice of keys remap, so the cache stays mostly warm instead of cold-flushing on every membership change.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: In one sentence, what problem does consistent hashing solve?</div>
+          <div class="fc-a">A: It lets you add or remove machines from a sharded cluster while moving only ~1/N of the data (one arc), instead of the ~(N-1)/N cluster-wide reshuffle that <code>hash(key) mod N</code> forces on every resize.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: How does a lookup work on the ring?</div>
+          <div class="fc-a">A: Hash the key to a point on the ring, then walk clockwise to the first node point you reach — that node owns the key. Implemented as a binary search over the sorted list of node positions (wrapping to the first if you run past the end).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What are virtual nodes and why are they essential?</div>
+          <div class="fc-a">A: Each physical machine is placed on the ring at many points (e.g. 150) instead of one. This averages out the random arc sizes so load is even, and when a node dies its many small arcs spread across all neighbors instead of dumping onto one. The bare one-point ring is too lumpy to use in production.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Does consistent hashing fix the hot-key problem?</div>
+          <div class="fc-a">A: No. A single hot key still hashes to one arc and lands on one node. Consistent hashing balances many keys and makes scaling cheap; hot keys still need caching, key-splitting, or a bounded-load variant.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is "consistent" in consistent hashing NOT the C in CAP?</div>
+          <div class="fc-a">A: Here "consistent" means the key→node mapping stays stable as the node set changes (minimal remapping). It's unrelated to CAP consistency (whether reads see the latest write) — you still pick your consistency model separately.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Explain, in the clock-face picture, exactly what happens to the data when you add one machine to the ring — and why the other machines don't move.</li>
+          <li>Why does <code>hash(key) mod N</code> move ~(N−1)/N of keys on a resize, while the ring moves only ~1/N? Contrast the two mappings.</li>
+          <li>What goes wrong with a ring that places each machine at a single point, and how do virtual nodes fix both problems?</li>
+          <li>A 10-node <code>mod N</code> cache loses a node. Estimate the hit-rate impact and explain how a ring changes it.</li>
+          <li>Give one situation where you'd reach for rendezvous (HRW) hashing or jump hash instead of a classic ring, and why.</li>
+          <li>Does consistent hashing solve hot keys? Justify your answer and name what actually does.</li>
+          <li>How would you give a machine with twice the capacity twice the load on the ring?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <code>mod N</code> ties a key's home to <em>how many</em> machines
+          exist, so growing the cluster re-homes almost everything; consistent hashing ties it to <em>where</em>
+          machines sit on a ring, so growing only re-homes one arc — about 1/N. Add virtual nodes to make the
+          arcs even and failures spread out, and you have the elastic, always-on sharding that every
+          Dynamo-style store, CDN, and distributed cache is built on. Next up (Day 15) we leave storage behind
+          and start designing the front door itself: REST API design.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-13.html">← Day 13: Data Partitioning &amp; Sharding</a>
+        <a href="day-15.html" class="coming-soon-link">Day 15: REST API Design →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 14 of 90 — Consistent Hashing</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── Deterministic string hash → [0,1). Stable across renders (no Math.random),
+  //    so the ring looks the same every time and the sim is reproducible. ──
+  function hash01(s) {
+    let h = 2166136261 >>> 0;               // FNV-1a
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    // final avalanche mix so nearby strings scatter
+    h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995); h ^= h >>> 15;
+    return (h >>> 0) / 4294967296;
+  }
+
+  // Precompute 2000 key positions on the ring, once. Fixed forever.
+  var KEY_COUNT = 2000;
+  var keyPos = new Array(KEY_COUNT);
+  for (var k = 0; k < KEY_COUNT; k++) keyPos[k] = hash01('key#' + k);
+
+  var VNODE_STEPS = [1, 2, 5, 10, 25, 50, 100, 200]; // slider index → vnodes/machine
+
+  // Build the sorted ring: array of {pos, node} for N machines × V vnodes each.
+  function buildRing(n, v) {
+    var pts = [];
+    for (var i = 0; i < n; i++) {
+      for (var j = 0; j < v; j++) {
+        pts.push({ pos: hash01('node-' + i + '#' + j), node: i });
+      }
+    }
+    pts.sort(function(a, b){ return a.pos - b.pos; });
+    return pts;
+  }
+
+  // Which node owns a position? First ring point clockwise (>= pos), wrapping.
+  function ownerOf(pos, ring) {
+    var lo = 0, hi = ring.length - 1, ans = -1;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (ring[mid].pos >= pos) { ans = mid; hi = mid - 1; }
+      else lo = mid + 1;
+    }
+    if (ans === -1) ans = 0;          // wrapped past the top → first point
+    return ring[ans].node;
+  }
+
+  // controls
+  var nodesEl = document.getElementById('sim-nodes');
+  var nodesVal = document.getElementById('sim-nodes-val');
+  var vnodesEl = document.getElementById('sim-vnodes');
+  var vnodesVal = document.getElementById('sim-vnodes-val');
+  var output = document.getElementById('sim-output');
+  var barsEl = document.getElementById('node-bars');
+  var mBalance = document.querySelector('#m-balance .val');
+  var mMove = document.querySelector('#m-move .val');
+  var mNaive = document.querySelector('#m-naive .val');
+  var mBalanceBox = document.getElementById('m-balance');
+  var mMoveBox = document.getElementById('m-move');
+  var mNaiveBox = document.getElementById('m-naive');
+  var ringSvg = document.getElementById('ring-live');
+
+  var NODE_COLORS = ['#3b82f6','#22c55e','#f59e0b','#a78bfa','#ec4899','#14b8a6','#ef4444','#eab308','#8b5cf6'];
+
+  function render() {
+    var n = Number(nodesEl.value);
+    var v = VNODE_STEPS[Number(vnodesEl.value)];
+    nodesVal.textContent = n + (n === 1 ? ' machine' : ' machines');
+    vnodesVal.textContent = v + '×';
+
+    var ring = buildRing(n, v);
+
+    // load per node
+    var loads = new Array(n).fill(0);
+    var ownersBefore = new Array(KEY_COUNT);
+    for (var i = 0; i < KEY_COUNT; i++) {
+      var o = ownerOf(keyPos[i], ring);
+      ownersBefore[i] = o;
+      loads[o]++;
+    }
+
+    var ideal = KEY_COUNT / n;
+    var hotThreshold = ideal * 1.5;
+    var maxLoad = Math.max.apply(null, loads);
+
+    // draw load bars
+    barsEl.innerHTML = '';
+    for (var b = 0; b < n; b++) {
+      var wrap = document.createElement('div');
+      wrap.className = 'shard-bar-wrap';
+      var pct = document.createElement('div');
+      pct.className = 'shard-bar-pct';
+      pct.textContent = Math.round(loads[b] / KEY_COUNT * 100) + '%';
+      var bar = document.createElement('div');
+      bar.className = 'shard-bar' + (loads[b] > hotThreshold ? ' hot' : '');
+      bar.style.height = Math.max(3, (loads[b] / maxLoad) * 120) + 'px';
+      var lbl = document.createElement('div');
+      lbl.className = 'shard-bar-lbl';
+      lbl.textContent = 'M' + b;
+      wrap.appendChild(pct); wrap.appendChild(bar); wrap.appendChild(lbl);
+      barsEl.appendChild(wrap);
+    }
+
+    // metric 1: hottest machine load vs fair share
+    var hottestPct = Math.round(maxLoad / KEY_COUNT * 100);
+    var fairPct = Math.round(100 / n);
+    mBalance.textContent = hottestPct + '%';
+    mBalanceBox.className = 'sim-metric ' + (maxLoad > hotThreshold ? 'bad' : 'good');
+
+    // metric 2: measured fraction of keys that actually move when adding machine #n
+    var ringAfter = buildRing(n + 1, v);
+    var moved = 0;
+    for (var m = 0; m < KEY_COUNT; m++) {
+      if (ownerOf(keyPos[m], ringAfter) !== ownersBefore[m]) moved++;
+    }
+    var movePct = Math.round(moved / KEY_COUNT * 100);
+    mMove.textContent = '~' + movePct + '%';
+    mMoveBox.className = 'sim-metric good';
+
+    // metric 3: what naive hash(key) mod N would have moved going N -> N+1
+    var naivePct = Math.round(100 * n / (n + 1));
+    mNaive.textContent = '~' + naivePct + '%';
+    mNaiveBox.className = 'sim-metric bad';
+
+    // draw the live ring dots
+    drawRing(ring, n);
+
+    // narrative
+    var balanceMsg = (maxLoad > hotThreshold)
+      ? 'With only <strong>' + v + ' virtual node' + (v === 1 ? '' : 's') + '</strong> per machine the arcs come out lopsided — <strong>M' +
+        loads.indexOf(maxLoad) + ' owns ' + hottestPct + '%</strong> of the keys against a ' + fairPct +
+        '% fair share (it went red). Slide virtual nodes up and watch the bars flatten.'
+      : 'At <strong>' + v + ' virtual nodes</strong> per machine the load is smooth — the hottest machine holds ' +
+        hottestPct + '% against a ' + fairPct + '% fair share. That evenness is what virtual nodes buy you.';
+
+    output.innerHTML = balanceMsg + ' Now the payoff: adding one more machine moves only <strong>~' + movePct +
+      '% of keys</strong> on the ring (just the arcs the newcomer claims) — while naive <code>hash(key) mod ' + n +
+      '</code> would have reshuffled <strong>~' + naivePct + '%</strong> of everything at once. Same growth, ' +
+      Math.max(1, Math.round(naivePct / Math.max(1, movePct))) + '× less data on the move.';
+  }
+
+  // draw the ring as a circle with colored dots for each (virtual) node point
+  function drawRing(ring, n) {
+    var NS = 'http://www.w3.org/2000/svg';
+    while (ringSvg.firstChild) ringSvg.removeChild(ringSvg.firstChild);
+    var cx = 150, cy = 150, R = 110;
+    var circle = document.createElementNS(NS, 'circle');
+    circle.setAttribute('cx', cx); circle.setAttribute('cy', cy); circle.setAttribute('r', R);
+    circle.setAttribute('fill', 'none');
+    circle.setAttribute('stroke', '#334155');
+    circle.setAttribute('stroke-width', '2');
+    ringSvg.appendChild(circle);
+    // 12 o'clock tick
+    var tick = document.createElementNS(NS, 'text');
+    tick.setAttribute('x', cx); tick.setAttribute('y', cy - R - 6);
+    tick.setAttribute('text-anchor', 'middle'); tick.setAttribute('fill', '#64748b');
+    tick.setAttribute('font-size', '10'); tick.setAttribute('font-family', 'JetBrains Mono, monospace');
+    tick.textContent = '0 / wrap';
+    ringSvg.appendChild(tick);
+    // dots — cap how many we draw so big vnode counts stay readable
+    var draw = ring.length > 240 ? ring.filter(function(_, i){ return i % Math.ceil(ring.length / 240) === 0; }) : ring;
+    draw.forEach(function(pt) {
+      var ang = pt.pos * 2 * Math.PI - Math.PI / 2;  // 0 at top, clockwise
+      var x = cx + R * Math.cos(ang);
+      var y = cy + R * Math.sin(ang);
+      var d = document.createElementNS(NS, 'circle');
+      d.setAttribute('cx', x); d.setAttribute('cy', y);
+      d.setAttribute('r', ring.length > 60 ? 3 : 5);
+      d.setAttribute('fill', NODE_COLORS[pt.node % NODE_COLORS.length]);
+      d.setAttribute('fill-opacity', '0.9');
+      ringSvg.appendChild(d);
+    });
+    var caption = document.createElementNS(NS, 'text');
+    caption.setAttribute('x', cx); caption.setAttribute('y', cy + 4);
+    caption.setAttribute('text-anchor', 'middle'); caption.setAttribute('fill', '#94a3b8');
+    caption.setAttribute('font-size', '11'); caption.setAttribute('font-family', 'Inter, sans-serif');
+    caption.textContent = n + ' machines';
+    ringSvg.appendChild(caption);
+    var caption2 = document.createElementNS(NS, 'text');
+    caption2.setAttribute('x', cx); caption2.setAttribute('y', cy + 20);
+    caption2.setAttribute('text-anchor', 'middle'); caption2.setAttribute('fill', '#64748b');
+    caption2.setAttribute('font-size', '9'); caption2.setAttribute('font-family', 'JetBrains Mono, monospace');
+    caption2.textContent = ring.length + ' points on ring';
+    ringSvg.appendChild(caption2);
+  }
+
+  nodesEl.addEventListener('input', render);
+  vnodesEl.addEventListener('input', render);
+  render();
+
+  // ── Anchor diagram: the clock-face ring with a new node stealing one arc ──
+  function drawDiagram() {
+    var svg = document.getElementById('ring-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var NS = 'http://www.w3.org/2000/svg';
+
+    function txt(x, y, text, color, size, weight) {
+      var t = document.createElementNS(NS, 'text');
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('fill', color || '#cbd5e1');
+      t.setAttribute('font-family', 'Inter, sans-serif');
+      t.setAttribute('font-size', size || '11');
+      if (weight) t.setAttribute('font-weight', weight);
+      t.textContent = text;
+      svg.appendChild(t);
+    }
+    function dot(x, y, color, r) {
+      var c = document.createElementNS(NS, 'circle');
+      c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', r || 9);
+      c.setAttribute('fill', color); svg.appendChild(c);
+    }
+
+    var cx = 300, cy = 200, R = 130;
+    txt(410, 22, 'The hash ring: walk clockwise to the first machine — a new machine only steals one arc', '#e2e8f0', '12.5', '700');
+
+    // the ring
+    var ring = rs.circle(cx, cy, R * 2, { stroke: '#64748b', strokeWidth: 2, roughness: 1.4, fill: 'none' });
+    svg.appendChild(ring);
+
+    // helper: place at clock angle (degrees, 0 = top, clockwise)
+    function at(deg, rad) {
+      var a = (deg - 90) * Math.PI / 180;
+      return [cx + (rad) * Math.cos(a), cy + (rad) * Math.sin(a)];
+    }
+
+    // three existing machines at 12, 4, 8 o'clock (0, 120, 240 deg)
+    var mA = at(0, R), mB = at(120, R), mC = at(240, R);
+    dot(mA[0], mA[1], '#3b82f6'); txt(mA[0], mA[1] - 16, 'Machine A', '#93c5fd', '11', '700');
+    dot(mB[0], mB[1], '#22c55e'); txt(mB[0] + 20, mB[1] + 24, 'Machine B', '#86efac', '11', '700');
+    dot(mC[0], mC[1], '#f59e0b'); txt(mC[0] - 20, mC[1] + 24, 'Machine C', '#fcd34d', '11', '700');
+
+    // a key at ~2 o'clock (60 deg) and its clockwise walk to Machine B (120 deg)
+    var key = at(60, R);
+    dot(key[0], key[1], '#e2e8f0', 5); txt(key[0] + 30, key[1] - 8, 'key "user:42"', '#cbd5e1', '10');
+    // clockwise arrow from key toward B
+    var kl = rs.line(key[0], key[1], at(105, R)[0], at(105, R)[1], { stroke: '#94a3b8', strokeWidth: 1.6, roughness: 1 });
+    svg.appendChild(kl);
+    txt(at(85, R - 34)[0], at(85, R - 34)[1], 'walk →', '#94a3b8', '9.5', '700');
+
+    // the NEW machine sliding in at ~2 o'clock (45 deg), stealing the arc 0→45 from B...
+    var mN = at(45, R);
+    var star = rs.circle(mN[0], mN[1], 22, { stroke: '#ec4899', strokeWidth: 2, roughness: 1.2, fill: '#ec489922', fillStyle: 'solid' });
+    svg.appendChild(star);
+    dot(mN[0], mN[1], '#ec4899', 7);
+    txt(mN[0] + 46, mN[1] - 6, 'NEW machine D', '#f9a8d4', '11', '700');
+    txt(mN[0] + 40, mN[1] + 12, 'joins here', '#f9a8d4', '9.5');
+
+    // right-side explainer
+    txt(670, 120, 'Before D:', '#e2e8f0', '11', '700');
+    txt(670, 140, 'keys in arc A→B belong to B', '#94a3b8', '10');
+    txt(670, 174, 'After D joins:', '#e2e8f0', '11', '700');
+    txt(670, 194, 'only the arc A→D moves to D', '#f9a8d4', '10');
+    txt(670, 210, 'B, C untouched • ~1/N moves', '#86efac', '10', '700');
+    txt(670, 250, 'mod N would move ~80%', '#fca5a5', '10');
+    txt(670, 266, 'the ring moves ~1/N', '#86efac', '10', '700');
+
+    txt(300, 360, 'each machine is really placed at MANY points (virtual nodes) so the arcs stay even', '#94a3b8', '10');
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawDiagram, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawDiagram);
+  }
+})();
+</script>
+
+</body>
+</html>
