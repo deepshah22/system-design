@@ -4,7 +4,7 @@
 **Scope:** 90 lessons total (~30 min each)  
 **Publish cadence:** 3x/week (Mon, Wed, Fri) — not literally tied to a 3-month calendar window; at 3 lessons/week, 90 lessons takes ~30 weeks (~7 months) of real time, paced for actual retention rather than rushing daily.  
 **Target:** Principal Engineer level interview preparation  
-**Last Updated:** 2026-07-17
+**Last Updated:** 2026-07-22
 
 ---
 
@@ -152,7 +152,7 @@ registering the correct public key with GitHub outside of any Claude session's a
 ### Week 3: Communication Patterns
 | Day | Topic | Status |
 |-----|-------|--------|
-| 15 | REST API Design Best Practices | ⏳ Scheduled |
+| 15 | REST API Design Best Practices | ✅ Published |
 | 16 | GraphQL Architecture | ⏳ Scheduled |
 | 17 | gRPC & Protocol Buffers | ⏳ Scheduled |
 | 18 | Message Queues & Pub/Sub | ⏳ Scheduled |
@@ -304,6 +304,8 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-07-22 | Day 15 | Day 15: REST API Design Best Practices |
+| 2026-07-22 | Day 15 (staged) | Day 15: REST API Design Best Practices — authored into `staging/`, ready for publish. Opens Week 3 (Communication Patterns): once your data is safely stored (Days 12–14), you need a front door. Full Memorable Learning Framework: a restaurant visual anchor (menu of nouns = resources, a waiter who knows only 5 gestures = GET/POST/PUT/PATCH/DELETE, a stateless kitchen, numbered replies = status codes) with a roughjs client→API→data-store diagram; a story continuing Database Dave from a trusted storage layer to collapsing 400 one-off endpoints (`/getUser`, `/fetchUserEmail`, …) into 4 nouns × 5 verbs, and discovering statelessness + guessability fall out for free; a live in-browser REST playground over an in-memory `/users` collection (verb + path + JSON-body controls and preset chips driving a real mock router that returns correct status codes, mutates a visible server-state view, and shows safe/idempotent badges — demonstrating POST duplicates vs. idempotent PUT/DELETE and the `/users/1/delete` verb-in-URL antipattern → 400); depth on the four REST constraints, a safe/idempotent verb table, a full status-code reference (4xx = caller's fault vs 5xx = server's fault), a Design Rules flow-box (versioning, pagination, filtering, return-created-resource, consistent errors, idempotency keys), and a REST vs GraphQL/gRPC/RPC variants grid teeing up Days 16–17; plus Mental Model card, "Front Lobby" memory-palace room, connection graph, Common Mistakes table, a double-charge idempotency active-recall, Stripe/GitHub/Twilio/Google real-world engineering, flashcards, memory test, and takeaway. Verified via a headless-browser (Playwright/Chromium) render exercising the router end-to-end — all 13 behaviors correct (GET 200/404, POST 201 minting a fresh id on the duplicate, idempotent PUT/DELETE leaving state unchanged, verb-in-URL → 400 `not_restful`, missing-field → 422, malformed body → 400 `invalid_json`) with zero page script errors (only the sandbox-blocked roughjs CDN, which loads fine on Pages and degrades gracefully). |
 | 2026-07-17 | Day 14 | Day 14: Consistent Hashing |
 | 2026-07-17 | Day 14 (staged) | Day 14: Consistent Hashing — authored into `staging/`, awaiting the next Mon/Wed/Fri auto-publish. Full Memorable Learning Framework: a clock-face visual anchor (machines pinned at 12/4/8 o'clock, a key walking clockwise, a new machine sliding in at 2 o'clock to steal just one arc), a story that continues Dave's 80%-reshuffle trauma → the ring → the lopsided-arc snag → virtual nodes as the fix, a live 2,000-key hash-ring simulator (machines slider + virtual-nodes slider driving a rendered ring of colored dots, per-machine load bars that flatten as vnodes rise and go red when hot, and a measured keys-moved-on-add metric shown right next to naive `mod N`'s ~(N-1)/N), a roughjs clock-ring anchor diagram, the three-step ring mechanic (circle the hash space → place machines → walk clockwise), the 1/N movement intuition, a dedicated Virtual Nodes section, a Variants card grid (classic ring+vnodes / rendezvous-HRW / jump hash / bounded-load), the "consistent ≠ CAP-consistent" and "ring doesn't fix hot keys" clarifications, a "Common Mistakes & Misconceptions" table, a cache-avalanche active-recall, and real-world Dynamo/Akamai/Discord/ketama engineering. Verified via a headless-browser (Playwright/Chromium) render that the simulator computes correctly across machines × virtual-nodes (balance 51%→28%→13% as vnodes rise; N=8 ring-move ~11% vs naive ~89%), bars match N, the ring renders, and there are no page script errors (only the sandbox-blocked roughjs CDN, which loads fine on Pages and degrades gracefully). |
 | 2026-07-13 | Day 13 | Day 13: Data Partitioning &amp; Sharding |
@@ -353,5 +355,6 @@ system-design/
 - [x] Day 12 (Database Replication) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Day 13 (Data Partitioning & Sharding) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Day 14 (Consistent Hashing) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
-- [ ] Days 15–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
+- [x] Day 15 (REST API Design Best Practices) authored into `staging/` — opens Week 3 (Communication Patterns), with a live REST playground
+- [ ] Days 16–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
 - [x] GitHub Pages enabled on `main` branch — confirmed via the active `pages-build-deployment` Actions workflow on the repo
