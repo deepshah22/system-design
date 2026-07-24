@@ -4,7 +4,7 @@
 **Scope:** 90 lessons total (~30 min each)  
 **Publish cadence:** 3x/week (Mon, Wed, Fri) — not literally tied to a 3-month calendar window; at 3 lessons/week, 90 lessons takes ~30 weeks (~7 months) of real time, paced for actual retention rather than rushing daily.  
 **Target:** Principal Engineer level interview preparation  
-**Last Updated:** 2026-07-17
+**Last Updated:** 2026-07-24
 
 ---
 
@@ -152,7 +152,7 @@ registering the correct public key with GitHub outside of any Claude session's a
 ### Week 3: Communication Patterns
 | Day | Topic | Status |
 |-----|-------|--------|
-| 15 | REST API Design Best Practices | ⏳ Scheduled |
+| 15 | REST API Design Best Practices | ✅ Published |
 | 16 | GraphQL Architecture | ⏳ Scheduled |
 | 17 | gRPC & Protocol Buffers | ⏳ Scheduled |
 | 18 | Message Queues & Pub/Sub | ⏳ Scheduled |
@@ -304,7 +304,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
-| 2026-07-17 | Day 14 | Day 14: Consistent Hashing |
+| 2026-07-24 | Day 15 | Day 15: REST API Design Best Practices — first lesson of Week 3 (Communication Patterns), pivoting from storage to the API front door. Full Memorable Learning Framework: a hotel visual anchor (millions of noun-addresses × a fixed five-verb service card = every operation, so one hotel teaches you all hotels), a story continuing Database Dave as his ad-hoc API balloons to 412 bespoke endpoints (`/createOrderAndCharge`, `200 OK {"error":...}`) until a payments partner's retry logic breaks, then collapses to ~a dozen resources under REST, an interactive RESTfulness Scorer (six good-vs-bad design decisions — noun naming, POST-vs-GET, 201-vs-200, query-filter-vs-new-endpoint, /v1 versioning, 404-vs-200-error — that rebuild the two live HTTP calls the choices produce, grade each with feedback, and drive a 0–6 score bar), a roughjs RPC-sprawl-vs-REST anchor diagram (verb sprawl on the left, 5 verbs × nouns composing `GET /customers/42/orders?status=shipped` on the right), the four load-bearing REST constraints (resources/uniform interface, statelessness, cacheability, layered), a safe-vs-idempotent methods table, the four status-code families with the 4xx-don't-retry / 5xx-maybe-retry rule, idempotency keys for retry-safe POSTs, seven design-rules-that-age-well, the Richardson Maturity Model + GraphQL/gRPC alternatives, a Reception-Desk memory-palace room, a Common Mistakes table, a dropped-POST/duplicate-charge active recall, and real-world Stripe/GitHub/Netflix/S3 engineering. Verified the inline JS passes `node --check`, HTML tags balance, and the scorer's call-builder computes correctly for all-good (6/6), all-bad (0/6), and mixed states. |
 | 2026-07-17 | Day 14 (staged) | Day 14: Consistent Hashing — authored into `staging/`, awaiting the next Mon/Wed/Fri auto-publish. Full Memorable Learning Framework: a clock-face visual anchor (machines pinned at 12/4/8 o'clock, a key walking clockwise, a new machine sliding in at 2 o'clock to steal just one arc), a story that continues Dave's 80%-reshuffle trauma → the ring → the lopsided-arc snag → virtual nodes as the fix, a live 2,000-key hash-ring simulator (machines slider + virtual-nodes slider driving a rendered ring of colored dots, per-machine load bars that flatten as vnodes rise and go red when hot, and a measured keys-moved-on-add metric shown right next to naive `mod N`'s ~(N-1)/N), a roughjs clock-ring anchor diagram, the three-step ring mechanic (circle the hash space → place machines → walk clockwise), the 1/N movement intuition, a dedicated Virtual Nodes section, a Variants card grid (classic ring+vnodes / rendezvous-HRW / jump hash / bounded-load), the "consistent ≠ CAP-consistent" and "ring doesn't fix hot keys" clarifications, a "Common Mistakes & Misconceptions" table, a cache-avalanche active-recall, and real-world Dynamo/Akamai/Discord/ketama engineering. Verified via a headless-browser (Playwright/Chromium) render that the simulator computes correctly across machines × virtual-nodes (balance 51%→28%→13% as vnodes rise; N=8 ring-move ~11% vs naive ~89%), bars match N, the ring renders, and there are no page script errors (only the sandbox-blocked roughjs CDN, which loads fine on Pages and degrades gracefully). |
 | 2026-07-13 | Day 13 | Day 13: Data Partitioning &amp; Sharding |
 | 2026-07-10 | Day 13 (staged) | Day 13: Data Partitioning & Sharding — authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish (Monday, 2026-07-13). Full Memorable Learning Framework: a filing-cabinet-cut-in-three visual anchor (A–H / I–P / Q–Z with a clerk pausing at "which cabinet?" = routing), a story that walks Dave from "3 copies of too-big is still too-big" → sharding → the hot-shard fire → the rebalance nightmare, an interactive strategy simulator (range vs hash × shard-count × traffic-skew sliders showing hottest-shard load with live per-shard bars that turn red when hot, keys-moved-on-resize, and shards-touched-by-a-range-query), a roughjs diagram showing one dataset split into 3 shards each itself replicated (partitioning × replication as two axes), the replication-vs-partitioning distinction, the partition-key decision, the three routing locations, range/hash/directory strategies, the hot-key problem, the rebalancing problem (naive `mod N` ~80% reshuffle → fixed-partitions → consistent hashing as the Day 14 cure), a "Common Mistakes & Misconceptions" table, and real-world Vitess/MongoDB/Cassandra/Elasticsearch engineering. Verified via a headless-browser (Playwright) render that the simulator computes correctly across range/hash × skew × shard-count with no page script errors (only the sandbox-blocked roughjs CDN, which loads fine on Pages and whose draw code degrades gracefully). |
@@ -353,5 +353,6 @@ system-design/
 - [x] Day 12 (Database Replication) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Day 13 (Data Partitioning & Sharding) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Day 14 (Consistent Hashing) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
-- [ ] Days 15–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
+- [x] Day 15 (REST API Design Best Practices) authored & published directly into `days/` (index card flipped live) — first lesson of Week 3, Communication Patterns
+- [ ] Days 16–90: to be authored and published 3x/week (Mon/Wed/Fri)
 - [x] GitHub Pages enabled on `main` branch — confirmed via the active `pages-build-deployment` Actions workflow on the repo
