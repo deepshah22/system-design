@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 15: REST API Design Best Practices | System Design Mastery</title>
+  <meta name="description" content="For two weeks you built the back of the house — replicas, shards, hash rings. Today you design the front door: the API. REST is the discipline of exposing your system as a menu of nouns (resources) that a fixed set of verbs (GET, POST, PUT, PATCH, DELETE) act on. Learn the uniform interface, why GET must be safe and PUT idempotent, how to pick status codes, version, paginate, and design URLs your future teammates won't curse — taught through story, a live method explorer, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .objectives { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+    .objectives-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.6rem; }
+    .objectives ul { padding-left: 1.25rem; margin: 0; }
+    .objectives li { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.3rem; }
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* good/bad URL comparison cards */
+    .vs-grid { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin:1rem 0 2rem; }
+    @media (max-width:640px){ .vs-grid { grid-template-columns:1fr; } }
+    .vs-card { border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; background: var(--bg-card); }
+    .vs-card h4 { margin:0 0 .6rem; font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; }
+    .vs-card.bad h4 { color:#ef4444; } .vs-card.good h4 { color:#22c55e; }
+    .vs-card code { display:block; font-family:'JetBrains Mono',monospace; font-size:.82rem; padding:.3rem 0; color: var(--text-secondary); }
+    .vs-card.bad code { text-decoration: line-through; text-decoration-color:#ef444488; }
+    /* REST method explorer sim */
+    .verb-row { display:flex; flex-wrap:wrap; gap:.5rem; margin:1rem 0; }
+    .verb-btn { font-family:'JetBrains Mono',monospace; font-weight:700; font-size:.85rem; padding:.5rem 1rem; border-radius:8px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-secondary); cursor:pointer; transition:all .15s; }
+    .verb-btn:hover { border-color: var(--accent); color: var(--accent-light); }
+    .verb-btn.active { background: var(--accent); color:#fff; border-color: var(--accent); }
+    .prop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:.75rem; margin-top:1rem; }
+    .prop-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.8rem 1rem; text-align:center; }
+    .prop-card .val { font-size:1.1rem; font-weight:800; }
+    .prop-card .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .prop-card .val.yes { color:#22c55e; } .prop-card .val.no { color:#ef4444; }
+    .http-preview { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:1rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.6; overflow-x:auto; }
+    .http-preview .req { color:#7dd3fc; } .http-preview .res { color:#86efac; }
+    .http-preview .muted { color:#64748b; }
+    .http-preview .code2 { color:#fcd34d; }
+    .idem-demo { margin-top:1rem; }
+    .idem-btn { margin-top:.5rem; }
+    .idem-out { margin-top:.75rem; font-size:.9rem; }
+    .status-legend { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:.6rem; margin:1rem 0; }
+    .status-chip { border:1px solid var(--border); border-radius:8px; padding:.5rem .75rem; background: var(--bg-card); font-size:.82rem; }
+    .status-chip b { font-family:'JetBrains Mono',monospace; }
+    .s2 b { color:#22c55e; } .s3 b { color:#38bdf8; } .s4 b { color:#f59e0b; } .s5 b { color:#ef4444; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 15</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 15 of 90</span>
+      <span class="meta-pill">⏱ ~30 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 3 — Communication Patterns</span>
+    </div>
+    <h1>REST API Design<br><span style="color:var(--accent)">The Front Door of Your System</span></h1>
+    <p class="lead">
+      For two weeks you built the <em>back</em> of the house — replicas, shards, hash rings, indexes. None of it
+      matters if the outside world can't talk to it. Today you design the <strong>front door</strong>: the API.
+      REST is a small, powerful discipline — expose your system as a menu of <strong>nouns</strong> (resources
+      like <code>/users/42</code>) that a fixed set of <strong>verbs</strong> (GET, POST, PUT, PATCH, DELETE)
+      act on. Get this right and any developer — or any machine — can use your service without reading a manual.
+      Get it wrong and every endpoint becomes a special case your teammates have to memorize.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#depth">The Uniform Interface</a>
+        <a href="#urls">Designing Good URLs</a>
+        <a href="#status">Status Codes</a>
+        <a href="#pro">Pagination, Versioning &amp; More</a>
+        <a href="#variants">REST &amp; Its Cousins</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🍽️📋</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Imagine walking into a well-run <strong>restaurant</strong>. There's a <strong>menu</strong> of
+            dishes — the <em>nouns</em>: "Table 12," "Order #42," "the fish." And there's a tiny, fixed set of
+            things you're allowed to <em>do</em> to them — the <em>verbs</em>: <strong>look</strong> at a dish,
+            <strong>order</strong> a new one, <strong>replace</strong> your whole order, <strong>tweak</strong>
+            one item, or <strong>cancel</strong> it. You never invent new actions like "please-flambé-my-order";
+            you combine the same few verbs with different dishes. Every guest already knows how it works because
+            the <em>interface is uniform</em> — the menu changes, the rules never do. That restaurant is a REST
+            API: <strong>GET</strong> reads the dish, <strong>POST</strong> orders a new one, <strong>PUT</strong>
+            replaces it, <strong>PATCH</strong> tweaks it, <strong>DELETE</strong> cancels it. Picture the menu of
+            nouns and the five waiters who each know exactly one verb — that image <em>is</em> REST.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="rest-diagram" width="820" height="400" viewBox="0 0 820 400"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">API Amara</span> inherited a codebase where every action was its own
+            endpoint. To read a user you called <code>POST /getUser</code>. To update one,
+            <code>POST /updateUserName</code>. To delete, <code>POST /deleteUserById</code>. There were
+            <strong>340 endpoints</strong>, all POST, each with its own hand-rolled request shape. New hires took
+            weeks to find anything. Caching was impossible — everything was a POST, so nothing could be cached.
+            When the mobile team needed to "archive" a user, someone added a 341st endpoint:
+            <code>POST /archiveUserAndSendEmailV2</code>. The API had become a pile of verbs with no grammar.
+          </p>
+          <p>
+            A staff engineer sketched a different idea on the whiteboard. "Stop thinking in <em>actions</em>,"
+            she said. "Think in <strong>things</strong> — resources — and let a fixed set of HTTP verbs act on
+            them." She drew one line: <code>/users/42</code>. "That's the user. <code>GET</code> it to read.
+            <code>PUT</code> it to replace. <code>PATCH</code> it to change one field. <code>DELETE</code> it to
+            remove. To list them all, <code>GET /users</code>. To create one, <code>POST /users</code>. Six
+            operations, one noun, zero new endpoints to memorize." Amara stared at it. Three hundred forty
+            endpoints had just collapsed into a <em>pattern</em>.
+          </p>
+          <p>
+            She rebuilt the API around resources. Suddenly things she'd fought for months came for free.
+            Browsers and CDNs could <strong>cache</strong> the <code>GET</code>s because GET means "just read,
+            nothing changes." When the mobile network dropped mid-request and retried a <code>PUT</code>, nothing
+            broke — because PUT is <strong>idempotent</strong>, doing it twice is the same as doing it once. New
+            engineers guessed endpoint names correctly on day one. The API even documented itself: given
+            <code>/users/42/orders</code>, anyone could infer <code>/users/42/orders/7</code>. Amara hadn't added
+            a single feature — she'd added a <em>grammar</em>, and the grammar did the work.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">A REST API models your system as <strong>resources</strong> (nouns with
+          URLs like <code>/orders/42</code>) and acts on them with a small, <strong>uniform</strong> set of HTTP
+          verbs. The verbs carry a contract: <strong>GET</strong> is <em>safe</em> (read-only) and cacheable;
+          <strong>PUT</strong> and <strong>DELETE</strong> are <em>idempotent</em> (doing them twice equals doing
+          them once); <strong>POST</strong> is neither (it creates something new each time). Because the interface
+          is predictable, the whole ecosystem — browsers, caches, proxies, client libraries — already knows how to
+          work with it, and humans can guess your endpoints. Nouns in the URL, verbs in the method, meaning in the
+          status code.</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself</h2>
+        <div class="sim-box">
+          <p>Here's the whole REST verb contract in one place. Click a <strong>method</strong> and watch three
+          things: its <strong>properties</strong> (is it safe? idempotent? cacheable?), a realistic
+          <strong>request/response</strong> for the same <code>/carts/42</code> resource, and — the part that
+          trips everyone up — an <strong>idempotency demo</strong>. Hit "Send it twice" and see why retrying a
+          <code>POST</code> can double-charge a customer while retrying a <code>PUT</code> is perfectly safe.</p>
+
+          <div class="verb-row" id="verb-row">
+            <button class="verb-btn active" data-verb="GET">GET</button>
+            <button class="verb-btn" data-verb="POST">POST</button>
+            <button class="verb-btn" data-verb="PUT">PUT</button>
+            <button class="verb-btn" data-verb="PATCH">PATCH</button>
+            <button class="verb-btn" data-verb="DELETE">DELETE</button>
+          </div>
+
+          <div id="verb-summary" style="font-size:.92rem; color:var(--text-secondary);"></div>
+
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val" id="p-safe">—</div><div class="lbl">Safe (read-only)</div></div>
+            <div class="prop-card"><div class="val" id="p-idem">—</div><div class="lbl">Idempotent</div></div>
+            <div class="prop-card"><div class="val" id="p-cache">—</div><div class="lbl">Cacheable</div></div>
+            <div class="prop-card"><div class="val" id="p-body">—</div><div class="lbl">Has request body</div></div>
+          </div>
+
+          <div class="http-preview" id="http-preview"></div>
+
+          <div class="idem-demo">
+            <p style="font-size:.85rem; margin-bottom:.25rem;"><strong>Idempotency demo</strong> — imagine the
+            network hiccups and the client retries the exact same request:</p>
+            <button class="btn btn-outline btn-sm idem-btn" id="idem-btn">Send it twice ↻</button>
+            <div class="idem-out" id="idem-out"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="depth">
+        <h2>The Uniform Interface — Why REST Feels Effortless</h2>
+        <p>REST (REpresentational State Transfer) was described by Roy Fielding in 2000 as a set of
+        <em>constraints</em>, not a library. The single most important one is the <strong>uniform
+        interface</strong>: every resource is manipulated the same way, so nobody has to learn a bespoke API for
+        each thing. Four ideas make it click.</p>
+
+        <h3>1. Resources are nouns; methods are verbs</h3>
+        <p>A resource is any "thing" worth addressing: a user, an order, a photo, even a search result. It gets a
+        URL — its permanent address. You never put the <em>action</em> in the URL (<code>/deleteUser</code> is
+        wrong); the action lives in the HTTP <em>method</em>. <code>DELETE /users/42</code> already says "delete,"
+        so the URL just names the thing.</p>
+
+        <h3>2. Safe methods never change anything</h3>
+        <p><code>GET</code>, <code>HEAD</code>, and <code>OPTIONS</code> are <strong>safe</strong> — they only
+        read. This is a promise the whole web relies on: a crawler, a browser prefetch, or a "retry on timeout" is
+        harmless because a GET can't create, charge, or delete. The classic disaster is putting a delete behind a
+        GET link (<code>GET /deleteAll</code>) — then a search-engine crawler wipes your database just by
+        following links. Safe means safe.</p>
+
+        <h3>3. Idempotent methods can be retried without fear</h3>
+        <p>An operation is <strong>idempotent</strong> if doing it once or five times leaves the system in the
+        same state. <code>PUT /users/42 {name:"Sam"}</code> sets the name to Sam — run it ten times, still Sam.
+        <code>DELETE /users/42</code> removes the user; the 2nd–10th calls just find it already gone. This matters
+        enormously in distributed systems, where a request can time out <em>after</em> the server acted but
+        <em>before</em> the response arrives. The client doesn't know if it worked, so it retries — and
+        idempotency makes that retry safe. <code>POST</code> is the odd one out: each POST creates a new thing, so
+        a retried POST can create a duplicate. (Tomorrow-you fixes that with an idempotency key — a Day 24 topic.)</p>
+
+        <div class="algo-table-wrap" style="overflow-x:auto;">
+        <table class="algo-table">
+          <tr><th>Method</th><th>Means</th><th>Safe?</th><th>Idempotent?</th><th>Typical body</th></tr>
+          <tr><td><code>GET</code></td><td>Read a resource / list</td><td>✅ yes</td><td>✅ yes</td><td>none</td></tr>
+          <tr><td><code>POST</code></td><td>Create a new sub-resource</td><td>❌ no</td><td>❌ no</td><td>the new thing</td></tr>
+          <tr><td><code>PUT</code></td><td>Replace a resource entirely</td><td>❌ no</td><td>✅ yes</td><td>full resource</td></tr>
+          <tr><td><code>PATCH</code></td><td>Modify part of a resource</td><td>❌ no</td><td>➖ usually*</td><td>the changed fields</td></tr>
+          <tr><td><code>DELETE</code></td><td>Remove a resource</td><td>❌ no</td><td>✅ yes</td><td>none</td></tr>
+        </table>
+        </div>
+        <p style="font-size:.82rem; color:var(--text-muted);">*PATCH is idempotent if it sets absolute values
+        (<code>{"status":"paid"}</code>) but <em>not</em> if it describes a relative change
+        (<code>{"balance":"+10"}</code>), which compounds on every retry.</p>
+
+        <h3>4. Statelessness — every request stands alone</h3>
+        <p>REST is <strong>stateless</strong>: the server keeps no memory of previous requests between calls. Each
+        request carries everything needed to serve it (auth token, parameters, body). This is what lets you put
+        <em>any</em> server behind a load balancer (Day 5) and have it handle <em>any</em> request — no
+        "sticky" session pinning a user to one machine. Statelessness is the quiet enabler of horizontal scaling
+        (Day 2). Session data doesn't vanish; it just moves to a shared store (Redis, Day 7) or into a signed
+        token the client carries (JWT, Day 29).</p>
+      </section>
+
+      <section id="urls">
+        <h2>Designing Good URLs</h2>
+        <p>Good REST URLs read like a filing system a stranger could navigate. A few rules cover almost every
+        case:</p>
+        <div class="vs-grid">
+          <div class="vs-card bad">
+            <h4>✗ Endpoints as verbs</h4>
+            <code>POST /getUser?id=42</code>
+            <code>POST /createNewOrder</code>
+            <code>POST /user/42/setStatusActive</code>
+            <code>GET /listAllProductsForCategory</code>
+          </div>
+          <div class="vs-card good">
+            <h4>✓ Resources as nouns</h4>
+            <code>GET /users/42</code>
+            <code>POST /orders</code>
+            <code>PATCH /users/42 {"status":"active"}</code>
+            <code>GET /categories/9/products</code>
+          </div>
+        </div>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Use plural nouns for collections.</strong><span><code>/users</code> is the
+          collection; <code>/users/42</code> is one member. Consistency beats cleverness — pick plural everywhere.</span></div>
+          <div class="flow-step"><strong>Nest to show relationships.</strong><span><code>/users/42/orders</code>
+          reads as "user 42's orders." Don't nest more than ~2 levels deep — <code>/a/1/b/2/c/3/d/4</code> is a
+          smell; link to the sub-resource instead.</span></div>
+          <div class="flow-step"><strong>Keep verbs out of the path.</strong><span>The method <em>is</em> the verb.
+          If an action truly isn't CRUD (e.g. "publish," "cancel"), it's acceptable to model it as a sub-resource
+          state change (<code>PATCH /articles/9 {"state":"published"}</code>) or, pragmatically, a
+          controller-style endpoint (<code>POST /articles/9/publish</code>) — used sparingly.</span></div>
+          <div class="flow-step"><strong>Filter, sort &amp; paginate with query params.</strong><span><code>GET
+          /products?category=books&amp;sort=price&amp;page=2</code>. Query strings are for <em>how you want the
+          collection sliced</em>, never for identifying the resource itself.</span></div>
+          <div class="flow-step"><strong>Lowercase, hyphenated, no trailing slash.</strong><span><code>/order-items</code>
+          not <code>/OrderItems</code> or <code>/order_items/</code>. Tiny consistency, big cumulative sanity.</span></div>
+        </div>
+      </section>
+
+      <section id="status">
+        <h2>Status Codes — The Server's Body Language</h2>
+        <p>The HTTP status code is how the server tells the client what happened in one number. Returning
+        <code>200 OK</code> for everything (even errors, with <code>{"error": true}</code> hidden in the body) is
+        one of the most common REST sins — it blinds every proxy, cache, and monitoring tool that reads the
+        status line. Learn the five families; you rarely need more than a dozen specific codes.</p>
+        <div class="status-legend">
+          <div class="status-chip s2"><b>2xx Success</b> — it worked. <code>200 OK</code>, <code>201 Created</code> (after POST), <code>204 No Content</code> (after DELETE).</div>
+          <div class="status-chip s3"><b>3xx Redirect</b> — go look elsewhere. <code>301 Moved Permanently</code>, <code>304 Not Modified</code> (your cached copy is still good).</div>
+          <div class="status-chip s4"><b>4xx Client error</b> — <em>you</em> messed up. <code>400 Bad Request</code>, <code>401 Unauthorized</code>, <code>403 Forbidden</code>, <code>404 Not Found</code>, <code>409 Conflict</code>, <code>429 Too Many Requests</code>.</div>
+          <div class="status-chip s5"><b>5xx Server error</b> — <em>we</em> messed up. <code>500 Internal Server Error</code>, <code>503 Service Unavailable</code>.</div>
+        </div>
+        <p>The two most useful distinctions in practice: <strong>4xx vs 5xx</strong> answers "whose fault is it?"
+        — a 4xx means the client should fix its request and not just blindly retry; a 5xx means the server failed
+        and a retry (with backoff) might succeed. And <strong>401 vs 403</strong>: 401 means "I don't know who you
+        are" (log in), 403 means "I know exactly who you are and you still can't" (permission denied) — a
+        distinction we'll lean on hard in Authentication &amp; Authorization (Day 28–29).</p>
+      </section>
+
+      <section id="pro">
+        <h2>Pagination, Versioning &amp; the Grown-Up Concerns</h2>
+        <h3>Never return an unbounded list</h3>
+        <p><code>GET /events</code> on a table with 40 million rows will melt your server and the client. Always
+        paginate. Two common styles: <strong>offset/limit</strong> (<code>?page=3&amp;limit=50</code>) — simple,
+        but slow and unstable on huge, changing datasets; and <strong>cursor-based</strong>
+        (<code>?after=eyJpZCI6MTIzfQ</code>) — you hand back an opaque pointer to "where you left off," which is
+        stable even as new rows arrive. Big feeds (Twitter, Slack) use cursors precisely because rows shift
+        under offset pagination — the same problem you'll design around in the Social Media Feed (Day 45).</p>
+
+        <h3>Version so you can change without breaking callers</h3>
+        <p>Once a mobile app in the wild depends on your response shape, you can't just change it. Version the API
+        so old clients keep working: URL versioning (<code>/v1/users</code> → <code>/v2/users</code>) is the most
+        common and most visible; header versioning (<code>Accept: application/vnd.api.v2+json</code>) is cleaner
+        but harder to test in a browser. The rule that matters more than the mechanism: <strong>additive changes
+        (new optional fields) don't need a new version; removing or renaming fields does.</strong></p>
+
+        <h3>A few finishing touches that separate senior APIs</h3>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Consistent error bodies.</strong><span>Every error returns the same shape:
+          <code>{"error":{"code":"out_of_stock","message":"...","request_id":"abc"}}</code>. Machine-readable
+          <code>code</code>, human message, and a <code>request_id</code> to grep your logs (Day 26).</span></div>
+          <div class="flow-step"><strong>Support conditional requests.</strong><span><code>ETag</code> +
+          <code>If-None-Match</code> lets a client say "only send it if it changed," returning a cheap
+          <code>304</code> otherwise — this is caching (Day 6) wired straight into the protocol.</span></div>
+          <div class="flow-step"><strong>Rate-limit, and say so.</strong><span>Return <code>429</code> with a
+          <code>Retry-After</code> header and <code>X-RateLimit-Remaining</code> so well-behaved clients can
+          back off instead of hammering you (Day 24).</span></div>
+          <div class="flow-step"><strong>Document with OpenAPI.</strong><span>A machine-readable spec (OpenAPI /
+          Swagger) generates docs, client SDKs, and mock servers from one source of truth — the uniform interface
+          is what makes this automation possible at all.</span></div>
+        </div>
+      </section>
+
+      <section id="variants">
+        <h2>REST &amp; Its Cousins (REST Isn't the Only Front Door)</h2>
+        <div class="family-grid">
+          <div class="family-card">
+            <h4>REST / JSON over HTTP</h4>
+            <p>Resource-oriented, uses HTTP verbs and status codes, cacheable, human-readable. The default choice
+            for public web and mobile APIs because the whole ecosystem already speaks it.</p>
+            <div class="eg">Great for: public APIs, CRUD-shaped services. Used by: Stripe, GitHub, almost everyone.</div>
+          </div>
+          <div class="family-card">
+            <h4>GraphQL</h4>
+            <p>One endpoint; the client writes a query describing <em>exactly</em> the fields it wants. Kills
+            over-fetching and under-fetching, but caching and rate-limiting get harder. Tomorrow's lesson.</p>
+            <div class="eg">Great for: rich clients, many related entities. Used by: GitHub v4, Shopify. (Day 16)</div>
+          </div>
+          <div class="family-card">
+            <h4>gRPC</h4>
+            <p>Binary protocol over HTTP/2 using Protocol Buffers. Tiny, fast, strongly-typed, great for
+            <em>service-to-service</em> calls inside your own network — less friendly to browsers.</p>
+            <div class="eg">Great for: internal microservices, low latency. Used by: Google, Netflix internals. (Day 17)</div>
+          </div>
+          <div class="family-card">
+            <h4>WebSockets / SSE</h4>
+            <p>REST is request/response — the client always asks first. When the <em>server</em> needs to push
+            (chat, live scores, notifications), you need a persistent connection instead.</p>
+            <div class="eg">Great for: real-time, server push. Used by: Slack, live dashboards. (Day 20)</div>
+          </div>
+        </div>
+        <p>The through-line: REST optimizes for a <strong>uniform, cacheable, human-legible interface</strong>
+        over the public web. Its cousins each trade some of that away for a specific win — precise field selection
+        (GraphQL), raw internal speed (gRPC), or server-initiated push (WebSockets). Knowing REST cold makes every
+        one of those trade-offs legible.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You leave the round Clock Room, walk down the hall, and reach the front of the house — a grand
+          entrance where guests arrive and place their requests: the Reception Desk.</h4>
+          <div class="palace-room"><span class="palace-icon">✂️</span><div><strong>The Filing Wing</strong> — <span>Partitioning &amp; Sharding (Day 13). One overflowing cabinet cut into three so the drawers don't overflow.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">⭕</span><div><strong>The Clock Room</strong> — <span>Consistent Hashing (Day 14). Machines pinned around a clock; walk clockwise to find the owner, slide a new one in and it borrows just one wedge.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🛎️</span><div><strong>The Reception Desk</strong> — <span>REST API Design (today). A menu of nouns on the wall (<code>/users</code>, <code>/orders</code>) and exactly five bell-hops who each know one verb — GET reads, POST creates, PUT replaces, PATCH tweaks, DELETE removes. Every guest already knows the rules because the interface never changes; the desk keeps no memory of you between visits (stateless), so any clerk can serve any guest.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🧬</span><div><strong>The Next Room</strong> — <span>GraphQL (Day 16). A single concierge who takes one detailed note — "I want the guest's name, their last order's total, and nothing else" — and fetches exactly that in one trip.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Networking: HTTP (Day 3)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">REST API Design (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">GraphQL (Day 16)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">API Gateway (Day 27)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node dim">Load Balancing (Day 5)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Statelessness (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Rate Limiting (Day 24)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Auth: OAuth &amp; JWT (Day 29)</span>
+        </div>
+        <p>REST sits directly on top of <strong>HTTP</strong> (Day 3) — the verbs, status codes, and caching
+        headers you learned there <em>are</em> the REST toolkit. Its <strong>statelessness</strong> is what makes
+        the <strong>load balancer</strong> from Day 5 able to send any request to any server, and it's the
+        foundation the whole reliability-and-security week builds on: <strong>rate limiting</strong> (Day 24)
+        leans on idempotency and <code>429</code>, and <strong>auth</strong> (Day 29) rides in headers precisely
+        because each request must stand alone. The <strong>API Gateway</strong> (Day 27) is the industrial-strength
+        version of today's reception desk. One idea — a uniform front door — wired into the entire second half of
+        Phase 1.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Any JSON-over-HTTP API is RESTful."</td><td>Only if it follows the constraints: resource nouns, correct verbs, meaningful status codes, statelessness. <code>POST /doEverything</code> returning <code>200</code> with an error inside is HTTP, but it isn't REST — and it loses caching, retries, and guessability.</td></tr>
+          <tr><td>"Return 200 and put the error in the body."</td><td>This blinds every cache, proxy, load balancer, and alerting tool that reads the status line. Use the real code: <code>404</code>, <code>400</code>, <code>409</code>. The status line is the API's most-read piece of metadata.</td></tr>
+          <tr><td>"POST and PUT are basically the same."</td><td>POST creates a <em>new</em> resource (server picks the URL) and is <strong>not</strong> idempotent — retrying can duplicate. PUT replaces a resource at a <em>known</em> URL and <strong>is</strong> idempotent. On a flaky network that difference is the gap between one charge and two.</td></tr>
+          <tr><td>"Put the verb in the URL so it's clear."</td><td><code>/getUser</code>, <code>/createOrder</code> throw away the entire point. The HTTP method already <em>is</em> the verb; doubling it means clients can't rely on GET being safe or PUT being idempotent.</td></tr>
+          <tr><td>"Versioning is premature; we'll change the JSON later."</td><td>The moment a client you don't control depends on your response, its shape is frozen. Removing or renaming a field breaks them silently. Plan <code>/v1</code> from day one, even if you never ship <code>/v2</code>.</td></tr>
+          <tr><td>"REST is always the right choice."</td><td>REST shines for public, cacheable, CRUD-shaped APIs. For chatty internal service calls (gRPC), precise field selection (GraphQL), or server push (WebSockets), a cousin fits better. Uniformity is a feature <em>and</em> a constraint.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ A mobile client sends <code>POST /payments</code> to charge a
+          customer $50. The request succeeds on the server, but the response is lost to a dead cell connection, so
+          the client retries the same request. What happens, why, and how would you redesign this so the customer
+          is charged exactly once? (click to reveal)</div>
+          <div class="recall-answer">Because <code>POST</code> is <strong>not idempotent</strong>, the retry
+          creates a <em>second</em> payment resource — the customer is charged <strong>twice</strong>. The server
+          did its job both times; the problem is that "create a new thing" repeated is two things. Two fixes:
+          (1) If the resource has a natural, client-known identity, model it as an idempotent
+          <strong>PUT</strong> to a specific URL (<code>PUT /payments/{clientGeneratedId}</code>) — the second
+          call just overwrites the same resource, no duplicate. (2) The general pattern: have the client send an
+          <strong>idempotency key</strong> (a unique header per logical operation); the server records the key on
+          first success and, on any retry with the same key, returns the <em>original</em> result instead of
+          acting again. This is exactly why understanding safe vs idempotent isn't trivia — on unreliable networks,
+          retries are inevitable, and idempotency is what makes them safe. (We build the idempotency-key machinery
+          properly in Day 24.)</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">💳 Stripe</div><p>Widely held up as the gold standard: clean resource nouns (<code>/v1/charges</code>, <code>/v1/customers</code>), correct status codes, cursor pagination, and first-class <strong>idempotency keys</strong> so a retried payment never double-charges. Their API design is a big part of why developers chose Stripe.</p></div>
+          <div class="realworld-card"><div class="rw-company">🐙 GitHub</div><p>GitHub's REST API is a textbook of good URL design — <code>/repos/{owner}/{repo}/issues/{n}/comments</code> reads like a filing path. They also run a parallel <strong>GraphQL</strong> API (Day 16), a real-world case study in when each style wins.</p></div>
+          <div class="realworld-card"><div class="rw-company">☁️ Amazon / AWS</div><p>Legend (from Jeff Bezos's ~2002 "API mandate") holds that every Amazon team was ordered to expose its data <em>only</em> through service interfaces — no back doors. That discipline of clean, uniform APIs between teams is widely credited as the seed of AWS itself.</p></div>
+          <div class="realworld-card"><div class="rw-company">🐦 Twitter / X</div><p>Their timeline endpoints use <strong>cursor-based pagination</strong> rather than page numbers — with millions of new tweets arriving constantly, offset pagination would skip and repeat items. A concrete case of choosing the pagination style to match the data's volatility.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: In one sentence, what is REST?</div>
+          <div class="fc-a">A: An architectural style that models a system as addressable <strong>resources</strong> (nouns with URLs) acted on by a small, <strong>uniform</strong> set of HTTP verbs (GET, POST, PUT, PATCH, DELETE), using status codes for meaning and staying stateless so any server can serve any request.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What's the difference between "safe" and "idempotent"?</div>
+          <div class="fc-a">A: <strong>Safe</strong> = doesn't change server state at all (GET, HEAD) — pure read. <strong>Idempotent</strong> = may change state, but doing it N times equals doing it once (PUT, DELETE). All safe methods are idempotent; not all idempotent methods are safe. POST is neither.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why does statelessness matter for scaling?</div>
+          <div class="fc-a">A: If the server keeps no per-client memory between requests, every request is self-contained, so a load balancer can route <em>any</em> request to <em>any</em> server. That's what makes horizontal scaling (adding servers) trivial — no session pinning. Session data moves to a shared store or a client-held token.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What status code for a successful POST that creates a resource, and for a successful DELETE?</div>
+          <div class="fc-a">A: <code>201 Created</code> for the POST (ideally with a <code>Location</code> header pointing at the new resource). <code>204 No Content</code> for a DELETE with nothing to return (or <code>200</code> if you return the deleted body).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: 401 vs 403 — what's the difference?</div>
+          <div class="fc-a">A: <code>401 Unauthorized</code> = "I don't know who you are" — you're not authenticated, log in. <code>403 Forbidden</code> = "I know who you are, and you still can't do this" — authenticated but not permitted. Auth-N vs Auth-Z.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Rewrite these four bad endpoints as RESTful ones: <code>POST /getUser?id=9</code>, <code>POST /createOrder</code>, <code>POST /user/9/deactivate</code>, <code>GET /listCommentsForPost?post=5</code>.</li>
+          <li>Explain why a retried <code>PUT</code> is safe but a retried <code>POST</code> can double-charge a customer.</li>
+          <li>A GET link labeled <code>/admin/deleteAllUsers</code> wiped the database when a crawler visited. Which REST rule was broken, and why is it dangerous?</li>
+          <li>Give the right status code for: creating a resource, deleting one with no response body, a malformed request body, an authenticated user hitting a resource they don't own, and your database being down.</li>
+          <li>When would you choose cursor-based pagination over offset/limit, and what problem does it solve?</li>
+          <li>What does "stateless" mean in REST, and how does it connect to load balancing (Day 5) and horizontal scaling (Day 2)?</li>
+          <li>Name one situation each where you'd reach for GraphQL, gRPC, or WebSockets instead of REST — and why.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: REST turns your system into a <strong>menu of nouns</strong> acted on by
+          a <strong>fixed set of verbs</strong>. Put the thing in the URL (<code>/orders/42</code>) and the action
+          in the method — <code>GET</code> to read (safe, cacheable), <code>POST</code> to create (not idempotent),
+          <code>PUT</code>/<code>DELETE</code> to replace/remove (idempotent, safe to retry) — and let status codes
+          carry the meaning. Because the interface is uniform and stateless, the whole ecosystem and every future
+          teammate already knows how to use it. Tomorrow (Day 16) we meet REST's ambitious cousin — GraphQL — which
+          hands the client the pen and asks: what if you could request <em>exactly</em> the fields you want, in one
+          trip?
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-14.html">← Day 14: Consistent Hashing</a>
+        <a href="day-16.html" class="coming-soon-link">Day 16: GraphQL Architecture →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 15 of 90 — REST API Design Best Practices</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── REST method explorer ─────────────────────────────────────────────
+  var VERBS = {
+    GET: {
+      safe:true, idem:true, cache:true, body:false,
+      summary: '<strong>GET</strong> reads a resource and changes nothing. Because it’s safe, browsers, CDNs, and proxies happily cache it and clients retry it without a second thought.',
+      req: 'GET /carts/42 HTTP/1.1\nHost: api.shop.com\nAccept: application/json',
+      res: 'HTTP/1.1 200 OK\nContent-Type: application/json\nCache-Control: max-age=30\n\n{ "id": 42, "items": 3, "total": "$58.00" }',
+      code: '200 OK',
+      idemStory: 'Called twice, you just read the cart twice — identical result, zero side effects. <span style="color:#22c55e;font-weight:700;">Perfectly safe.</span>'
+    },
+    POST: {
+      safe:false, idem:false, cache:false, body:true,
+      summary: '<strong>POST</strong> creates a <em>new</em> sub-resource under a collection; the server assigns its URL. It is neither safe nor idempotent — the dangerous one on a flaky network.',
+      req: 'POST /carts/42/items HTTP/1.1\nHost: api.shop.com\nContent-Type: application/json\n\n{ "sku": "BOOK-9", "qty": 1 }',
+      res: 'HTTP/1.1 201 Created\nLocation: /carts/42/items/7\n\n{ "id": 7, "sku": "BOOK-9", "qty": 1 }',
+      code: '201 Created',
+      idemStory: 'Called twice, you created <strong>two</strong> line items (id 7 <em>and</em> id 8). <span style="color:#ef4444;font-weight:700;">The retry duplicated the item</span> — this is the double-charge bug.'
+    },
+    PUT: {
+      safe:false, idem:true, cache:false, body:true,
+      summary: '<strong>PUT</strong> replaces the entire resource at a known URL. Idempotent: set it to X once or ten times, it’s X. Safe to retry after a timeout.',
+      req: 'PUT /carts/42 HTTP/1.1\nHost: api.shop.com\nContent-Type: application/json\n\n{ "items": 3, "total": "$58.00", "coupon": "SAVE10" }',
+      res: 'HTTP/1.1 200 OK\n\n{ "id": 42, "items": 3, "total": "$52.20", "coupon": "SAVE10" }',
+      code: '200 OK',
+      idemStory: 'Called twice, the cart still equals exactly what you sent — the 2nd call overwrote with the same values. <span style="color:#22c55e;font-weight:700;">Retry is harmless.</span>'
+    },
+    PATCH: {
+      safe:false, idem:false, cache:false, body:true,
+      summary: '<strong>PATCH</strong> changes <em>part</em> of a resource. Idempotent only if it sets absolute values — a relative change like <code>qty += 1</code> compounds on every retry.',
+      req: 'PATCH /carts/42 HTTP/1.1\nHost: api.shop.com\nContent-Type: application/json\n\n{ "coupon": "SAVE10" }',
+      res: 'HTTP/1.1 200 OK\n\n{ "id": 42, "items": 3, "total": "$52.20", "coupon": "SAVE10" }',
+      code: '200 OK',
+      idemStory: 'This PATCH <em>sets</em> the coupon, so twice is fine. But a PATCH that said <code>{"qty":"+1"}</code> would add the item <strong>twice</strong> — <span style="color:#f59e0b;font-weight:700;">depends on how you write it.</span>'
+    },
+    DELETE: {
+      safe:false, idem:true, cache:false, body:false,
+      summary: '<strong>DELETE</strong> removes the resource. Idempotent: the first call deletes it, later calls just find it already gone. Safe to retry.',
+      req: 'DELETE /carts/42/items/7 HTTP/1.1\nHost: api.shop.com',
+      res: 'HTTP/1.1 204 No Content',
+      code: '204 No Content',
+      idemStory: 'Called twice, the item is gone after the first and still gone after the second (some APIs return <code>404</code> the 2nd time — the <em>state</em> is identical). <span style="color:#22c55e;font-weight:700;">Retry is safe.</span>'
+    }
+  };
+
+  var current = 'GET';
+  var row = document.getElementById('verb-row');
+  var summaryEl = document.getElementById('verb-summary');
+  var pSafe = document.getElementById('p-safe');
+  var pIdem = document.getElementById('p-idem');
+  var pCache = document.getElementById('p-cache');
+  var pBody = document.getElementById('p-body');
+  var preview = document.getElementById('http-preview');
+  var idemOut = document.getElementById('idem-out');
+
+  function yn(el, val) {
+    el.textContent = val ? 'Yes' : 'No';
+    el.className = 'val ' + (val ? 'yes' : 'no');
+  }
+
+  function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function renderVerb() {
+    var v = VERBS[current];
+    summaryEl.innerHTML = v.summary;
+    yn(pSafe, v.safe); yn(pIdem, v.idem); yn(pCache, v.cache); yn(pBody, v.body);
+    // PATCH idempotency is conditional — show a tilde
+    if (current === 'PATCH') { pIdem.textContent = 'Sometimes'; pIdem.className = 'val'; pIdem.style.color = '#f59e0b'; }
+    else { pIdem.style.color = ''; }
+
+    preview.innerHTML =
+      '<span class="muted"># Request</span>\n<span class="req">' + esc(v.req) + '</span>\n\n' +
+      '<span class="muted"># Response</span>\n<span class="res">' + esc(v.res) + '</span>';
+    idemOut.innerHTML = '';
+  }
+
+  row.addEventListener('click', function(e){
+    var btn = e.target.closest('.verb-btn');
+    if (!btn) return;
+    current = btn.getAttribute('data-verb');
+    Array.prototype.forEach.call(row.children, function(b){ b.classList.toggle('active', b === btn); });
+    renderVerb();
+  });
+
+  document.getElementById('idem-btn').addEventListener('click', function(){
+    var v = VERBS[current];
+    idemOut.innerHTML =
+      '<div style="font-family:\'JetBrains Mono\',monospace; font-size:.8rem; color:var(--text-muted);">' +
+      '→ ' + current + ' sent (attempt 1) &nbsp;·&nbsp; → ' + current + ' sent again (retry)</div>' +
+      '<div style="margin-top:.4rem;">' + v.idemStory + '</div>';
+  });
+
+  renderVerb();
+
+  // ── Anchor diagram: the resource menu + five verbs ───────────────────
+  function drawDiagram() {
+    var svg = document.getElementById('rest-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var NS = 'http://www.w3.org/2000/svg';
+
+    function txt(x, y, text, color, size, weight, mono) {
+      var t = document.createElementNS(NS, 'text');
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('fill', color || '#cbd5e1');
+      t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+      t.setAttribute('font-size', size || '11');
+      if (weight) t.setAttribute('font-weight', weight);
+      t.textContent = text;
+      svg.appendChild(t);
+    }
+
+    txt(410, 24, 'One resource (a noun), five verbs — the uniform interface', '#e2e8f0', '13', '700');
+
+    // center resource box
+    var bx = 330, by = 150, bw = 160, bh = 70;
+    var box = rs.rectangle(bx, by, bw, bh, { stroke:'#3b82f6', strokeWidth:2, roughness:1.3, fill:'#3b82f622', fillStyle:'solid' });
+    svg.appendChild(box);
+    txt(bx + bw/2, by + 30, '/carts/42', '#93c5fd', '15', '700', true);
+    txt(bx + bw/2, by + 50, 'the resource (noun)', '#94a3b8', '10');
+
+    // five verbs arranged around, each an arrow to the box
+    var verbs = [
+      { name:'GET',    tag:'read · safe',        color:'#22c55e', x:110,  y:70  },
+      { name:'POST',   tag:'create · not idem.', color:'#f59e0b', x:110,  y:300 },
+      { name:'PUT',    tag:'replace · idem.',    color:'#a78bfa', x:710,  y:70  },
+      { name:'PATCH',  tag:'modify · partial',   color:'#38bdf8', x:710,  y:190 },
+      { name:'DELETE', tag:'remove · idem.',     color:'#ef4444', x:710,  y:310 }
+    ];
+    var cxb = bx + bw/2, cyb = by + bh/2;
+    verbs.forEach(function(vb){
+      // pill
+      var pw = 92, ph = 30;
+      var pill = rs.rectangle(vb.x - pw/2, vb.y - ph/2, pw, ph, { stroke:vb.color, strokeWidth:1.6, roughness:1.1, fill:vb.color+'22', fillStyle:'solid' });
+      svg.appendChild(pill);
+      txt(vb.x, vb.y - 1, vb.name, vb.color, '13', '700', true);
+      txt(vb.x, vb.y + 22, vb.tag, '#94a3b8', '9.5');
+      // arrow toward the box (stop short of the pill and the box)
+      var dx = cxb - vb.x, dy = cyb - vb.y;
+      var len = Math.sqrt(dx*dx + dy*dy);
+      var ux = dx/len, uy = dy/len;
+      var x1 = vb.x + ux*54, y1 = vb.y + uy*22;
+      var x2 = cxb - ux*95, y2 = cyb - uy*45;
+      var line = rs.line(x1, y1, x2, y2, { stroke:vb.color, strokeWidth:1.5, roughness:1 });
+      svg.appendChild(line);
+    });
+
+    txt(410, 372, 'The menu of nouns changes; the five verbs never do — that is why any client already knows how to use it.', '#94a3b8', '10.5');
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawDiagram, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawDiagram);
+  }
+})();
+</script>
+
+</body>
+</html>
