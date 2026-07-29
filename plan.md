@@ -4,7 +4,7 @@
 **Scope:** 90 lessons total (~30 min each)  
 **Publish cadence:** 3x/week (Mon, Wed, Fri) — not literally tied to a 3-month calendar window; at 3 lessons/week, 90 lessons takes ~30 weeks (~7 months) of real time, paced for actual retention rather than rushing daily.  
 **Target:** Principal Engineer level interview preparation  
-**Last Updated:** 2026-07-27
+**Last Updated:** 2026-07-29
 
 ---
 
@@ -153,7 +153,7 @@ registering the correct public key with GitHub outside of any Claude session's a
 | Day | Topic | Status |
 |-----|-------|--------|
 | 15 | REST API Design Best Practices | ✅ Published |
-| 16 | GraphQL Architecture | ⏳ Scheduled |
+| 16 | GraphQL Architecture | ✅ Published |
 | 17 | gRPC & Protocol Buffers | ⏳ Scheduled |
 | 18 | Message Queues & Pub/Sub | ⏳ Scheduled |
 | 19 | Apache Kafka Deep Dive | ⏳ Scheduled |
@@ -304,6 +304,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-07-29 | Day 16 | Day 16: GraphQL Architecture — authored and published live. Second lesson of Week 3 (Communication Patterns), the direct sequel to REST: same job (the system's front door) but the client, not the server, decides the response shape. Full Memorable Learning Framework: an à-la-carte order-slip visual anchor (you hold the pen; one window/one endpoint; the tray comes back shaped exactly like your slip), a story continuing "Mobile Mika" from a 40-field over-fetch + 5-round-trip under-fetch waterfall → one query `{ user { name avatarUrl orders(last:3){ total } } }` → one right-sized response, an interactive query-shape explorer (tick user/order fields → live GraphQL query text, a JSON response shaped exactly to the selection, and a bytes-over-the-wire + round-trips comparison bar vs REST's fixed-shape endpoints — verified computing 163 B/1 trip vs 492 B/2 trips at defaults and recomputing on toggle), a roughjs "data-is-a-graph, query-is-a-path" anchor diagram (green = ticked fields returned, grey = graph fields never fetched), the twin over-/under-fetching problems, schema/SDL + typed graph + resolvers + introspection depth, the three operation types (query/mutation/subscription), a full "What GraphQL Costs You" section (N+1 + DataLoader batching, hard caching / persisted queries, query depth+complexity limits as a DoS guardrail, 200-always error bodies, no native uploads), a REST-vs-GraphQL when-to-use grid + comparison table, the Concierge's-Alcove memory-palace room, an N+1 "why did DB load triple?" active recall, a Common Mistakes table, and real-world Meta/GitHub/Shopify/Netflix engineering. Verified via a headless-browser (Playwright/Chromium) render: title loads, the explorer computes and reshapes correctly on field toggles, no page script errors (only the sandbox-blocked roughjs CDN, which loads fine on Pages and degrades gracefully). |
 | 2026-07-29 | Day 15 | Day 15: REST API Design Best Practices |
 | 2026-07-27 | Day 15 (staged) | Day 15: REST API Design Best Practices — authored into `staging/`, awaiting the next Mon/Wed/Fri auto-publish. First lesson of Week 3 (Communication Patterns), pivoting from storage internals to the system's front door. Full Memorable Learning Framework: a restaurant-menu visual anchor (nouns = dishes on a fixed menu, five bell-hop verbs GET/POST/PUT/PATCH/DELETE that each know one action, uniform interface = every guest already knows the rules), a story following "API Amara" from a 340-endpoint all-POST `/getUser`/`/updateUserName` mess → resources-as-nouns → free caching/idempotency/guessability, an interactive REST method explorer (click a verb → live safe/idempotent/cacheable/has-body property cards, a realistic request/response for `/carts/42`, and a "Send it twice" idempotency demo that shows POST duplicating a line item while PUT/DELETE stay safe), a roughjs anchor diagram (one `/carts/42` resource with five colored verb pills arrowing in), the four uniform-interface pillars (nouns vs verbs, safe, idempotent, stateless) with a method-property table, a good-vs-bad URL comparison grid + URL design rules, a status-code family legend (2xx/3xx/4xx/5xx with 4xx-vs-5xx and 401-vs-403), a pagination/versioning/error-body/ETag/rate-limit/OpenAPI "grown-up concerns" section, a REST-vs-cousins card grid (GraphQL/gRPC/WebSockets forward-linking Days 16/17/20), the Reception-Desk memory-palace room, a double-charge idempotency active-recall, a "Common Mistakes & Misconceptions" table, and real-world Stripe/GitHub/AWS-API-mandate/Twitter engineering. |
 | 2026-07-17 | Day 14 | Day 14: Consistent Hashing |
@@ -356,5 +357,6 @@ system-design/
 - [x] Day 13 (Data Partitioning & Sharding) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Day 14 (Consistent Hashing) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Day 15 (REST API Design Best Practices) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
-- [ ] Days 16–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
+- [x] Day 16 (GraphQL Architecture) authored and published — Week 3 Communication Patterns continues; interactive query-shape explorer contrasting GraphQL field-selection vs REST fixed-shape endpoints
+- [ ] Days 17–90: to be authored and auto-published 3x/week (Mon/Wed/Fri)
 - [x] GitHub Pages enabled on `main` branch — confirmed via the active `pages-build-deployment` Actions workflow on the repo

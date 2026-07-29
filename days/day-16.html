@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 16: GraphQL Architecture | System Design Mastery</title>
+  <meta name="description" content="Yesterday you built REST — a fixed menu of endpoints, each returning a fixed shape. But mobile clients kept over-fetching (40 fields to show 3) and under-fetching (one screen = five round trips). GraphQL flips it: one endpoint, and the client writes a query describing exactly the fields it wants from your data — modeled as a typed graph. Learn the schema, resolvers, the N+1 problem, why caching gets harder, and when GraphQL wins over REST — taught through story, a live query-shape explorer, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* REST vs GraphQL comparison cards */
+    .vs-grid { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin:1rem 0 2rem; }
+    @media (max-width:640px){ .vs-grid { grid-template-columns:1fr; } }
+    .vs-card { border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; background: var(--bg-card); }
+    .vs-card h4 { margin:0 0 .6rem; font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; }
+    .vs-card.bad h4 { color:#ef4444; } .vs-card.good h4 { color:#22c55e; }
+    .vs-card code { display:block; font-family:'JetBrains Mono',monospace; font-size:.82rem; padding:.3rem 0; color: var(--text-secondary); }
+    /* GraphQL query-shape explorer */
+    .gql-cols { display:grid; grid-template-columns:minmax(200px,240px) 1fr; gap:1.25rem; margin-top:1rem; }
+    @media (max-width:720px){ .gql-cols { grid-template-columns:1fr; } }
+    .field-group { margin-bottom:1rem; }
+    .field-group-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-bottom:.5rem; }
+    .field-toggle { display:flex; align-items:center; gap:.5rem; padding:.32rem .5rem; border-radius:7px; cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:.82rem; color:var(--text-secondary); transition:background .12s; }
+    .field-toggle:hover { background: var(--bg-secondary); }
+    .field-toggle input { accent-color: var(--accent); width:15px; height:15px; }
+    .field-toggle.locked { opacity:.55; cursor:not-allowed; }
+    .field-toggle.nested { margin-left:.85rem; }
+    .code-pane { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:.9rem 1.1rem; font-family:'JetBrains Mono',monospace; font-size:.8rem; line-height:1.55; overflow-x:auto; }
+    .code-pane .k { color:#c084fc; } .code-pane .f { color:#7dd3fc; } .code-pane .v { color:#86efac; } .code-pane .p { color:#64748b; }
+    .pane-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:.9rem 0 .35rem; }
+    .metric-row { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:1.1rem; }
+    @media (max-width:640px){ .metric-row { grid-template-columns:1fr; } }
+    .metric-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.9rem 1.1rem; }
+    .metric-card h5 { margin:0 0 .55rem; font-size:.78rem; }
+    .metric-card.gql h5 { color:#a78bfa; } .metric-card.rest h5 { color:#38bdf8; }
+    .bar-track { height:14px; background: var(--bg-secondary); border-radius:7px; overflow:hidden; margin:.3rem 0; }
+    .bar-fill { height:100%; border-radius:7px; transition:width .35s ease; }
+    .bar-fill.gql { background: linear-gradient(90deg,#8b5cf6,#a78bfa); }
+    .bar-fill.rest { background: linear-gradient(90deg,#0ea5e9,#38bdf8); }
+    .metric-num { font-size:.82rem; color:var(--text-secondary); }
+    .metric-num b { color: var(--text-primary); }
+    .trips { font-size:.82rem; color:var(--text-muted); margin-top:.4rem; }
+    .trips b { font-family:'JetBrains Mono',monospace; }
+    .waste-note { font-size:.85rem; margin-top:1rem; padding:.7rem .9rem; border-radius:8px; background:rgba(139,92,246,.08); border:1px solid rgba(139,92,246,.25); color:var(--text-secondary); }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 16</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 16 of 90</span>
+      <span class="meta-pill">⏱ ~35 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 3 — Communication Patterns</span>
+    </div>
+    <h1>GraphQL Architecture<br><span style="color:var(--accent)">Let the Client Draw the Response</span></h1>
+    <p class="lead">
+      Yesterday's REST API is a fixed menu: each endpoint hands back a fixed shape, take it or leave it. That's
+      elegant until a phone on a slow train needs a user's <em>name</em> and their last order's <em>total</em> —
+      and REST forces it to download 40 fields it won't use, then make four more round trips for the rest.
+      <strong>GraphQL</strong> flips the control: one endpoint, and the <em>client</em> writes a query describing
+      exactly the fields it wants from your data — which GraphQL models as a <strong>typed graph</strong>. It fixes
+      over-fetching and under-fetching in one stroke — and quietly hands you a new set of problems in return.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#problem">Over- &amp; Under-fetching</a>
+        <a href="#depth">Schema, Types &amp; Resolvers</a>
+        <a href="#ops">Queries, Mutations &amp; Subscriptions</a>
+        <a href="#cost">What GraphQL Costs You</a>
+        <a href="#variants">REST vs GraphQL</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">📝🍱</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Yesterday's restaurant served <strong>fixed combo meals</strong> — each endpoint a numbered plate
+            that always came the same way. Today, walk next door to an <strong>à la carte counter</strong>. There's
+            no menu of plates; there's a single <strong>order slip</strong> and a pen. You write down
+            <em>exactly</em> what you want — "the salmon, half a scoop of rice, no sauce, and one of the desserts
+            from the back" — hand it over one time, and a single tray comes back <strong>shaped precisely like your
+            slip</strong>: nothing you didn't ask for, and everything you did, in one trip. There's only
+            <strong>one window</strong> (one endpoint), and behind it the kitchen knows how every ingredient
+            connects — which desserts belong to which meals — so it can fetch across the whole pantry in a single
+            pass. That order slip is a <strong>GraphQL query</strong>: you describe the response, the server draws
+            it. Picture the pen in <em>your</em> hand and the tray that matches your slip exactly — that image
+            <em>is</em> GraphQL.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="gql-diagram" width="820" height="430" viewBox="0 0 820 430"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Mobile Mika</span> was building one screen: a user's profile header.
+            It needed three things — the person's <strong>name</strong>, their <strong>avatar</strong>, and the
+            <strong>total of their last three orders</strong>. With the REST API next door, she called
+            <code>GET /users/42</code>. Back came a <strong>40-field</strong> JSON blob: address, phone, marketing
+            preferences, a 2 KB bio, timestamps she'd never render. She used three fields and threw away
+            thirty-seven. That's <strong>over-fetching</strong> — and on a phone metered by the megabyte on a slow
+            train, it hurt.
+          </p>
+          <p>
+            Worse was the orders. <code>GET /users/42</code> didn't include them, so she called
+            <code>GET /users/42/orders</code> — a second round trip. That returned a list of order <em>IDs</em>,
+            not totals, so now she looped: <code>GET /orders/7</code>, <code>GET /orders/8</code>,
+            <code>GET /orders/9</code>. One little header had become <strong>five round trips</strong>, each paying
+            the full latency tax of a mobile network. That's <strong>under-fetching</strong>: no single endpoint
+            gave her exactly what the screen needed, so she stitched it together with a waterfall of calls. The app
+            felt sluggish, and it wasn't the code — it was the <em>shape</em> of the API.
+          </p>
+          <p>
+            A backend engineer showed her the same data through a GraphQL endpoint. She wrote <em>one</em> query:
+            <code>{ user(id: 42) { name avatarUrl orders(last: 3) { total } } }</code> — literally the shape of what
+            she wanted. One request. One response, containing her three fields and nothing else, orders and totals
+            already joined in. Five round trips collapsed to <strong>one</strong>; the 40-field blob shrank to the
+            three fields she'd asked for. Mika hadn't sped up the network or the database — she'd stopped letting
+            the API decide the shape of her data, and <em>drawn it herself</em>.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">GraphQL is a <strong>query language for your API</strong> plus a
+          <strong>typed schema</strong> that exposes your data as a <strong>graph</strong> of connected types.
+          There's <strong>one endpoint</strong> (<code>POST /graphql</code>); the client sends a query that
+          <em>describes the exact fields it wants</em>, and the server returns a JSON response shaped identically to
+          the query — no more, no less. This kills <strong>over-fetching</strong> (too many fields) and
+          <strong>under-fetching</strong> (too many round trips) in one move. The price: because every request is a
+          different <code>POST</code> to the same URL, you lose REST's free HTTP/URL caching, and naïve
+          field-by-field <strong>resolvers</strong> can explode into the <strong>N+1 query</strong> problem. REST
+          decides the shape for you; GraphQL hands you the pen — and the responsibility.</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself</h2>
+        <div class="sim-box">
+          <p>Tick the fields your screen actually needs. Watch the <strong>query</strong> and the
+          <strong>response</strong> reshape themselves to match — and watch the two counters at the bottom:
+          <strong>bytes over the wire</strong> and <strong>round trips</strong>. The blue bar is what the equivalent
+          REST call costs (it always returns the <em>whole</em> user object, plus a second call for orders). The
+          purple bar is GraphQL, which sends back only what you ticked. Try selecting just <code>name</code> — then
+          watch REST still ship all 40-ish fields anyway.</p>
+
+          <div class="gql-cols">
+            <div>
+              <div class="field-group">
+                <div class="field-group-title">user(id: 42)</div>
+                <label class="field-toggle locked"><input type="checkbox" checked disabled data-scope="user" data-field="id"> id <span style="color:var(--text-muted);font-size:.72rem;">(key)</span></label>
+                <div id="user-fields"></div>
+              </div>
+              <div class="field-group">
+                <div class="field-group-title">↳ orders(last: 3)</div>
+                <div id="order-fields"></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="pane-label">GraphQL query — you write this</div>
+              <div class="code-pane" id="query-pane"></div>
+              <div class="pane-label">Response — shaped exactly like the query</div>
+              <div class="code-pane" id="response-pane"></div>
+            </div>
+          </div>
+
+          <div class="metric-row">
+            <div class="metric-card gql">
+              <h5>⬤ GraphQL — one endpoint</h5>
+              <div class="bar-track"><div class="bar-fill gql" id="gql-bar" style="width:0%"></div></div>
+              <div class="metric-num"><b id="gql-bytes">0</b> bytes over the wire</div>
+              <div class="trips">Round trips: <b id="gql-trips">1</b></div>
+            </div>
+            <div class="metric-card rest">
+              <h5>⬤ REST — fixed endpoints</h5>
+              <div class="bar-track"><div class="bar-fill rest" id="rest-bar" style="width:0%"></div></div>
+              <div class="metric-num"><b id="rest-bytes">0</b> bytes over the wire</div>
+              <div class="trips">Round trips: <b id="rest-trips">1</b></div>
+            </div>
+          </div>
+          <div class="waste-note" id="waste-note"></div>
+        </div>
+      </section>
+
+      <section id="problem">
+        <h2>The Twin Problems GraphQL Was Built to Kill</h2>
+        <p>GraphQL came out of Facebook in 2012, born from a very specific pain: their mobile apps were slow, and
+        the culprit was the <em>shape</em> of their REST API, not the servers behind it. Two symptoms, opposite
+        directions:</p>
+        <h3>Over-fetching — you get more than you need</h3>
+        <p>A REST endpoint returns a <em>fixed</em> representation. <code>GET /users/42</code> ships every field the
+        designers thought anyone might want. A screen that needs one field still downloads all forty. Multiply that
+        by millions of requests on metered mobile connections and it's real money and real latency — bytes burned
+        rendering nothing.</p>
+        <h3>Under-fetching — you need more than one endpoint gives</h3>
+        <p>The mirror image: no single endpoint has exactly what a screen needs, so the client makes a
+        <strong>waterfall</strong> of calls — get the user, then their orders, then each order's items — each one
+        waiting on the last. This is the <strong>N+1 round-trip</strong> problem <em>at the network layer</em>: 1
+        call to list N things, then N more to hydrate them. On a 150 ms mobile round trip, five sequential calls is
+        three-quarters of a second of pure waiting.</p>
+        <p>GraphQL dissolves both at once: the client sends a single query naming exactly the fields it wants,
+        across as many related types as it wants, and gets one right-sized response back. The shape of the request
+        <em>is</em> the shape of the response.</p>
+      </section>
+
+      <section id="depth">
+        <h2>Schema, Types &amp; Resolvers — How It Actually Works</h2>
+        <p>Three ideas carry the whole system. Get these and GraphQL stops being magic.</p>
+
+        <h3>1. The schema is a typed graph — a contract both sides trust</h3>
+        <p>Every GraphQL server starts with a <strong>schema</strong>: a strongly-typed description of every type,
+        its fields, and how types connect. It's written in the Schema Definition Language (SDL):</p>
+        <div class="code-pane" style="margin:.75rem 0;">
+<span class="k">type</span> <span class="f">User</span> {<br>
+&nbsp;&nbsp;id: ID!<br>
+&nbsp;&nbsp;name: String!<br>
+&nbsp;&nbsp;email: String!<br>
+&nbsp;&nbsp;orders(last: Int): [<span class="f">Order</span>!]!   <span class="p"># a User connects to many Orders</span><br>
+}<br>
+<span class="k">type</span> <span class="f">Order</span> {<br>
+&nbsp;&nbsp;id: ID!<br>
+&nbsp;&nbsp;total: Float!<br>
+&nbsp;&nbsp;items: [<span class="f">Product</span>!]!             <span class="p"># and an Order connects to many Products</span><br>
+}
+        </div>
+        <p>Because <code>User.orders</code> points at <code>Order</code>, and <code>Order.items</code> points at
+        <code>Product</code>, your data is literally a <strong>graph</strong> the client can traverse in one query.
+        The <code>!</code> means non-null; <code>[Order!]!</code> is a non-null list of non-null Orders. This schema
+        is also the API's living documentation — tools read it to give you autocomplete and validation before a
+        query ever runs. That strong typing is a headline feature: a query asking for a field that doesn't exist
+        fails <em>before</em> execution, not with a runtime surprise.</p>
+
+        <h3>2. Resolvers — one function per field</h3>
+        <p>The schema says <em>what</em> exists; <strong>resolvers</strong> say <em>how to fetch it</em>. Each field
+        has a resolver function that returns that field's value. When a query for <code>user { name orders { total }
+        }</code> arrives, the engine resolves <code>user</code>, then <code>name</code> on the result, then walks
+        into <code>orders</code>, then <code>total</code> on each order. The client's query shape becomes a
+        <strong>traversal plan</strong> over your resolvers. This is the source of GraphQL's power <em>and</em> its
+        most infamous trap — see the N+1 problem below.</p>
+
+        <h3>3. Introspection — the API describes itself</h3>
+        <p>A GraphQL server can be <em>asked about its own schema</em> at runtime (<code>__schema</code>,
+        <code>__type</code>). This <strong>introspection</strong> is what powers the interactive explorers
+        (GraphiQL, Apollo Sandbox), auto-generated typed clients, and editor autocomplete. The uniform, typed graph
+        is what makes all that tooling possible — the same way REST's uniform interface enabled OpenAPI (Day 15).</p>
+      </section>
+
+      <section id="ops">
+        <h2>Queries, Mutations &amp; Subscriptions — the Three Verbs</h2>
+        <p>Where REST has five HTTP verbs, GraphQL has three <strong>operation types</strong>, and they map cleanly
+        onto read / write / stream:</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>query</strong><span>Read data. The safe, idempotent read — the GraphQL
+          analogue of <code>GET</code>. Multiple queries in one request run <em>in parallel</em>.</span></div>
+          <div class="flow-step"><strong>mutation</strong><span>Write data (create/update/delete). Like
+          <code>POST</code>/<code>PUT</code>/<code>DELETE</code> rolled into named operations
+          (<code>createOrder</code>, <code>cancelOrder</code>). Multiple mutations in one request run
+          <em>sequentially</em>, so ordering is predictable.</span></div>
+          <div class="flow-step"><strong>subscription</strong><span>Stream data pushed <em>from</em> the server over
+          a persistent connection (usually WebSockets) — new chat messages, live scores. This is the real-time push
+          we'll dig into on Day 20.</span></div>
+        </div>
+        <p>All three share the same schema and the same field-selection syntax — you always name exactly the fields
+        you want back, whether you're reading, writing, or streaming.</p>
+      </section>
+
+      <section id="cost">
+        <h2>What GraphQL Costs You (Nothing Is Free)</h2>
+        <p>GraphQL solves REST's fetching problems by moving flexibility to the client — and every bit of that
+        flexibility becomes a server-side problem you now own. A staff engineer's job is knowing these before you
+        adopt it, not after.</p>
+
+        <h3>The N+1 problem — power's dark twin</h3>
+        <p>Say a query asks for 100 users and each user's <code>company</code>. The naïve resolver runs 1 query for
+        the users, then <em>1 query per user</em> for the company — 101 database hits for one API call. This
+        <strong>N+1</strong> is the single most common GraphQL performance disaster. The standard fix is
+        <strong>batching</strong> with a tool like <strong>DataLoader</strong>: it collects all the company IDs
+        requested in one tick and fires a single <code>WHERE id IN (...)</code> — turning N+1 into 2. If you take
+        one operational lesson from this lesson, it's this one.</p>
+
+        <h3>Caching gets much harder</h3>
+        <p>REST's superpower was that <code>GET /users/42</code> is a cacheable URL — browsers, CDNs, and proxies
+        cache it for free (Day 6). GraphQL sends every query as a <code>POST</code> to the <em>same</em>
+        <code>/graphql</code> URL, so URL-based HTTP caching doesn't apply. You recover caching at other layers:
+        <strong>persisted queries</strong> (register a query, reference it by hash so a CDN can cache it),
+        client-side normalized caches (Apollo, Relay store entities by <code>id</code>), and server-side
+        response caching. It's caching — just not the free kind you got with REST.</p>
+
+        <h3>A malicious or careless query can be a bomb</h3>
+        <p>Because clients compose their own queries, a single request can ask for a deeply nested, expensive graph:
+        <code>user { friends { friends { friends { ... } } } }</code>. Left unchecked, one query can exhaust your
+        database. Production GraphQL needs guardrails: <strong>query depth limiting</strong>, <strong>complexity
+        analysis</strong> (assign a cost to each field, reject queries over a budget), timeouts, and — the strongest
+        control — an <strong>allow-list of persisted queries</strong> so clients can only run pre-approved shapes.
+        Ordinary per-URL rate limiting (Day 24) doesn't fit, because it's all one URL.</p>
+
+        <h3>Other rough edges</h3>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Errors always come back 200.</strong><span>GraphQL typically returns
+          <code>200 OK</code> with an <code>errors</code> array in the body, even for partial failures. Your
+          Day-15 instinct — read the status code — doesn't work here; monitoring must parse the payload.</span></div>
+          <div class="flow-step"><strong>File uploads &amp; binary aren't native.</strong><span>GraphQL speaks JSON.
+          Large file uploads/downloads usually still go through a plain REST/HTTP endpoint alongside it.</span></div>
+          <div class="flow-step"><strong>More upfront machinery.</strong><span>Schema, resolvers, a GraphQL server,
+          and client tooling are more moving parts than "return some JSON." For a small CRUD service, REST is often
+          simply less to build and operate.</span></div>
+        </div>
+      </section>
+
+      <section id="variants">
+        <h2>REST vs GraphQL — Choosing the Front Door</h2>
+        <div class="vs-grid">
+          <div class="vs-card good">
+            <h4>✓ Reach for GraphQL when…</h4>
+            <code>• Many clients, each needing different field subsets</code>
+            <code>• Rich, relational data (a graph of entities)</code>
+            <code>• Mobile clients where bytes &amp; round trips hurt</code>
+            <code>• The frontend iterates fast &amp; hates waiting on new endpoints</code>
+            <code>• You're aggregating several backends behind one schema</code>
+          </div>
+          <div class="vs-card bad">
+            <h4>✗ Prefer REST when…</h4>
+            <code>• Simple, CRUD-shaped resources</code>
+            <code>• You want free HTTP/CDN caching by URL</code>
+            <code>• A public API where cache-ability &amp; simplicity win</code>
+            <code>• File uploads, streaming binaries</code>
+            <code>• A small team that doesn't want the extra machinery</code>
+          </div>
+        </div>
+        <table class="algo-table">
+          <tr><th>Dimension</th><th>REST</th><th>GraphQL</th></tr>
+          <tr><td>Endpoints</td><td>Many (one per resource)</td><td>One (<code>/graphql</code>)</td></tr>
+          <tr><td>Who picks the response shape</td><td>The server (fixed)</td><td>The client (per query)</td></tr>
+          <tr><td>Over-/under-fetching</td><td>Common</td><td>Eliminated by design</td></tr>
+          <tr><td>HTTP/URL caching</td><td>Free &amp; easy</td><td>Hard (needs persisted queries, client cache)</td></tr>
+          <tr><td>Typing &amp; discovery</td><td>OpenAPI (bolt-on)</td><td>Schema + introspection (built in)</td></tr>
+          <tr><td>Error signaling</td><td>Status codes</td><td>Usually <code>200</code> + <code>errors</code> array</td></tr>
+          <tr><td>Biggest footgun</td><td>Endpoint sprawl</td><td>N+1 resolvers, runaway queries</td></tr>
+        </table>
+        <p>The honest summary: it's <strong>not</strong> REST vs GraphQL as good vs bad. Many large companies run
+        both — GraphQL for the flexible, client-driven read layer, REST for simple public endpoints and uploads.
+        GraphQL trades REST's free cacheability and simplicity for precise, one-trip field selection. Knowing
+        <em>which pain you have</em> — over-fetching or endpoint sprawl vs caching and simplicity — is the whole
+        decision.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You step past yesterday's Reception Desk with its fixed menu and five bell-hops, and reach a quieter
+          room with a single window and a person holding a pen and a blank order slip: the Concierge's Alcove.</h4>
+          <div class="palace-room"><span class="palace-icon">⭕</span><div><strong>The Clock Room</strong> — <span>Consistent Hashing (Day 14). Machines pinned around a clock; walk clockwise to find the owner.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🛎️</span><div><strong>The Reception Desk</strong> — <span>REST API Design (Day 15). A fixed menu of nouns and five bell-hops who each know one verb; the shape is whatever the desk decided.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📝</span><div><strong>The Concierge's Alcove</strong> — <span>GraphQL (today). One window, one concierge. You hand over a single slip describing exactly what you want — "the guest's name, their last three orders' totals, nothing else" — and the tray comes back shaped like your slip, in one trip. Behind the window the concierge knows how everything in the pantry connects (the typed graph), so they can gather across it in a single pass — but you must never hand them a slip so greedy it empties the kitchen (query-cost limits), and there's no numbered plate to cache next time (caching is hard).</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🔌</span><div><strong>The Next Room</strong> — <span>gRPC &amp; Protocol Buffers (Day 17). A back corridor for staff only — a fast, binary intercom the rooms use to talk to <em>each other</em>, not to guests.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Networking: HTTP (Day 3)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">REST API Design (Day 15)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">GraphQL (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">gRPC (Day 17)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node dim">Caching (Day 6)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">GraphQL caching &amp; N+1 (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Subscriptions → WebSockets (Day 20)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">API Gateway (Day 27)</span>
+        </div>
+        <p>GraphQL is the direct sequel to <strong>REST</strong> (Day 15): same job — the system's front door — but
+        the client, not the server, decides the response shape. It leans on <strong>HTTP</strong> (Day 3) as its
+        transport, inherits REST's <strong>caching</strong> challenge (Day 6) and has to solve it the hard way, and
+        its <strong>subscriptions</strong> ride the persistent connections we'll meet in <strong>WebSockets</strong>
+        (Day 20). Its N+1 resolver trap rhymes with the batching ideas you'll see again in data systems, and a real
+        <strong>API Gateway</strong> (Day 27) often fronts a GraphQL layer that stitches many backend services into
+        one schema. One idea — <em>let the caller draw the response</em> — threading through the whole
+        communication-patterns week.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"GraphQL replaces REST — it's just better."</td><td>They're different trade-offs. GraphQL wins for flexible, client-driven, relational reads; REST wins for simple resources, free URL caching, uploads, and low operational overhead. Plenty of systems run both side by side.</td></tr>
+          <tr><td>"One endpoint means one database query."</td><td>The opposite risk is real: a naïve resolver turns one query into the <strong>N+1</strong> problem — 101 DB hits for 100 users. You must batch (DataLoader) or you'll melt your database.</td></tr>
+          <tr><td>"GraphQL is automatically faster."</td><td>It reduces <em>over-fetching</em> and <em>round trips</em>, which helps clients. But it can hammer your backend harder and it throws away REST's free HTTP caching — net performance depends entirely on how you build the resolver and caching layers.</td></tr>
+          <tr><td>"Clients can ask for anything, so we're flexible."</td><td>Unbounded flexibility is a denial-of-service vector: a deeply nested query can exhaust your DB. Production needs depth limits, complexity budgets, timeouts, and ideally persisted-query allow-lists.</td></tr>
+          <tr><td>"A 200 means it worked."</td><td>GraphQL returns <code>200</code> even on partial failure, with the problems in an <code>errors</code> array. Monitoring and clients must inspect the body, not just the status line.</td></tr>
+          <tr><td>"GraphQL is a database / it queries the DB directly."</td><td>No — it's an API layer. Resolvers can pull from SQL, NoSQL, other microservices, caches, or third-party APIs. The graph is a <em>view</em> over whatever backends you wire up.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ A teammate says: "We switched from REST to GraphQL and our
+          database load <em>tripled</em>, even though the mobile app got faster. How is that possible?" Explain what
+          almost certainly happened and how you'd fix it. (click to reveal)</div>
+          <div class="recall-answer">This is the <strong>N+1 problem</strong> in the flesh. GraphQL made the
+          <em>client</em> faster by cutting over-fetching and round trips — the app now makes one request instead of
+          five. But on the <em>server</em>, a query like <code>{ users { company { name } } }</code> resolves
+          <code>company</code> once <strong>per user</strong>: 1 query to load the users, then N more, one per user —
+          101 database hits where REST's fixed endpoint might have done a single join. The response looks clean; the
+          resolver underneath is a hidden loop of queries. <strong>The fix is batching:</strong> a
+          <strong>DataLoader</strong> collects every <code>company</code> ID requested during one execution tick and
+          issues a single <code>SELECT ... WHERE id IN (...)</code>, turning N+1 into 2. Add query-complexity/depth
+          limits so a client can't request an arbitrarily deep graph, and consider server-side caching for hot
+          fields. The lesson: GraphQL moves flexibility to the client, but that flexibility becomes
+          <em>your</em> problem to bound on the server.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">📘 Meta / Facebook</div><p>GraphQL was created at Facebook in 2012 and open-sourced in 2015 to fix exactly Mika's problem: their mobile News Feed was slow because REST endpoints over-fetched and forced round trips. The query language <em>is</em> the origin story of client-drawn responses.</p></div>
+          <div class="realworld-card"><div class="rw-company">🐙 GitHub</div><p>GitHub runs a public <strong>GraphQL v4 API</strong> alongside its REST v3 — a rare, honest side-by-side. They use <strong>query cost analysis</strong> (each query has a computed point cost against a rate budget) precisely because per-URL rate limiting doesn't fit a single endpoint.</p></div>
+          <div class="realworld-card"><div class="rw-company">🛍️ Shopify</div><p>Shopify's Storefront and Admin APIs are GraphQL-first, letting thousands of third-party apps request exactly the fields they need. They enforce a <strong>calculated query cost</strong> and throttle on it — a textbook example of bounding client flexibility.</p></div>
+          <div class="realworld-card"><div class="rw-company">🎬 Netflix</div><p>Netflix built a <strong>federated GraphQL</strong> layer (DGS + a gateway) so a single schema stitches together dozens of backend microservices. Frontend teams query one graph; the gateway routes each field to the owning service — GraphQL as an aggregation front door.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: In one sentence, what is GraphQL?</div>
+          <div class="fc-a">A: A query language and typed schema that exposes your data as a graph through a single endpoint, where the <strong>client</strong> sends a query describing exactly the fields it wants and gets back a response shaped identically — eliminating over-fetching and under-fetching.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What are over-fetching and under-fetching?</div>
+          <div class="fc-a">A: <strong>Over-fetching</strong> = an endpoint returns more fields than the client needs (download 40, use 3). <strong>Under-fetching</strong> = no single endpoint has everything a screen needs, so the client makes a waterfall of round trips (N+1 at the network layer). GraphQL fixes both by letting the client request exactly what it wants in one query.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is a resolver, and what's the N+1 problem?</div>
+          <div class="fc-a">A: A <strong>resolver</strong> is a function that fetches the value for one field. The <strong>N+1 problem</strong>: resolving a list of N items and a related field on each runs 1 query for the list + N queries for the relation (101 DB hits for 100 items). Fix it by <strong>batching</strong> with a DataLoader (one <code>WHERE id IN (...)</code>).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is caching harder in GraphQL than REST?</div>
+          <div class="fc-a">A: REST's <code>GET /users/42</code> is a cacheable URL that browsers/CDNs cache for free. GraphQL sends every query as a <code>POST</code> to the same <code>/graphql</code> URL, so URL-based HTTP caching doesn't apply. You recover it with persisted queries (cache by query hash), client-side normalized caches (Apollo/Relay), and server-side caching.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Name GraphQL's three operation types.</div>
+          <div class="fc-a">A: <strong>query</strong> (read, like GET), <strong>mutation</strong> (write — create/update/delete, run sequentially), and <strong>subscription</strong> (server-pushed real-time stream over a persistent connection, usually WebSockets).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Explain over-fetching and under-fetching with a concrete example, and how GraphQL eliminates each.</li>
+          <li>Walk through what happens on the server when a query asks for 100 users and each user's <code>company</code>. Name the problem and the fix.</li>
+          <li>Why does REST get free HTTP caching but GraphQL doesn't? What are two ways GraphQL recovers caching?</li>
+          <li>What is a resolver, and how does a query's field selection turn into a traversal over resolvers?</li>
+          <li>A client sends <code>user { friends { friends { friends { ... } } } }</code>. Why is this dangerous, and what three guardrails would you add?</li>
+          <li>Give two situations where you'd choose REST over GraphQL, and two where you'd choose GraphQL over REST — with the reason for each.</li>
+          <li>Why can't you rely on the HTTP status code to know whether a GraphQL request succeeded?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: GraphQL <strong>hands the client the pen</strong>. Instead of the server
+          deciding fixed response shapes (REST), the client sends one query naming <em>exactly</em> the fields it
+          wants across your typed data graph, and gets back a response shaped identically — killing over-fetching
+          and under-fetching in a single trip. The bill for that flexibility lands on the server: no free URL
+          caching, resolvers that can explode into N+1, and queries you must bound before they melt your database.
+          It's not "better than REST" — it's a different trade: precise, one-trip field selection in exchange for
+          cacheability and simplicity. Tomorrow (Day 17) we go behind the walls to <strong>gRPC</strong> — a fast,
+          binary, strongly-typed protocol built not for browsers, but for your services to talk to each other.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-15.html">← Day 15: REST API Design</a>
+        <a href="day-17.html" class="coming-soon-link">Day 17: gRPC &amp; Protocol Buffers →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 16 of 90 — GraphQL Architecture</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── GraphQL query-shape explorer ─────────────────────────────────────
+  // Realistic backing data. REST always returns the FULL objects; GraphQL
+  // returns only the ticked fields. We measure JSON payload bytes + trips.
+  var USER = {
+    id: 42,
+    name: "Ada Lovelace",
+    email: "ada@compute.io",
+    avatarUrl: "https://cdn.shop.com/av/42.png",
+    bio: "Mathematician and writer, regarded as the first computer programmer.",
+    followerCount: 1815,
+    createdAt: "2019-03-11T08:00:00Z"
+  };
+  var ORDERS = [
+    { id: 7, total: "$58.00",  date: "2026-07-20", itemCount: 3, status: "shipped" },
+    { id: 8, total: "$12.50",  date: "2026-07-24", itemCount: 1, status: "paid" },
+    { id: 9, total: "$140.00", date: "2026-07-28", itemCount: 5, status: "processing" }
+  ];
+
+  var USER_FIELDS  = ["name", "email", "avatarUrl", "bio", "followerCount", "createdAt"];
+  var ORDER_FIELDS = ["total", "date", "itemCount", "status"];
+
+  // Default selection = Mika's profile-header scenario.
+  var selUser  = { name: true, email: false, avatarUrl: true, bio: false, followerCount: false, createdAt: false };
+  var selOrder = { total: true, date: false, itemCount: false, status: false };
+
+  function anyOrder(){ return ORDER_FIELDS.some(function(f){ return selOrder[f]; }); }
+
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  // Build the field toggles.
+  function buildToggles(){
+    var uWrap = document.getElementById('user-fields');
+    var oWrap = document.getElementById('order-fields');
+    uWrap.innerHTML = ''; oWrap.innerHTML = '';
+    USER_FIELDS.forEach(function(f){
+      var lab = document.createElement('label');
+      lab.className = 'field-toggle';
+      lab.innerHTML = '<input type="checkbox" data-scope="user" data-field="' + f + '"' + (selUser[f] ? ' checked' : '') + '> ' + f;
+      uWrap.appendChild(lab);
+    });
+    ORDER_FIELDS.forEach(function(f){
+      var lab = document.createElement('label');
+      lab.className = 'field-toggle nested';
+      lab.innerHTML = '<input type="checkbox" data-scope="order" data-field="' + f + '"' + (selOrder[f] ? ' checked' : '') + '> ' + f;
+      oWrap.appendChild(lab);
+    });
+  }
+
+  // Render the GraphQL query text.
+  function renderQuery(){
+    var lines = [];
+    lines.push('<span class="k">query</span> {');
+    lines.push('  <span class="f">user</span>(<span class="p">id:</span> 42) {');
+    lines.push('    <span class="f">id</span>');
+    USER_FIELDS.forEach(function(f){ if (selUser[f]) lines.push('    <span class="f">' + f + '</span>'); });
+    if (anyOrder()) {
+      lines.push('    <span class="f">orders</span>(<span class="p">last:</span> 3) {');
+      ORDER_FIELDS.forEach(function(f){ if (selOrder[f]) lines.push('      <span class="f">' + f + '</span>'); });
+      lines.push('    }');
+    }
+    lines.push('  }');
+    lines.push('}');
+    document.getElementById('query-pane').innerHTML = lines.join('<br>');
+  }
+
+  // Build the exact response object GraphQL would return (only ticked fields).
+  function gqlResponseObj(){
+    var u = { id: USER.id };
+    USER_FIELDS.forEach(function(f){ if (selUser[f]) u[f] = USER[f]; });
+    if (anyOrder()) {
+      u.orders = ORDERS.map(function(o){
+        var r = {};
+        ORDER_FIELDS.forEach(function(f){ if (selOrder[f]) r[f] = o[f]; });
+        return r;
+      });
+    }
+    return { data: { user: u } };
+  }
+
+  // Pretty-print a JSON object into colored HTML.
+  function renderJSON(obj){
+    var raw = JSON.stringify(obj, null, 2);
+    var html = esc(raw)
+      .replace(/&quot;([^&]+?)&quot;(\s*:)/g, '<span class="f">&quot;$1&quot;</span>$2')   // keys
+      .replace(/:\s(&quot;[^&]*?&quot;)/g, ': <span class="v">$1</span>')                    // string values
+      .replace(/:\s(\d+)/g, ': <span class="v">$1</span>');                                  // number values
+    document.getElementById('response-pane').innerHTML = html.replace(/\n/g, '<br>').replace(/ /g, '&nbsp;');
+  }
+
+  function bytesOf(obj){ return JSON.stringify(obj).length; }
+
+  function update(){
+    renderQuery();
+    var gqlObj = gqlResponseObj();
+    renderJSON(gqlObj);
+
+    // GraphQL: only ticked fields, always 1 round trip.
+    var gqlBytes = bytesOf(gqlObj);
+    var gqlTrips = 1;
+
+    // REST: /users/42 always returns the FULL user; if any order field is
+    // wanted, a second call to /users/42/orders returns the FULL orders.
+    var restObj = { user: USER };
+    var restTrips = 1;
+    if (anyOrder()) { restObj.orders = ORDERS; restTrips = 2; }
+    var restBytes = bytesOf(restObj);
+
+    var maxB = Math.max(gqlBytes, restBytes);
+    document.getElementById('gql-bytes').textContent  = gqlBytes.toLocaleString();
+    document.getElementById('rest-bytes').textContent = restBytes.toLocaleString();
+    document.getElementById('gql-bar').style.width  = (100 * gqlBytes / maxB) + '%';
+    document.getElementById('rest-bar').style.width = (100 * restBytes / maxB) + '%';
+    document.getElementById('gql-trips').textContent  = gqlTrips;
+    document.getElementById('rest-trips').textContent = restTrips;
+
+    var saved = restBytes - gqlBytes;
+    var pct = Math.round(100 * saved / restBytes);
+    var tripNote = anyOrder()
+      ? ' and folds <b>' + restTrips + ' REST round trips into 1</b>'
+      : '';
+    document.getElementById('waste-note').innerHTML =
+      'For this exact screen, GraphQL ships <b>' + gqlBytes.toLocaleString() + ' bytes</b> vs REST’s <b>' +
+      restBytes.toLocaleString() + '</b> — about <b>' + pct + '% less</b> over the wire' + tripNote +
+      '. REST can’t shrink: its endpoints hand back a <em>fixed</em> shape no matter what you needed.';
+  }
+
+  document.addEventListener('change', function(e){
+    var cb = e.target.closest('input[type=checkbox]');
+    if (!cb || cb.disabled) return;
+    var scope = cb.getAttribute('data-scope');
+    var field = cb.getAttribute('data-field');
+    if (scope === 'user') selUser[field] = cb.checked;
+    else if (scope === 'order') selOrder[field] = cb.checked;
+    update();
+  });
+
+  buildToggles();
+  update();
+
+  // ── Anchor diagram: data as a graph, the query as a path ─────────────
+  function drawDiagram() {
+    var svg = document.getElementById('gql-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var NS = 'http://www.w3.org/2000/svg';
+
+    function txt(x, y, text, color, size, weight, mono) {
+      var t = document.createElementNS(NS, 'text');
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('fill', color || '#cbd5e1');
+      t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+      t.setAttribute('font-size', size || '11');
+      if (weight) t.setAttribute('font-weight', weight);
+      t.textContent = text;
+      svg.appendChild(t);
+    }
+    function node(x, y, w, h, label, color, on, mono) {
+      var fill = on ? color + '2a' : '#1e293b22';
+      var stroke = on ? color : '#475569';
+      var r = rs.rectangle(x, y, w, h, { stroke:stroke, strokeWidth: on?2:1.4, roughness:1.2, fill:fill, fillStyle:'solid' });
+      svg.appendChild(r);
+      txt(x + w/2, y + h/2 + 4, label, on ? color : '#64748b', mono ? '12' : '12.5', on ? '700' : '500', mono);
+    }
+    function link(x1,y1,x2,y2,on,color){
+      var l = rs.line(x1,y1,x2,y2,{ stroke: on ? (color||'#a78bfa') : '#3f4a5f', strokeWidth: on?2:1.2, roughness:1 });
+      svg.appendChild(l);
+    }
+
+    txt(410, 24, 'Your data is a graph. A query is a path through it — you get exactly the nodes you tick.', '#e2e8f0', '13', '700');
+
+    // Query root
+    node(340, 48, 140, 40, 'query', '#c084fc', true, true);
+    // user node
+    node(340, 130, 140, 44, 'user(id: 42)', '#8b5cf6', true, true);
+    link(410, 88, 410, 130, true, '#c084fc');
+
+    // user fields — some selected (on the slip), some not (dimmed)
+    node(70,  225, 120, 38, 'name',          '#22c55e', true,  true);
+    node(210, 225, 120, 38, 'email',         '#64748b', false, true);
+    node(350, 225, 120, 38, 'avatarUrl',     '#22c55e', true,  true);
+    node(490, 225, 120, 38, 'bio',           '#64748b', false, true);
+    node(630, 225, 120, 38, 'orders(last:3)','#8b5cf6', true,  true);
+
+    var ux = 410, uy = 174;
+    link(ux, uy, 130, 225, true,  '#22c55e');
+    link(ux, uy, 270, 225, false);
+    link(ux, uy, 410, 225, true,  '#22c55e');
+    link(ux, uy, 550, 225, false);
+    link(ux, uy, 690, 225, true,  '#8b5cf6');
+
+    // order fields under orders
+    node(560, 330, 110, 38, 'total',     '#22c55e', true,  true);
+    node(690, 330, 110, 38, 'date',      '#64748b', false, true);
+    link(690, 263, 615, 330, true,  '#22c55e');
+    link(690, 263, 745, 330, false);
+
+    txt(410, 408, 'Green = fields you ticked (returned).  Grey = fields on the graph you didn’t ask for (never fetched).', '#94a3b8', '10.5');
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawDiagram, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawDiagram);
+  }
+})();
+</script>
+
+</body>
+</html>
