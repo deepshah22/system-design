@@ -4,7 +4,7 @@
 **Scope:** 90 lessons total (~30 min each)  
 **Publish cadence:** 3x/week (Mon, Wed, Fri) — not literally tied to a 3-month calendar window; at 3 lessons/week, 90 lessons takes ~30 weeks (~7 months) of real time, paced for actual retention rather than rushing daily.  
 **Target:** Principal Engineer level interview preparation  
-**Last Updated:** 2026-08-05
+**Last Updated:** 2026-08-07
 
 ---
 
@@ -154,7 +154,7 @@ registering the correct public key with GitHub outside of any Claude session's a
 |-----|-------|--------|
 | 15 | REST API Design Best Practices | ✅ Published |
 | 16 | GraphQL Architecture | ✅ Published |
-| 17 | gRPC & Protocol Buffers | ⏳ Scheduled |
+| 17 | gRPC & Protocol Buffers | ✅ Published |
 | 18 | Message Queues & Pub/Sub | ⏳ Scheduled |
 | 19 | Apache Kafka Deep Dive | ⏳ Scheduled |
 | 20 | WebSockets & Server-Sent Events | ⏳ Scheduled |
@@ -304,6 +304,7 @@ system-design/
 
 | Date | Days Published | Notes |
 |------|----------------|-------|
+| 2026-08-07 | Day 17 | Day 17: gRPC &amp; Protocol Buffers — third and final lesson of Week 3 (Communication Patterns), closing the REST → GraphQL → gRPC arc by going *behind the wall* to service-to-service RPC. Full Memorable Learning Framework: a pneumatic-tube visual anchor (sealed binary *capsules* with numbered slots — no field labels — because both ends share a `.proto` blueprint, tubes running both ways at once) with a roughjs diagram (two services, a shared `users.proto` generating both stubs, capsules over one multiplexed HTTP/2 pipe, the raw wire bytes `08 2A 12 0C 41 64 61 …` at the bottom); a story following Platform-team Priya moving 40 internal REST+JSON calls to gRPC (the unwritten wiki "contract" that broke when fraud shipped a string-typed `score` → a compiler-enforced `.proto`, >50% smaller payloads, one HTTP/2 socket instead of forty); a live **JSON-vs-Protobuf byte encoder** (record-count slider + email/bio toggles showing ~59% → 49% → 24% wire savings as the free-text payload grows, with one record shown as highlighted JSON and as annotated Protobuf hex bytes); a how-it-works section (contract-first, `protoc` code-gen stubs, Protobuf, HTTP/2 multiplexing + HPACK + full-duplex); a Protocol Buffers section driving home the core idea — **field numbers, not names, on the wire** (varints, length-delimited strings) — plus the schema-evolution rules (add new numbers, never reuse/renumber, rename freely, `reserved`); the four call types (unary, server-, client-, bidirectional); a hard-parts trade-offs section (no direct browser support → gRPC-Web + proxy, not human-readable/`curl`-able, the L4-vs-L7 load-balancing gotcha, the shared-contract coupling); a REST-vs-GraphQL-vs-gRPC card grid; the Pneumatic-Tube Room memory-palace room continuing the house (teasing Day 18 message queues as the mailroom); an L4-vs-L7 load-balancing active recall (one pod on fire while replicas idle); a Common Mistakes table; and real-world Google/Stubby, Netflix, Uber, and Kubernetes/etcd engineering. Verified via headless Chromium that the encoder computes correctly (49% default, 24% with bio) and there are no page script errors (only the sandbox-blocked roughjs CDN, which loads fine on Pages and degrades gracefully). |
 | 2026-08-07 | Day 16 | Day 16: GraphQL Architecture |
 | 2026-08-05 | Day 16 (staged) | Day 16: GraphQL Architecture — authored into `staging/`, awaiting the next Mon/Wed/Fri auto-publish. Second lesson of Week 3 (Communication Patterns), the direct sequel to Day 15's REST. Full Memorable Learning Framework: a blank-order-slip / bento-box visual anchor (you *write* the exact shape you want at a single window and get back a box shaped compartment-for-compartment like your slip), a story following "Mobile-team Mina" from a REST profile-screen waterfall (38-field user object + N+1 comment/author round-trips on hotel Wi-Fi → the "add a bespoke endpoint per screen" sprawl → one `POST /graphql` where clients hold the pen), an interactive **query builder** (tick fields across user → posts[] → comments[] → author.name and watch the live GraphQL query + exact JSON response shape build, plus headline metrics: REST round-trips vs GraphQL's 1, and REST over-fetched-fields — selecting the commenter's name makes REST's trips jump to 8 = the N+1 under-fetch in numbers), a roughjs data-graph anchor diagram (User→Post→Comment→Author nodes with the query path highlighted, one `POST /graphql` pill, response shaped exactly like the query), a How-It-Works section (single endpoint + query-is-the-shape, the three operation types query/mutation/subscription, the three REST pains it targets), an SDL schema/type-system section (the typed graph as the contract + `@deprecate` as field-level versioning), a resolvers section that drives home the deepest idea — **GraphQL doesn't remove the N+1 problem, it relocates it server-side**, fixed by DataLoader batching (1+1) — a "hard parts" trade-offs section (lost HTTP caching → persisted queries/normalized client caches, arbitrarily-expensive queries → depth/cost limits + disabled introspection, fuzzier observability + partial 200-with-errors), a REST-vs-GraphQL-vs-gRPC card grid, the Concierge-Booth memory-palace room (continuing the house, teasing Day 17 gRPC as the pneumatic-tube back room), a 3am-melting-database active-recall on server-side N+1, a "Common Mistakes & Misconceptions" table, and real-world Meta/GitHub-v4/Shopify-query-cost/Netflix-Federation engineering. Verified via a headless-browser (Playwright/Chromium) render that the query builder computes correctly (default 2 trips/17 over-fetched, all-fields 8 trips/39 over-fetched, none = 0), the response shape updates, and there are no page script errors (only the sandbox-blocked roughjs CDN, which loads fine on Pages and degrades gracefully). |
 | 2026-07-29 | Day 15 | Day 15: REST API Design Best Practices |
@@ -359,5 +360,6 @@ system-design/
 - [x] Day 14 (Consistent Hashing) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Day 15 (REST API Design Best Practices) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
 - [x] Day 16 (GraphQL Architecture) authored into `staging/`, awaiting next Mon/Wed/Fri auto-publish
-- [ ] Days 17–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
+- [x] Day 17 (gRPC & Protocol Buffers) authored and published — completes Week 3's three communication styles (REST → GraphQL → gRPC)
+- [ ] Days 18–90: to be authored into `staging/` and auto-published 3x/week (Mon/Wed/Fri)
 - [x] GitHub Pages enabled on `main` branch — confirmed via the active `pages-build-deployment` Actions workflow on the repo
