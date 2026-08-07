@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 17: gRPC &amp; Protocol Buffers | System Design Mastery</title>
+  <meta name="description" content="REST and GraphQL are the friendly front doors your users' browsers walk through. But behind the wall, your own services call each other millions of times a second — and there, human-readable JSON is pure overhead. gRPC is the staff-only pneumatic-tube system: a strongly-typed .proto contract compiles into client and server code, messages travel as tiny binary Protocol Buffers over HTTP/2, and a single call can even be a two-way stream. Learn the wire format (why dropping field names makes it 60% smaller), the four call types, contract-first schema evolution, and exactly when gRPC beats REST — through story, a live JSON-vs-Protobuf byte encoder, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .hex { color:#fca5a5; } .code-panel .tag { color:#fcd34d; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* encoder sim */
+    .enc-controls { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:1rem; }
+    .enc-controls label { display:block; font-size:.86rem; color:var(--text-secondary); margin:.4rem 0; }
+    .enc-controls input[type=range] { width:100%; accent-color: var(--accent); }
+    .enc-controls .field-row { display:flex; align-items:center; gap:.5rem; padding:.15rem 0; cursor:pointer; }
+    .enc-controls .field-row input { accent-color: var(--accent); width:15px; height:15px; }
+    .enc-controls code { font-family:'JetBrains Mono',monospace; font-size:.82rem; }
+    .rangeval { color: var(--accent-light); font-weight:700; }
+    .prop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:.75rem; margin:1rem 0; }
+    .prop-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.8rem 1rem; text-align:center; }
+    .prop-card .val { font-size:1.5rem; font-weight:800; }
+    .prop-card .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .prop-card .val.rest { color:#ef4444; } .prop-card .val.grpc { color:#22c55e; }
+    .prop-card .val.warn { color:#f59e0b; }
+    /* size bars */
+    .bar-wrap { margin:.5rem 0; }
+    .bar-label { display:flex; justify-content:space-between; font-size:.78rem; color:var(--text-muted); margin-bottom:.2rem; }
+    .bar-track { background: var(--bg-secondary); border:1px solid var(--border); border-radius:6px; height:22px; overflow:hidden; }
+    .bar-fill { height:100%; border-radius:5px 0 0 5px; transition:width .35s ease; }
+    .bar-fill.json { background: linear-gradient(90deg,#ef4444,#f87171); }
+    .bar-fill.pb { background: linear-gradient(90deg,#16a34a,#4ade80); }
+    /* streaming grid */
+    .stream-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:1rem; margin:1rem 0; }
+    .stream-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.15rem; }
+    .stream-card h4 { margin:0 0 .3rem; font-size:.9rem; color: var(--accent-light); }
+    .stream-card .arrows { font-family:'JetBrains Mono',monospace; font-size:1.05rem; color:#7dd3fc; margin:.35rem 0; letter-spacing:1px; }
+    .stream-card p { margin:.2rem 0 0; font-size:.82rem; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 17</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 17 of 90</span>
+      <span class="meta-pill">⏱ ~35 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 3 — Communication Patterns</span>
+    </div>
+    <h1>gRPC &amp; Protocol Buffers<br><span style="color:var(--accent)">The Staff-Only Pneumatic Tubes</span></h1>
+    <p class="lead">
+      REST (Day 15) and GraphQL (Day 16) are the friendly front doors your users' browsers walk through — text,
+      human-readable, forgiving. But <em>behind the wall</em>, your own services call each other millions of times a
+      second, and there, spelling out <code>"isActive": true</code> in text on every message is pure waste. gRPC is
+      the building's <strong>staff-only pneumatic-tube system</strong>: a strongly-typed <code>.proto</code> contract
+      compiles straight into client and server code, messages fly as tiny <strong>binary Protocol Buffers</strong> over
+      <strong>HTTP/2</strong>, and a single call can even be a <strong>two-way stream</strong>. Blazing fast — and not
+      meant for human eyes at all.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#depth">How gRPC Works</a>
+        <a href="#proto">Protocol Buffers</a>
+        <a href="#streaming">The Four Call Types</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#variants">REST vs GraphQL vs gRPC</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🛰️📦</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Out front, guests order at the <strong>Reception Desk</strong> (REST) and the <strong>Concierge Booth</strong>
+            (GraphQL) — everything in plain words, so any visitor can read it. But staff never carry messages by hand
+            between the back rooms. Instead there's a wall of <strong>pneumatic tubes</strong>: you drop a message into a
+            sealed <em>capsule</em>, it's sucked through the tube, and it thunks out the other side in milliseconds.
+            The capsule isn't a hand-written note — it's a <strong>coded slug</strong>: no field labels, just
+            <em>"slot 1 = 42, slot 2 = 'Ada', slot 4 = yes"</em>, because both ends already share the same
+            <strong>blueprint</strong> (<code>the .proto file</code>) that says what each slot means. The tubes run in
+            <strong>both directions at once</strong> — one capsule out, a stream of capsules back, no waiting. It's
+            unreadable to a passing human, and that's the point: it's built for <em>machines talking to machines</em>,
+            as small and fast as physically possible. That tube wall is <strong>gRPC</strong>: a shared binary contract,
+            capsule-tight messages, and a connection that streams both ways.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="grpc-diagram" width="820" height="430" viewBox="0 0 820 430"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Platform-team Priya</span> ran the checkout path at a fast-growing shop. One
+            <code>POST /checkout</code> from the app fanned out, <em>behind the wall</em>, into a storm of internal calls:
+            the order service asked the <strong>inventory</strong> service, the <strong>pricing</strong> service, the
+            <strong>fraud</strong> service, and the <strong>shipping</strong> service — and each of those asked two or
+            three more. A single customer tap became <em>forty</em> service-to-service calls. Every one of them spoke
+            REST over JSON, exactly like the public API.
+          </p>
+          <p>
+            At their traffic, that was quietly expensive. Each internal message spelled out the same field names as
+            text on every request — <code>"customerId"</code>, <code>"warehouseId"</code>, <code>"isExpressEligible"</code>
+            — millions of times a second. Each hop opened a fresh HTTP/1.1 connection, parsed JSON with a schema nobody
+            had actually written down, and prayed the other team hadn't renamed a field. When the fraud team shipped
+            <code>"score"</code> as a string instead of a number one Friday, three downstream services broke in
+            production and nobody caught it until the pager did. The "contract" between services lived only in a wiki
+            page and in everyone's memory.
+          </p>
+          <p>
+            A staff engineer moved the <em>internal</em> calls to <strong>gRPC</strong>. Now every service pair shared a
+            single <code>.proto</code> file — a real, checked-in, strongly-typed contract. Run one compiler and it
+            generated the client and server code in Go, Java, and Python alike, so calling a remote service felt like
+            calling a local function: <code>fraud.Score(order)</code>. The messages went out as <strong>binary
+            Protocol Buffers</strong> — no field names on the wire, just numbered slots — riding one long-lived
+            <strong>HTTP/2</strong> connection that multiplexed all forty calls without reopening sockets. Payloads shrank
+            by more than half, p99 latency dropped, and the fraud team <em>couldn't</em> ship a string where a number
+            belonged — the schema wouldn't compile. Priya hadn't just made the calls faster. She'd turned an unwritten
+            handshake into a <em>contract the compiler enforces</em>.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">gRPC is a <strong>contract-first RPC framework</strong>: you write a
+          <code>.proto</code> schema describing your messages and service methods, and a compiler generates
+          <strong>client + server code</strong> in many languages so a remote call looks like a local function call.
+          Messages travel as <strong>Protocol Buffers</strong> — a compact <em>binary</em> format that drops field names
+          and ships numbered, varint-packed slots — over <strong>HTTP/2</strong>, which multiplexes many calls on one
+          long-lived connection and enables <strong>streaming</strong> (unary, server-, client-, and bidirectional).
+          The trade: it's tiny, fast, and strongly typed, but <em>not human-readable</em>, <em>not natively
+          browser-friendly</em> (you need a gRPC-Web proxy), and harder to poke at with <code>curl</code>. That's why
+          gRPC lives <strong>behind the wall</strong> — service-to-service — while REST/GraphQL greet the outside world.</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Weigh the Same Message on the Wire</h2>
+        <div class="sim-box">
+          <p>Here's a single <code>User</code> record. Watch the same data get encoded two ways: as
+          <strong>JSON</strong> (what REST sends — text, with every field name spelled out) and as a
+          <strong>Protocol Buffer</strong> (what gRPC sends — binary, field names replaced by numbers). Slide the number
+          of records up and toggle a big free-text <code>bio</code> field, and watch the byte counts and the savings
+          move. Notice the twist: when the payload is mostly a long human string, Protobuf's edge <em>shrinks</em> —
+          because there's less field-name overhead left to squeeze out.</p>
+
+          <div class="enc-controls">
+            <label>Number of <code>User</code> records on the wire: <span class="rangeval" id="rv-count">50</span>
+              <input type="range" id="r-count" min="1" max="500" value="50" />
+            </label>
+            <label class="field-row"><input type="checkbox" id="f-email" checked><code>include email</code></label>
+            <label class="field-row"><input type="checkbox" id="f-bio"><code>include a ~100-char <b>bio</b> (big free-text field)</code></label>
+          </div>
+
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val rest" id="m-json">—</div><div class="lbl">JSON bytes (REST)</div></div>
+            <div class="prop-card"><div class="val grpc" id="m-pb">—</div><div class="lbl">Protobuf bytes (gRPC)</div></div>
+            <div class="prop-card"><div class="val warn" id="m-save">—</div><div class="lbl">Smaller on the wire</div></div>
+          </div>
+
+          <div class="bar-wrap">
+            <div class="bar-label"><span>JSON</span><span id="b-json-lbl">—</span></div>
+            <div class="bar-track"><div class="bar-fill json" id="b-json" style="width:100%"></div></div>
+          </div>
+          <div class="bar-wrap">
+            <div class="bar-label"><span>Protobuf</span><span id="b-pb-lbl">—</span></div>
+            <div class="bar-track"><div class="bar-fill pb" id="b-pb" style="width:40%"></div></div>
+          </div>
+
+          <div class="code-label">One record as JSON (what a human — and the wire — sees) →</div>
+          <div class="code-panel" id="json-panel"></div>
+          <div class="code-label">The same record as Protobuf bytes (field names gone; both ends share the .proto) →</div>
+          <div class="code-panel" id="pb-panel"></div>
+        </div>
+      </section>
+
+      <section id="depth">
+        <h2>How gRPC Works — Call a Remote Service Like a Local Function</h2>
+        <p>gRPC (the "g" originally stood for Google, which built and open-sourced it in 2015; today it's a
+        CNCF project) is an <strong>RPC</strong> framework — <em>Remote Procedure Call</em>. The old dream of RPC is
+        simple: make calling code on another machine feel exactly like calling a function in your own program. gRPC
+        delivers that with four moving parts.</p>
+
+        <h3>1. Contract-first: the <code>.proto</code> file is the source of truth</h3>
+        <p>You don't start with a URL, you start with a <strong>schema</strong>. A <code>.proto</code> file declares your
+        message shapes <em>and</em> your service methods. That file is the single, version-controlled contract both
+        sides agree on — no wiki page, no guessing.</p>
+
+        <h3>2. Code generation: the compiler writes the boring parts</h3>
+        <p>You run the Protobuf compiler (<code>protoc</code>) once, and it generates a typed <strong>client stub</strong>
+        and a <strong>server skeleton</strong> in whatever languages you need — Go, Java, Python, C++, Rust, and more, all
+        from the <em>same</em> contract. Calling the remote service becomes <code>stub.GetUser(request)</code>: the stub
+        serializes your message to bytes, ships it, waits, and hands you back a typed reply. Serialization, networking,
+        and type-checking are generated, not hand-written.</p>
+
+        <h3>3. Protocol Buffers on the wire: small and binary</h3>
+        <p>The messages are encoded as <strong>Protocol Buffers</strong> (covered next) — a compact binary format that's
+        typically <em>3–10× smaller</em> and much faster to parse than the equivalent JSON, because it never puts field
+        <em>names</em> on the wire and packs numbers tightly.</p>
+
+        <h3>4. HTTP/2 as the transport: one pipe, many calls, both directions</h3>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Multiplexing.</strong><span>HTTP/1.1 handled one request at a time per
+          connection (or juggled a pool). HTTP/2 sends many independent <em>streams</em> down a single long-lived
+          connection at once — so gRPC's forty internal calls share one socket instead of opening forty.</span></div>
+          <div class="flow-step"><strong>Header compression.</strong><span>HTTP/2's HPACK compresses repeated headers, so
+          the metadata overhead per call is tiny — a big deal when you make billions of small calls.</span></div>
+          <div class="flow-step"><strong>Full-duplex streaming.</strong><span>Because HTTP/2 streams are bidirectional,
+          gRPC can keep a call <em>open</em> and push messages in either direction — the foundation of the four call
+          types you'll see below.</span></div>
+        </div>
+        <p>Put together: you think in functions, the compiler generates the plumbing, the bytes are tiny, and the
+        transport is a fast multiplexed pipe. That's why an internal gRPC call can be an order of magnitude cheaper than
+        the same call over REST+JSON.</p>
+      </section>
+
+      <section id="proto">
+        <h2>Protocol Buffers — the Schema &amp; the Wire Format</h2>
+        <p>Protocol Buffers ("protobuf") are the heart of gRPC, and they're useful on their own too. A <code>.proto</code>
+        file defines <strong>messages</strong> (data shapes) and <strong>services</strong> (the methods, i.e. the RPCs).
+        Here's the contract behind our story:</p>
+        <div class="code-panel"><span class="k">syntax</span> = <span class="s">"proto3"</span>;
+
+<span class="k">message</span> <span class="f">User</span> {
+  <span class="f">int32</span>  id        = <span class="n">1</span>;   <span class="muted"># the number is the field's slot on the wire</span>
+  <span class="f">string</span> name      = <span class="n">2</span>;
+  <span class="f">string</span> email     = <span class="n">3</span>;
+  <span class="f">bool</span>   is_active = <span class="n">4</span>;
+  <span class="f">string</span> bio       = <span class="n">5</span>;   <span class="muted"># added later — old clients just skip slot 5</span>
+}
+
+<span class="k">message</span> <span class="f">GetUserRequest</span>  { <span class="f">int32</span> id = <span class="n">1</span>; }
+
+<span class="k">service</span> <span class="f">Users</span> {                       <span class="muted"># the methods = the RPCs</span>
+  <span class="k">rpc</span> <span class="f">GetUser</span>(GetUserRequest) <span class="k">returns</span> (User);
+  <span class="k">rpc</span> <span class="f">ListUsers</span>(ListRequest)  <span class="k">returns</span> (<span class="k">stream</span> User);  <span class="muted"># server streaming</span>
+}</div>
+
+        <h3>The one idea that explains everything: field numbers, not field names</h3>
+        <p>See the <code>= 1</code>, <code>= 2</code> after each field? Those aren't defaults — they're the field's
+        <strong>tag number</strong>, its permanent slot on the wire. This is the whole trick. JSON writes the field
+        <em>name</em> as text in every single message (<code>"is_active":true</code> is 16 characters). Protobuf writes
+        only the <em>number</em> — field 4 becomes a single byte. The name lives once, in the shared <code>.proto</code>,
+        never on the wire.</p>
+        <p>Each field on the wire is a tiny <strong>(tag, value)</strong> pair. The tag byte packs the field number and a
+        <em>wire type</em> (is this a varint? a length-delimited blob?). Small integers use <strong>varints</strong> —
+        a variable-length encoding where a number under 128 takes just one byte, so you don't pay 4 or 8 bytes for the
+        number <code>42</code>. Strings are length-delimited: one length byte, then the raw UTF-8. That's it. No braces,
+        no quotes, no commas, no repeated names — which is exactly why the encoder above shows Protobuf landing so much
+        smaller.</p>
+
+        <h3>Schema evolution: how you change the contract without breaking anyone</h3>
+        <p>Because the wire uses <em>numbers</em>, not names, the compatibility rules are refreshingly mechanical:</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Adding a field is safe.</strong><span>Give it a brand-new number. Old code that
+          doesn't know field 5 simply ignores the unknown slot; new code reads it. This is how <code>bio</code> got added
+          without a flag day.</span></div>
+          <div class="flow-step"><strong>Never reuse or renumber a field.</strong><span>The <em>number</em> is the
+          identity. Renaming a field in the <code>.proto</code> is harmless (names aren't on the wire); changing its
+          <em>number</em>, or reusing an old number for new data, silently corrupts messages. Retired numbers are marked
+          <code>reserved</code> so nobody grabs them.</span></div>
+          <div class="flow-step"><strong>Renaming is free; retyping is not.</strong><span>You can rename
+          <code>is_active</code> to <code>active</code> freely. But you can't turn slot 4 from a <code>bool</code> into a
+          <code>string</code> — the wire type changes and old bytes misparse.</span></div>
+        </div>
+        <p>This is the same "add fields, deprecate the old, never break the shape" discipline GraphQL uses — but here the
+        compiler enforces it, and the field <em>number</em> is the anchor.</p>
+      </section>
+
+      <section id="streaming">
+        <h2>The Four Call Types — Because HTTP/2 Streams Both Ways</h2>
+        <p>REST is one-shot: request in, response out, done. Because gRPC rides HTTP/2's long-lived bidirectional
+        streams, a single RPC can be any of <strong>four</strong> shapes — and picking the right one is a real design
+        decision.</p>
+        <div class="stream-grid">
+          <div class="stream-card">
+            <h4>Unary</h4>
+            <div class="arrows">→ &nbsp;•&nbsp; ←</div>
+            <p>One request, one response — the classic function call. <em>e.g.</em> <code>GetUser(id) → User</code>.
+            The workhorse; most RPCs are this.</p>
+          </div>
+          <div class="stream-card">
+            <h4>Server streaming</h4>
+            <div class="arrows">→ &nbsp; ←←←←</div>
+            <p>One request, a <em>stream</em> of responses. <em>e.g.</em> "give me all users" or a live price feed — the
+            server pushes results as they're ready instead of one giant payload.</p>
+          </div>
+          <div class="stream-card">
+            <h4>Client streaming</h4>
+            <div class="arrows">→→→→ &nbsp; ←</div>
+            <p>A <em>stream</em> of requests, one response. <em>e.g.</em> uploading a large file in chunks, or shipping a
+            batch of metrics, then getting one summary back.</p>
+          </div>
+          <div class="stream-card">
+            <h4>Bidirectional</h4>
+            <div class="arrows">→→ ⇄ ←←</div>
+            <p>Both sides stream at once over one open call. <em>e.g.</em> a live chat, collaborative editing, or a
+            two-way telemetry channel — send and receive independently.</p>
+          </div>
+        </div>
+        <p>This is gRPC's superpower over plain REST: real-time, long-lived, two-way communication is a first-class,
+        strongly-typed feature — not something you bolt on with WebSockets (Day 20) and a hand-rolled message format.</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts — Why gRPC Isn't Your Public API</h2>
+        <p>Everything that makes gRPC fast behind the wall makes it awkward at the front door. Knowing these is what
+        separates "we use gRPC" from "we know <em>where</em> to use gRPC."</p>
+
+        <h3>1. Browsers can't speak it directly</h3>
+        <p>gRPC needs fine-grained control over HTTP/2 frames that browser <code>fetch()</code> doesn't expose. So you
+        can't call a gRPC service straight from a web page — you need <strong>gRPC-Web</strong> plus a proxy (like Envoy)
+        that translates between the browser and the real gRPC backend. That's friction most public APIs would rather
+        avoid, which is why the edge usually stays REST or GraphQL and gRPC lives <em>internally</em>.</p>
+
+        <h3>2. Not human-readable — debugging is harder</h3>
+        <p>You can't <code>curl</code> a gRPC endpoint and eyeball the JSON, because there is no JSON — it's binary
+        capsules. Reading traffic needs special tooling (<code>grpcurl</code>, protobuf-aware proxies, reflection). The
+        very compactness that saves bytes on the wire costs you the "just look at it" debuggability REST gives away for
+        free.</p>
+
+        <h3>3. Load balancing needs to be HTTP/2-aware</h3>
+        <p>gRPC keeps <em>one long-lived</em> connection and multiplexes many calls over it. A dumb L4 (connection-level)
+        load balancer will happily pin all of a client's traffic to one backend and leave the others idle — because it
+        balances <em>connections</em>, and gRPC opens almost none. You need <strong>L7</strong>, request-aware balancing
+        (Envoy, a service mesh, or client-side balancing) to spread the <em>calls</em>, not just the sockets. It's a
+        classic gRPC-in-production gotcha.</p>
+
+        <h3>4. The contract is a shared dependency</h3>
+        <p>The <code>.proto</code> file is fantastic <em>and</em> it's now a coupling point: both teams depend on it, so
+        you need a way to share and version it (a proto registry, a shared repo). Get the evolution rules wrong — reuse a
+        field number — and you get silent data corruption instead of a loud error.</p>
+
+        <p style="margin-top:1rem;">None of this says "don't use gRPC." It says gRPC trades human-friendliness and
+        browser reach for speed, strong typing, and streaming — a trade that's a clear win between your own services and
+        a clear loss for a public, browser-facing API.</p>
+      </section>
+
+      <section id="variants">
+        <h2>REST vs GraphQL vs gRPC — One Last Look at the Three Doors</h2>
+        <div class="family-grid">
+          <div class="family-card">
+            <h4>REST</h4>
+            <p>Many resource URLs, text/JSON, free HTTP/CDN caching, works everywhere, trivially debuggable. Verbose on
+            the wire; one-shot request/response only.</p>
+            <div class="eg">Best for: public APIs, CRUD, cache-friendly reads. (Day 15)</div>
+          </div>
+          <div class="family-card">
+            <h4>GraphQL</h4>
+            <p>One endpoint, typed schema, client picks exact fields in one trip. Great for diverse clients over a rich
+            data graph; caching &amp; query-cost become your job.</p>
+            <div class="eg">Best for: rich/varied clients, mobile, many related entities. (Day 16)</div>
+          </div>
+          <div class="family-card">
+            <h4>gRPC</h4>
+            <p>Contract-first, binary Protobuf over HTTP/2, code-generated stubs, four streaming modes. Tiny &amp; fast &amp;
+            strongly typed; not browser-native, not human-readable.</p>
+            <div class="eg">Best for: internal service-to-service, low latency, streaming. (today)</div>
+          </div>
+        </div>
+        <p>The clean mental split: <strong>REST</strong> is the public reception desk, <strong>GraphQL</strong> is the
+        concierge who assembles exactly the slice each client wants, and <strong>gRPC</strong> is the pneumatic-tube
+        network the staff use behind the wall. Big systems run all three at once — gRPC internally between microservices,
+        with a REST <em>or</em> GraphQL gateway translating to the outside world. As always, it's not "which one" — it's
+        "which one <em>where</em>."</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You step past the front-of-house counters, through a staff door marked "employees only," into a back
+          corridor humming with vacuum tubes running wall to wall — the Pneumatic-Tube Room.</h4>
+          <div class="palace-room"><span class="palace-icon">🛎️</span><div><strong>The Reception Desk</strong> — <span>REST API Design (Day 15). A fixed menu of nouns and five bell-hops who each know one verb; every guest already knows the rules.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🧾</span><div><strong>The Concierge Booth</strong> — <span>GraphQL (Day 16). One window; you fill in a blank order slip describing the exact shape you want, and get back a bento box matching it in one trip.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🛰️</span><div><strong>The Pneumatic-Tube Room</strong> — <span>gRPC &amp; Protocol Buffers (today). A staff-only wall of vacuum tubes between back rooms. You drop a sealed binary <em>capsule</em> — no labels, just numbered slots, because both ends share the same blueprint (<code>.proto</code>). It rides one fast shared pipe (HTTP/2), and the tubes run both ways at once so capsules stream in either direction. Unreadable to a passing human, and blazing fast — built for machines, not guests.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📮</span><div><strong>The Next Room</strong> — <span>Message Queues &amp; Pub/Sub (Day 18). A mailroom of pigeonholes: services drop messages and walk away, and others pick them up later — talking <em>without</em> waiting for each other at all.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">HTTP/2 (Day 3)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">REST (Day 15)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">GraphQL (Day 16)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">gRPC (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Microservices (Day 27+)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Protobuf field numbers (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Schema evolution</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">WebSockets → streaming (Day 20)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Load Balancing L7 (Day 9)</span>
+        </div>
+        <p>gRPC is the third of Week 3's three communication styles, completing the set: <strong>REST</strong> (Day 15)
+        and <strong>GraphQL</strong> (Day 16) face the outside world; gRPC faces <em>inward</em>, between your own
+        services. It leans hard on <strong>HTTP/2</strong> (Day 3) for multiplexing and streaming, and its four call
+        types overlap with the persistent-connection world of <strong>WebSockets</strong> (Day 20). Its "add fields,
+        never reuse numbers" evolution rules echo GraphQL's <code>@deprecate</code> discipline. And because it holds one
+        long-lived connection, it forces you to revisit <strong>load balancing</strong> (Day 9) at L7 — a thread we pull
+        again when we reach <strong>microservices</strong> and the <strong>service mesh</strong> (Day 27), where gRPC is
+        the default internal dialect.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"gRPC is just a faster REST — use it everywhere."</td><td>It's for <em>service-to-service</em>. Browsers can't call it directly (you need gRPC-Web + a proxy), you can't <code>curl</code> it, and it loses free HTTP caching. Public, browser-facing APIs usually stay REST/GraphQL; gRPC lives behind the wall.</td></tr>
+          <tr><td>"Protobuf is small because it compresses the data."</td><td>No compression required — it's small because it <strong>never puts field names on the wire</strong> (just numbers) and packs integers as varints. The names live once, in the shared <code>.proto</code>. (You can still gzip on top.)</td></tr>
+          <tr><td>"The field number is just cosmetic / a default value."</td><td>The number is the field's <strong>identity on the wire</strong>. Rename freely; <em>never</em> reuse or change a number — doing so silently corrupts messages. Retired numbers get marked <code>reserved</code>.</td></tr>
+          <tr><td>"gRPC load-balances like any HTTP service."</td><td>It holds <em>one</em> long-lived HTTP/2 connection and multiplexes calls over it, so an L4 balancer pins all traffic to one backend. You need L7 / request-aware balancing (Envoy, service mesh, or client-side).</td></tr>
+          <tr><td>"gRPC only does request/response like REST."</td><td>It has <strong>four</strong> call types — unary, server-streaming, client-streaming, and bidirectional — because HTTP/2 streams both ways. Real-time streaming is first-class, not bolted on.</td></tr>
+          <tr><td>"Changing the .proto is a deploy-everyone-at-once event."</td><td>Not if you follow the rules: <em>add</em> new fields with new numbers and old clients ignore them. gRPC is designed for rolling, backward-compatible schema evolution.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ A team moves 40 internal microservices from REST+JSON to gRPC and
+          payloads shrink by 60% — but under load, one backend pod is on fire at 100% CPU while its four identical
+          replicas sit nearly idle. Traffic <em>is</em> hitting the service. What happened, and what's the fix?
+          (click to reveal)</div>
+          <div class="recall-answer">Their <strong>load balancer is balancing connections (L4), not requests</strong>.
+          gRPC keeps <em>one long-lived HTTP/2 connection</em> per client and multiplexes all its calls over that single
+          socket. An L4 balancer sees one connection, pins it to one backend, and there it stays — so every request from
+          that client lands on the same pod while the replicas starve. REST over HTTP/1.1 accidentally spread load
+          because it opened many short connections; gRPC's efficiency removes that accident. The fix is
+          <strong>L7 (request-aware) load balancing</strong>: an HTTP/2-aware proxy like Envoy, a service mesh, or
+          client-side load balancing that distributes individual <em>calls</em> across backends rather than whole
+          connections. The deeper lesson: gRPC's one-connection efficiency is a feature <em>and</em> a load-balancing
+          trap — you must balance at the request layer, not the socket layer.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🔍 Google</div><p>Built gRPC from its internal "Stubby" framework, which has carried the majority of Google's inter-service traffic for years — tens of billions of calls per second across the fleet. Protocol Buffers are the lingua franca of nearly every internal API there.</p></div>
+          <div class="realworld-card"><div class="rw-company">🎬 Netflix</div><p>Adopted gRPC for internal service-to-service communication, generating typed clients so hundreds of microservices share strongly-typed contracts instead of hand-written REST clients — cutting integration bugs and boilerplate across teams.</p></div>
+          <div class="realworld-card"><div class="rw-company">🚗 Uber</div><p>Runs thousands of microservices and leaned into gRPC + Protobuf for the low-latency, high-throughput internal calls behind a ride request, where JSON's parsing cost and payload size were real money at their scale.</p></div>
+          <div class="realworld-card"><div class="rw-company">☸️ Kubernetes &amp; etcd</div><p>The control plane you'll meet later is gRPC all the way down: <strong>etcd</strong> (Kubernetes' brain) exposes a gRPC API, and components stream cluster changes over it — a textbook case of internal, streaming, machine-to-machine RPC.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: In one sentence, what is gRPC?</div>
+          <div class="fc-a">A: A contract-first RPC framework where a <code>.proto</code> schema generates typed client/server code, and messages travel as compact binary <strong>Protocol Buffers</strong> over <strong>HTTP/2</strong> — making a remote call look like a local function and supporting streaming both ways.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is a Protobuf message so much smaller than the equivalent JSON?</div>
+          <div class="fc-a">A: It never puts field <em>names</em> on the wire — each field is a <strong>numbered slot</strong> (a tag) plus a tightly-packed value (small ints as varints, strings length-prefixed). The names live once in the shared <code>.proto</code>, not in every message; and there are no braces, quotes, or commas.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What are the four gRPC call types?</div>
+          <div class="fc-a">A: <strong>Unary</strong> (one→one), <strong>server streaming</strong> (one→many), <strong>client streaming</strong> (many→one), and <strong>bidirectional</strong> (many⇄many). They exist because gRPC rides HTTP/2's long-lived bidirectional streams.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why doesn't gRPC work directly from a web browser?</div>
+          <div class="fc-a">A: It needs low-level control over HTTP/2 frames that browser <code>fetch()</code> doesn't expose. You bridge it with <strong>gRPC-Web</strong> and a proxy (e.g. Envoy). That's a big reason gRPC stays internal while REST/GraphQL face the public.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What's the golden rule of evolving a <code>.proto</code>?</div>
+          <div class="fc-a">A: <strong>Add fields with new numbers; never reuse or change an existing field number.</strong> Old clients ignore unknown fields (safe additions); renaming is free (names aren't on the wire), but reusing a number silently corrupts data — retired numbers are marked <code>reserved</code>.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Explain why the same <code>User</code> record is smaller as a Protobuf than as JSON — name the two main reasons.</li>
+          <li>What is contract-first development, and what does <code>protoc</code> generate from a <code>.proto</code> file?</li>
+          <li>List the four gRPC call types and give a real use case for each.</li>
+          <li>Why does gRPC need HTTP/2 rather than HTTP/1.1 — name two properties it depends on.</li>
+          <li>A field is renamed <code>is_active → active</code> and its number left alone; does the wire break? What if the number changed? Why?</li>
+          <li>Give two reasons gRPC is a poor fit for a public, browser-facing API.</li>
+          <li>Explain the gRPC load-balancing gotcha and its fix in one or two sentences.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: gRPC is the <strong>pneumatic tube behind the wall</strong>. A shared,
+          strongly-typed <code>.proto</code> contract compiles into client and server code, so a remote call feels like a
+          local function; messages fly as tiny <strong>binary Protocol Buffers</strong> — field <em>numbers</em>, not
+          names, on the wire — over a multiplexed <strong>HTTP/2</strong> connection that can stream in either direction.
+          The price is that it's not human-readable and not browser-native, which is exactly why it lives
+          <em>internally</em>, between your own services, while REST and GraphQL greet the outside world. That completes
+          Week 3's three doors. Tomorrow (Day 18) we stop making services <em>wait</em> on each other at all: we hand
+          them a mailroom — <strong>Message Queues &amp; Pub/Sub</strong> — where you drop a message and walk away.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-16.html">← Day 16: GraphQL Architecture</a>
+        <a href="day-18.html" class="coming-soon-link">Day 18: Message Queues &amp; Pub/Sub →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 17 of 90 — gRPC &amp; Protocol Buffers</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── JSON vs Protobuf byte encoder ────────────────────────────────────
+  // Sample record used for both encodings.
+  var REC = {
+    id: 42,
+    name: 'Ada Lovelace',
+    email: 'ada@analytical.io',
+    is_active: true,
+    bio: 'Mathematician and writer, chiefly known for work on the Analytical Engine; wrote the first algorithm.'
+  };
+
+  var rCount  = document.getElementById('r-count');
+  var rvCount = document.getElementById('rv-count');
+  var fEmail  = document.getElementById('f-email');
+  var fBio    = document.getElementById('f-bio');
+
+  var mJson = document.getElementById('m-json');
+  var mPb   = document.getElementById('m-pb');
+  var mSave = document.getElementById('m-save');
+  var bJson = document.getElementById('b-json');
+  var bPb   = document.getElementById('b-pb');
+  var bJsonL= document.getElementById('b-json-lbl');
+  var bPbL  = document.getElementById('b-pb-lbl');
+  var jsonPanel = document.getElementById('json-panel');
+  var pbPanel   = document.getElementById('pb-panel');
+
+  function byteLen(str){ return unescape(encodeURIComponent(str)).length; } // UTF-8 byte length
+  function varintLen(n){ n = Math.floor(Math.abs(n)); var b = 1; n = Math.floor(n/128); while(n>0){ b++; n = Math.floor(n/128); } return b; }
+  function fmt(n){ return n >= 1000 ? (n/1000).toFixed(n>=100000?0:1) + ' KB' : n + ' B'; }
+
+  // ---- JSON size of ONE record (the actual serialized text) ----
+  function jsonOne(withEmail, withBio){
+    var o = { id: REC.id, name: REC.name };
+    if (withEmail) o.email = REC.email;
+    o.is_active = REC.is_active;
+    if (withBio) o.bio = REC.bio;
+    return JSON.stringify(o);
+  }
+
+  // ---- Protobuf size of ONE record ----
+  // Each field: tag byte (field# small ⇒ 1 byte) + value bytes.
+  function pbSize(withEmail, withBio){
+    var s = 0;
+    s += 1 + varintLen(REC.id);                              // field 1: int32 (tag + varint)
+    var nb = byteLen(REC.name);  s += 1 + varintLen(nb) + nb; // field 2: string (tag + len + bytes)
+    if (withEmail){ var eb = byteLen(REC.email); s += 1 + varintLen(eb) + eb; } // field 3
+    s += 1 + 1;                                              // field 4: bool (tag + 1 byte)
+    if (withBio){ var bb = byteLen(REC.bio); s += 1 + varintLen(bb) + bb; }     // field 5
+    return s;
+  }
+
+  // ---- Highlighted JSON of one record ----
+  function jsonHtml(withEmail, withBio){
+    var K = function(k){ return '<span class="f">"' + k + '"</span>'; };
+    var S = function(v){ return '<span class="s">"' + v + '"</span>'; };
+    var N = function(v){ return '<span class="n">' + v + '</span>'; };
+    var rows = [];
+    rows.push('  ' + K('id') + ': ' + N(REC.id));
+    rows.push('  ' + K('name') + ': ' + S(REC.name));
+    if (withEmail) rows.push('  ' + K('email') + ': ' + S(REC.email));
+    rows.push('  ' + K('is_active') + ': ' + N('true'));
+    if (withBio) rows.push('  ' + K('bio') + ': ' + S(REC.bio.slice(0,40) + '…'));
+    return '{\n' + rows.join(',\n') + '\n}';
+  }
+
+  // ---- Annotated Protobuf bytes of one record ----
+  function hex(n){ var h = (n & 0xff).toString(16).toUpperCase(); return h.length < 2 ? '0'+h : h; }
+  function tagByte(field, wire){ return hex((field << 3) | wire); }
+  function strHexPreview(str, max){
+    var bytes = unescape(encodeURIComponent(str));
+    var out = [], n = Math.min(bytes.length, max||6);
+    for (var i=0;i<n;i++) out.push(hex(bytes.charCodeAt(i)));
+    if (bytes.length > n) out.push('…');
+    return out.join(' ');
+  }
+  function pad(str, n){ str = String(str); while(str.length < n) str += ' '; return str; }
+
+  function pbHtml(withEmail, withBio){
+    var L = function(bytesHtml, note){ return '<span class="hex">' + pad(bytesHtml, 22) + '</span><span class="muted">' + note + '</span>'; };
+    var lines = [];
+    lines.push(L(tagByte(1,0) + ' ' + hex(REC.id), '# field 1 (id)     varint = 42'));
+    var nb = byteLen(REC.name);
+    lines.push(L(tagByte(2,2) + ' ' + hex(nb) + ' ' + strHexPreview(REC.name), '# field 2 (name)   len ' + nb + ' → "Ada Lovelace"'));
+    if (withEmail){ var eb = byteLen(REC.email);
+      lines.push(L(tagByte(3,2) + ' ' + hex(eb) + ' ' + strHexPreview(REC.email), '# field 3 (email)  len ' + eb + ' → "ada@…"')); }
+    lines.push(L(tagByte(4,0) + ' 01', '# field 4 (is_active) bool = true'));
+    if (withBio){ var bb = byteLen(REC.bio);
+      lines.push(L(tagByte(5,2) + ' ' + hex(bb) + ' ' + strHexPreview(REC.bio), '# field 5 (bio)    len ' + bb + ' → "Mathema…"')); }
+    lines.push('<span class="muted">// no braces, no quotes, no field names — both ends share the .proto</span>');
+    return lines.join('\n');
+  }
+
+  function render(){
+    var count = parseInt(rCount.value, 10);
+    var withEmail = fEmail.checked, withBio = fBio.checked;
+    rvCount.textContent = count;
+
+    var jOne = byteLen(jsonOne(withEmail, withBio));
+    var pOne = pbSize(withEmail, withBio);
+    // JSON array framing: [ ... , ... ] → commas + brackets. Protobuf: repeated field framing ≈ tag+len per record.
+    var jTotal = jOne * count + (count - 1) + 2;
+    var pTotal = (pOne + 1 + varintLen(pOne)) * count;
+
+    mJson.textContent = fmt(jTotal);
+    mPb.textContent   = fmt(pTotal);
+    var save = Math.round((1 - pTotal / jTotal) * 100);
+    mSave.textContent = save + '%';
+
+    var maxT = Math.max(jTotal, pTotal);
+    bJson.style.width = (jTotal / maxT * 100) + '%';
+    bPb.style.width   = (pTotal / maxT * 100) + '%';
+    bJsonL.textContent = fmt(jTotal);
+    bPbL.textContent   = fmt(pTotal);
+
+    jsonPanel.innerHTML = jsonHtml(withEmail, withBio);
+    pbPanel.innerHTML   = pbHtml(withEmail, withBio);
+  }
+
+  rCount.addEventListener('input', render);
+  fEmail.addEventListener('change', render);
+  fBio.addEventListener('change', render);
+  render();
+
+  // ── Anchor diagram: two services, shared .proto, HTTP/2 tubes ────────
+  function drawDiagram(){
+    var svg = document.getElementById('grpc-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var NS = 'http://www.w3.org/2000/svg';
+
+    function txt(x, y, text, color, size, weight, mono, anchor){
+      var t = document.createElementNS(NS, 'text');
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      t.setAttribute('text-anchor', anchor || 'middle');
+      t.setAttribute('fill', color || '#cbd5e1');
+      t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+      t.setAttribute('font-size', size || '11');
+      if (weight) t.setAttribute('font-weight', weight);
+      t.textContent = text;
+      svg.appendChild(t);
+    }
+
+    txt(410, 26, 'Two services share one .proto contract — capsules fly binary over HTTP/2, both ways', '#e2e8f0', '13', '700');
+
+    // Shared .proto contract box (top center)
+    var px = 320, py = 52, pw = 180, ph = 58;
+    var proto = rs.rectangle(px, py, pw, ph, { stroke:'#a78bfa', strokeWidth:1.8, roughness:1.1, fill:'#a78bfa22', fillStyle:'solid' });
+    svg.appendChild(proto);
+    txt(410, py + 22, 'users.proto', '#c4b5fd', '12', '700', true);
+    txt(410, py + 40, 'the shared contract', '#94a3b8', '9.5');
+
+    // Left service: client stub
+    var lx = 70, ly = 190, lw = 190, lh = 120;
+    var lb = rs.rectangle(lx, ly, lw, lh, { stroke:'#3b82f6', strokeWidth:2, roughness:1.1, fill:'#3b82f622', fillStyle:'solid' });
+    svg.appendChild(lb);
+    txt(lx + lw/2, ly + 26, 'Order Service', '#dbeafe', '12.5', '700');
+    txt(lx + lw/2, ly + 48, 'client stub (generated)', '#94a3b8', '9.5');
+    txt(lx + lw/2, ly + 78, 'fraud.Score(order)', '#7dd3fc', '11', '700', true);
+    txt(lx + lw/2, ly + 98, 'feels like a local call', '#64748b', '9');
+
+    // Right service: server skeleton
+    var rx = 560, ry = 190, rw = 190, rh = 120;
+    var rb = rs.rectangle(rx, ry, rw, rh, { stroke:'#3b82f6', strokeWidth:2, roughness:1.1, fill:'#3b82f622', fillStyle:'solid' });
+    svg.appendChild(rb);
+    txt(rx + rw/2, ry + 26, 'Fraud Service', '#dbeafe', '12.5', '700');
+    txt(rx + rw/2, ry + 48, 'server skeleton (generated)', '#94a3b8', '9.5');
+    txt(rx + rw/2, ry + 78, 'rpc Score(Order)', '#7dd3fc', '11', '700', true);
+    txt(rx + rw/2, ry + 98, 'returns Verdict', '#64748b', '9');
+
+    // dashed lines from proto to both stubs (contract generates both)
+    svg.appendChild(rs.line(px + 20, py + ph, lx + lw/2, ly, { stroke:'#a78bfa', strokeWidth:1.2, roughness:1, strokeLineDash:[5,5] }));
+    svg.appendChild(rs.line(px + pw - 20, py + ph, rx + rw/2, ry, { stroke:'#a78bfa', strokeWidth:1.2, roughness:1, strokeLineDash:[5,5] }));
+
+    // The pneumatic tubes (HTTP/2) between the two services
+    var tubeY1 = 232, tubeY2 = 268;
+    svg.appendChild(rs.line(lx + lw, tubeY1, rx, tubeY1, { stroke:'#22c55e', strokeWidth:2, roughness:1.1 }));
+    svg.appendChild(rs.line(lx + lw, tubeY2, rx, tubeY2, { stroke:'#22c55e', strokeWidth:2, roughness:1.1 }));
+    txt(410, tubeY1 - 8, '→  request capsule', '#86efac', '10', '600', true);
+    txt(410, tubeY2 + 18, '←←←  streamed replies', '#86efac', '10', '600', true);
+
+    // little binary capsules on the tube
+    [300, 360, 470].forEach(function(cx){
+      svg.appendChild(rs.rectangle(cx, tubeY1 - 7, 30, 14, { stroke:'#4ade80', strokeWidth:1.2, roughness:1.4, fill:'#0b1120', fillStyle:'solid' }));
+    });
+    txt(410, 250, 'HTTP/2 · one multiplexed connection', '#94a3b8', '9', '600');
+
+    // bottom caption
+    txt(410, 356, '08 2A 12 0C 41 64 61 …', '#fca5a5', '12', '700', true);
+    txt(410, 378, 'the capsule on the wire — numbered slots, no field names, unreadable to humans', '#94a3b8', '10.5');
+    txt(410, 402, 'Protocol Buffers: field 1 = 42, field 2 = "Ada…"  ·  both ends decode it with the shared .proto', '#64748b', '9.5');
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawDiagram, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawDiagram);
+  }
+})();
+</script>
+
+</body>
+</html>
