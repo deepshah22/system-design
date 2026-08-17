@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 18: Message Queues &amp; Pub/Sub | System Design Mastery</title>
+  <meta name="description" content="REST, GraphQL and gRPC are all synchronous — you call a service and wait. Message queues break that spell. A producer drops a message into a broker and walks away; a consumer picks it up whenever it's ready. Learn how queues decouple services in time, absorb traffic spikes, and survive downstream outages; the difference between a point-to-point queue (competing workers share the load) and pub/sub (every subscriber gets its own copy); delivery guarantees, acks, ordering, and dead-letter queues. Taught through story, a live producer/consumer backlog simulator, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* queue simulator */
+    .sim-controls { display:flex; flex-wrap:wrap; gap:1.25rem 2rem; align-items:flex-end; margin:1rem 0 1.25rem; }
+    .ctrl { display:flex; flex-direction:column; gap:.35rem; }
+    .ctrl label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; }
+    .ctrl input[type=range] { width:170px; accent-color: var(--accent); }
+    .ctrl .ctrl-val { font-family:'JetBrains Mono',monospace; font-size:.82rem; color:var(--text-secondary); }
+    .mode-toggle { display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+    .mode-toggle button { background:var(--bg-card); color:var(--text-muted); border:none; padding:.5rem .9rem; font-size:.82rem; font-weight:700; cursor:pointer; }
+    .mode-toggle button.active { background:var(--accent); color:#fff; }
+    .sim-btns { display:flex; gap:.6rem; flex-wrap:wrap; margin-bottom:1rem; }
+    .prop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:.75rem; margin:0 0 1rem; }
+    .prop-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.8rem 1rem; text-align:center; }
+    .prop-card .val { font-size:1.5rem; font-weight:800; font-family:'JetBrains Mono',monospace; }
+    .prop-card .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .prop-card .val.prod { color:#3b82f6; } .prop-card .val.depth { color:#f59e0b; } .prop-card .val.deliv { color:#22c55e; }
+    .status-line { padding:.6rem .9rem; border-radius:8px; font-size:.85rem; font-weight:600; margin:.2rem 0 1rem; border:1px solid var(--border); }
+    .status-line.ok { background:#22c55e18; color:#86efac; border-color:#22c55e55; }
+    .status-line.bad { background:#ef444418; color:#fca5a5; border-color:#ef444455; }
+    .bar-wrap { margin:.4rem 0 1rem; }
+    .bar-row { display:flex; align-items:center; gap:.6rem; margin:.35rem 0; font-size:.8rem; }
+    .bar-row .bar-lbl { width:110px; color:var(--text-muted); font-weight:600; }
+    .bar-track { flex:1; background:var(--bg-secondary); border-radius:6px; height:18px; overflow:hidden; }
+    .bar-fill { height:100%; border-radius:6px; transition:width .3s ease; }
+    .bar-fill.rate { background:#3b82f6; } .bar-fill.cap { background:#22c55e; } .bar-fill.depth { background:#f59e0b; }
+    .bar-row .bar-val { width:70px; text-align:right; font-family:'JetBrains Mono',monospace; color:var(--text-secondary); }
+    .consumer-row { display:flex; flex-wrap:wrap; gap:.6rem; margin-top:.5rem; }
+    .consumer-box { flex:1 1 90px; min-width:80px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:.55rem .5rem; text-align:center; }
+    .consumer-box .cb-icon { font-size:1.15rem; } .consumer-box .cb-name { font-size:.72rem; color:var(--text-muted); font-weight:700; margin-top:.15rem; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 18</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 18 of 90</span>
+      <span class="meta-pill">⏱ ~35 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 3 — Communication Patterns</span>
+    </div>
+    <h1>Message Queues &amp; Pub/Sub<br><span style="color:var(--accent)">Drop the Letter, Walk Away</span></h1>
+    <p class="lead">
+      REST (Day 15), GraphQL (Day 16), and gRPC (Day 17) are all the same deal underneath: you <em>call</em> a
+      service and <strong>wait</strong> for it to answer. If it's slow, you're slow. If it's down, you fail. A
+      <strong>message queue</strong> breaks that spell. Instead of calling a colleague and standing at their desk,
+      you drop a note in the <strong>mailroom</strong> and walk away — the note waits safely until someone is free to
+      pick it up. That one shift, from <em>synchronous calls</em> to <em>asynchronous messages</em>, is how systems
+      absorb traffic spikes, survive outages, and stop being chained together.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#depth">How Queues Work</a>
+        <a href="#patterns">Queue vs Pub/Sub</a>
+        <a href="#guarantees">Delivery &amp; Ordering</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#variants">The Broker Landscape</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">📬💨</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Down the hall from the reception desk and the pneumatic-tube room is the <strong>Mailroom</strong>. When
+            you have work for another team, you don't march over and stand at their desk waiting for a reply. You
+            scribble it on a slip, drop it in the <strong>inbox slot</strong>, and <em>go back to your own work</em>.
+            The mail sits safely in the tray — it doesn't matter if the other team is at lunch, buried, or their whole
+            desk is being moved; the slip <strong>waits</strong>. Later, when a clerk is free, they take the next slip
+            off the tray and handle it. Two things make this magical. First, <strong>the mailroom is a buffer in
+            time</strong>: a hundred slips can pile up during a rush and get worked off slowly — nobody is blocked.
+            Second, there are <strong>two kinds of mail</strong>. A <em>work order</em> goes to <strong>exactly one</strong>
+            available clerk (whoever grabs it first) — that's a <strong>queue</strong>. An <em>announcement</em> ("we
+            just shipped order #91!") is <strong>photocopied to every department</strong> that subscribed to hear it —
+            that's <strong>pub/sub</strong>. Hold that image: you drop the letter and walk away, the tray holds it, and
+            it either goes to <em>one</em> clerk or to <em>everyone</em> who cares.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="mq-diagram" width="820" height="430" viewBox="0 0 820 430"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Orders-team Omar</span> owned the checkout service, and it was starting to
+            buckle. When a customer clicked <em>Place Order</em>, his code did six things <strong>in a row, and waited
+            for each</strong>: save the order, charge the card, send a confirmation email, update the warehouse, refresh
+            analytics, and ping the loyalty service. Each was a synchronous call (Days 15–17). The checkout button only
+            turned green when <em>all six</em> came back. So the button was as slow as the slowest service and as
+            reliable as the <em>flakiest</em> one. The day the email provider had a bad afternoon, customers couldn't
+            check out at all — because the code was still politely <em>waiting</em> for an email to send.
+          </p>
+          <p>
+            A staff engineer sat down with Omar and asked one question: "Does the customer's <em>Place Order</em> really
+            need to wait for the email to physically go out?" No. It just needs the order <em>saved and paid</em>.
+            Everything else is <strong>follow-up work</strong> that can happen a few seconds later. So they put a
+            <strong>message broker</strong> in the middle. Now checkout does two things and returns: save the order,
+            then <strong>publish</strong> a small message — <code>OrderPlaced{id: 991, ...}</code> — into the broker
+            and immediately show the customer their confirmation. Done. Fast. The email service, the warehouse, the
+            analytics pipeline, and loyalty each became a <strong>consumer</strong> that reads <code>OrderPlaced</code>
+            messages <em>on its own schedule</em>.
+          </p>
+          <p>
+            The payoffs were exactly the mailroom's two gifts. <strong>Decoupling:</strong> checkout no longer knew or
+            cared who listened — you could add a "fraud review" consumer next quarter without touching checkout at all.
+            <strong>Buffering:</strong> when a flash sale sent 10× the normal traffic, the messages simply <em>piled
+            up</em> in the queue and the workers chewed through the backlog over the next few minutes — nothing fell
+            over, nothing timed out. And that bad email afternoon? Checkout stayed fast and green; the email messages
+            waited patiently in the queue, and the moment the provider recovered, the workers drained the backlog and
+            every customer got their (slightly late) confirmation. Omar hadn't made his services faster individually —
+            he'd <strong>stopped chaining their fates together</strong>.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">A <strong>message queue</strong> is a durable buffer that sits between a
+          <strong>producer</strong> and a <strong>consumer</strong> so they don't have to be available <em>at the same
+          time</em>. The producer <strong>publishes</strong> a message and moves on; the <strong>broker</strong> stores
+          it safely; the consumer <strong>reads and acknowledges</strong> it whenever it's ready. This is
+          <strong>asynchronous</strong> communication, and it buys three things: <strong>decoupling</strong> (services
+          don't call each other by name), <strong>buffering</strong> (spikes pile up instead of knocking things over),
+          and <strong>resilience</strong> (a down consumer just means a growing backlog, not a failed request). There
+          are two delivery shapes: a <strong>point-to-point queue</strong>, where competing workers <em>share</em> the
+          load and each message goes to exactly one of them, and <strong>pub/sub</strong>, where each message is
+          <em>fanned out</em> so every interested subscriber gets its own copy. The cost of all this is a new moving
+          part to run and a shift to <strong>eventual</strong> results — the work happens soon, not right now.</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — The Backlog Simulator</h2>
+        <div class="sim-box">
+          <p>This is the whole point of a queue in one widget. Messages arrive from the producer at a rate you set; the
+          broker holds them; consumers drain them. Each consumer clears <strong>4 messages/second</strong>. Push
+          <strong>Start</strong>, then turn the producer rate up past what your consumers can handle and watch the
+          <strong>backlog grow</strong>. Add workers to catch up. Hit <strong>Burst</strong> to slam in 25 messages at
+          once and watch the queue <em>absorb</em> the spike and drain it — that's buffering. Then flip to
+          <strong>Pub/Sub</strong> and notice the difference: extra subscribers no longer <em>share</em> the load — each
+          one gets <em>every</em> message.</p>
+
+          <div class="mode-toggle" style="margin-bottom:1rem;">
+            <button id="mode-queue" class="active">Queue (share the load)</button>
+            <button id="mode-pubsub">Pub/Sub (fan-out)</button>
+          </div>
+
+          <div class="sim-controls">
+            <div class="ctrl">
+              <label>Producer rate — <span class="ctrl-val" id="rate-val">6 msg/s</span></label>
+              <input type="range" id="rate" min="0" max="24" step="1" value="6">
+            </div>
+            <div class="ctrl">
+              <label id="consumers-label">Workers — <span class="ctrl-val" id="cons-val">2</span></label>
+              <input type="range" id="consumers" min="1" max="6" step="1" value="2">
+            </div>
+          </div>
+
+          <div class="sim-btns">
+            <button id="sim-toggle" class="btn btn-primary btn-sm">▶ Start</button>
+            <button id="sim-burst" class="btn btn-outline btn-sm">⚡ Burst +25</button>
+            <button id="sim-reset" class="btn btn-outline btn-sm">↺ Reset</button>
+          </div>
+
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val prod" id="m-prod">0</div><div class="lbl">Produced</div></div>
+            <div class="prop-card"><div class="val depth" id="m-depth">0</div><div class="lbl" id="depth-lbl">Queue depth</div></div>
+            <div class="prop-card"><div class="val deliv" id="m-deliv">0</div><div class="lbl">Delivered</div></div>
+          </div>
+
+          <div class="status-line ok" id="sim-status">Idle — press Start.</div>
+
+          <div class="bar-wrap">
+            <div class="bar-row"><span class="bar-lbl">Arriving</span><span class="bar-track"><span class="bar-fill rate" id="bar-rate"></span></span><span class="bar-val" id="bar-rate-v">6/s</span></div>
+            <div class="bar-row"><span class="bar-lbl" id="cap-lbl">Capacity</span><span class="bar-track"><span class="bar-fill cap" id="bar-cap"></span></span><span class="bar-val" id="bar-cap-v">8/s</span></div>
+            <div class="bar-row"><span class="bar-lbl">Backlog</span><span class="bar-track"><span class="bar-fill depth" id="bar-depth"></span></span><span class="bar-val" id="bar-depth-v">0</span></div>
+          </div>
+
+          <div class="consumer-row" id="consumer-row"></div>
+        </div>
+      </section>
+
+      <section id="depth">
+        <h2>How Message Queues Work — Producer, Broker, Consumer</h2>
+        <p>Strip away the branding (Kafka, RabbitMQ, SQS…) and every message system is the same three roles plus one
+        promise. The <strong>producer</strong> creates a message and hands it off. The <strong>broker</strong> (the
+        message queue / message-oriented middleware) stores it durably. The <strong>consumer</strong> reads it and does
+        the work. The promise that makes it trustworthy is the <strong>acknowledgement</strong>.</p>
+
+        <h3>1. Publish — fire and (almost) forget</h3>
+        <p>The producer sends a message to the broker and gets back a quick "got it." That's the whole interaction — it
+        does <em>not</em> wait for anyone to process the message. This is why publishing is fast and why the producer
+        can't be dragged down by a slow or dead consumer. The message is now the broker's responsibility.</p>
+
+        <h3>2. Store — the durable buffer</h3>
+        <p>The broker holds the message, typically <strong>persisted to disk</strong> so it survives a broker restart,
+        until a consumer has successfully handled it. This buffer is the queue's superpower: it lets a fast producer and
+        a slow consumer coexist, and it lets a <em>burst</em> of arrivals wait in line instead of overwhelming the
+        workers. The number of messages waiting is the <strong>queue depth</strong> (or "lag") — the single most
+        important thing to monitor.</p>
+
+        <h3>3. Consume &amp; acknowledge — the safety net</h3>
+        <p>A consumer pulls the next message and processes it. Crucially, the broker doesn't <em>delete</em> the message
+        yet — it holds it "invisible" until the consumer sends an <strong>ack</strong> ("done, you can drop it"). If the
+        consumer crashes mid-work and never acks, the broker's timer fires and the message becomes visible again for
+        <em>another</em> consumer to retry. That's how a queue guarantees work isn't silently lost when a worker dies.</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Backpressure &amp; scaling.</strong><span>If the backlog grows, you don't
+          drop traffic — you add <em>consumers</em>. Because workers compete for the same queue, adding a worker
+          instantly increases drain rate. The queue turns a scaling problem into a knob you can turn.</span></div>
+          <div class="flow-step"><strong>Push vs pull.</strong><span>Some brokers <em>push</em> messages to consumers;
+          others let consumers <em>pull</em> at their own pace. Pull-based (Kafka, SQS) lets a slow consumer avoid being
+          flooded — it simply asks for the next batch when ready.</span></div>
+          <div class="flow-step"><strong>Dead-letter queue (DLQ).</strong><span>A "poison" message that fails every
+          time would retry forever and block the line. After N failed attempts the broker shunts it to a
+          <strong>dead-letter queue</strong> — a side tray for humans to inspect — so one bad message can't jam the
+          whole pipeline.</span></div>
+        </div>
+      </section>
+
+      <section id="patterns">
+        <h2>Queue vs Pub/Sub — One Clerk or Everyone</h2>
+        <p>This is the distinction interviewers love, and the simulator above lets you <em>feel</em> it. Both use a
+        broker; the difference is <strong>how many consumers get a given message</strong>.</p>
+
+        <h3>Point-to-point queue — competing consumers</h3>
+        <p>One queue, many workers, and each message is delivered to <strong>exactly one</strong> of them — whoever is
+        free grabs it. The workers <em>share</em> the load, so this is how you <strong>scale out work</strong>: ten
+        image-resize jobs across three workers means each worker does its share and the batch finishes ~3× faster. Add
+        workers, drain faster. Think: a <em>task queue</em> — resize this image, send this email, process this payment.</p>
+
+        <h3>Publish/subscribe — fan-out</h3>
+        <p>One message is copied to <strong>every</strong> subscriber that's listening on the <strong>topic</strong>.
+        <code>OrderPlaced</code> goes to the email service <em>and</em> the warehouse <em>and</em> analytics <em>and</em>
+        loyalty — each gets its own copy and reacts independently. Here, adding a subscriber does <strong>not</strong>
+        share load; it adds a whole new reaction. Think: an <em>event announcement</em> that many different teams care
+        about. (Under the hood, a common design gives each subscriber its <em>own</em> queue that the same event is
+        copied into — so within one subscriber you can still add competing workers to scale <em>that</em> reaction.)</p>
+        <div class="code-panel"><span class="muted"># Point-to-point: one job → one of the workers</span>
+producer  ──▶  <span class="f">[ queue: image-jobs ]</span>  ──▶  worker A   <span class="muted"># each message</span>
+                                       ├─▶  worker B   <span class="muted"># goes to exactly</span>
+                                       └─▶  worker C   <span class="muted"># ONE worker</span>
+
+<span class="muted"># Pub/Sub: one event → a copy for every subscriber</span>
+producer  ──▶  <span class="f">[ topic: OrderPlaced ]</span>  ──┬─▶  email service      <span class="muted"># everyone</span>
+                                        ├─▶  warehouse service  <span class="muted"># subscribed</span>
+                                        ├─▶  analytics          <span class="muted"># gets their</span>
+                                        └─▶  loyalty            <span class="muted"># OWN copy</span></div>
+      </section>
+
+      <section id="guarantees">
+        <h2>Delivery Guarantees &amp; Ordering — The Fine Print</h2>
+        <p>"The broker holds the message until it's handled" hides a genuinely hard question: <em>how many times</em>
+        does a consumer see a message, and <em>in what order</em>? These guarantees are where message systems get their
+        reputation for subtlety.</p>
+        <table class="algo-table">
+          <tr><th>Guarantee</th><th>What it means</th><th>The catch</th></tr>
+          <tr><td><strong>At-most-once</strong></td><td>Deliver and don't retry. A message is seen 0 or 1 times.</td><td>Fast, but you can <em>lose</em> messages if a consumer crashes before finishing. Fine for disposable data (metrics samples).</td></tr>
+          <tr><td><strong>At-least-once</strong></td><td>Retry until acked. A message is seen 1 <em>or more</em> times.</td><td>The common default. You never lose a message, but a crash-after-work-before-ack means <strong>duplicates</strong> — so consumers must be <strong>idempotent</strong>.</td></tr>
+          <tr><td><strong>Exactly-once</strong></td><td>Seen and effected precisely once.</td><td>The holy grail — expensive and limited. In practice it's usually "at-least-once delivery + idempotent processing," not true magic.</td></tr>
+        </table>
+        <p>The practical takeaway: <strong>assume at-least-once, design for duplicates.</strong> If processing the same
+        <code>OrderPlaced</code> twice would charge a card twice, you make the operation <strong>idempotent</strong> —
+        e.g. key the charge on the order ID so a repeat is a no-op. (Idempotency gets its own lesson later in the
+        course; for now, just remember queues and duplicates are best friends.)</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Ordering is not free.</strong><span>Once you have <em>many</em> competing
+          workers pulling from one queue, they finish in unpredictable order — global ordering is lost. Systems that
+          need order (Kafka, Day 19) keep it only <em>within a partition/key</em>: all events for
+          <code>order-991</code> go to the same partition and stay in order relative to each other, but not relative to
+          <code>order-992</code>.</span></div>
+          <div class="flow-step"><strong>Ack, don't just read.</strong><span>Acknowledging <em>after</em> the work is
+          done (not before) is what makes at-least-once safe. Ack too early and a mid-work crash silently drops the
+          message; that's the classic way people <em>think</em> they have a guarantee they don't.</span></div>
+        </div>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts — What Async Costs You</h2>
+        <p>A queue is not a free upgrade. You're trading a simple, immediate call for a distributed, delayed one, and
+        that trade has a real bill.</p>
+
+        <h3>1. Eventual, not immediate</h3>
+        <p>The customer's confirmation email now arrives <em>seconds</em> after checkout, not synchronously. Usually
+        fine — but you've moved from "it's done when the call returns" to "it'll be done soon." Anything the user must
+        see <em>right now</em> (their order number, their payment result) can't be shoved behind a queue. Picking what's
+        truly async vs must-be-sync is the core design judgment.</p>
+
+        <h3>2. A new system to run — and to debug</h3>
+        <p>The broker is now a critical piece of infrastructure you must deploy, scale, secure, and keep highly
+        available (it often becomes the thing everything depends on). And debugging goes from reading one stack trace to
+        <strong>tracing a message</strong> across producers, a broker, and consumers that ran at different times — you
+        need good message IDs, logging, and monitoring (Days on monitoring/tracing) just to answer "where did order 991
+        go?"</p>
+
+        <h3>3. Duplicates, ordering, and poison messages</h3>
+        <p>As above: at-least-once means you <em>will</em> see duplicates, so idempotency becomes mandatory, not
+        optional. Strict ordering is limited to a partition. And a single malformed "poison" message can retry forever
+        and stall a consumer unless you've wired up a dead-letter queue. None of these exist in a plain function call —
+        they're the tax you pay for decoupling.</p>
+
+        <p style="margin-top:1rem;">The through-line: message queues trade <em>immediacy and simplicity</em> for
+        <em>decoupling, elasticity, and resilience</em>. That trade is a clear win for follow-up work, spiky traffic,
+        and fan-out to many consumers — and a clear loss for anything a user is standing there waiting on. The art is
+        drawing the line in the right place.</p>
+      </section>
+
+      <section id="variants">
+        <h2>The Broker Landscape — A First Map</h2>
+        <p>You'll meet these by name for the rest of the course; here's the one-line mental model for each so the names
+        stop being noise.</p>
+        <div class="family-grid">
+          <div class="family-card">
+            <h4>RabbitMQ</h4>
+            <p>The classic <strong>smart broker</strong>: rich routing (exchanges, bindings), per-message acks, easy
+            work-queue and pub/sub patterns. Messages are typically gone once acked.</p>
+            <div class="eg">Best for: task queues, complex routing, request/reply. Push-based.</div>
+          </div>
+          <div class="family-card">
+            <h4>Apache Kafka</h4>
+            <p>Not a queue but a <strong>durable, replayable log</strong>: events are appended and <em>kept</em>, and
+            consumers track their own position. Huge throughput, ordered per partition.</p>
+            <div class="eg">Best for: event streams, analytics, replay, high volume. (Day 19)</div>
+          </div>
+          <div class="family-card">
+            <h4>SQS + SNS (AWS)</h4>
+            <p>Fully-managed: <strong>SQS</strong> is a simple pull queue, <strong>SNS</strong> is pub/sub fan-out. Wire
+            them together (SNS → many SQS queues) for the classic "one event, many workers" pattern with zero ops.</p>
+            <div class="eg">Best for: cloud-native apps that don't want to run a broker.</div>
+          </div>
+          <div class="family-card">
+            <h4>Redis (Streams / Pub-Sub)</h4>
+            <p>A lightweight, in-memory option: fire-and-forget pub/sub, or the durable <strong>Streams</strong> type
+            with consumer groups. Blazing fast, less durable than Kafka.</p>
+            <div class="eg">Best for: low-latency, simple fan-out, when you already run Redis. (Day 24)</div>
+          </div>
+        </div>
+        <p>The theme: <strong>RabbitMQ/SQS are queues</strong> (a message is consumed and gone), while
+        <strong>Kafka is a log</strong> (events are kept and can be re-read). That queue-vs-log split is one of the most
+        important distinctions in all of system design, and it's exactly where Day 19 picks up.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You leave the staff pneumatic-tube room and step into the room where nobody waits for anybody: the
+          Mailroom.</h4>
+          <div class="palace-room"><span class="palace-icon">🛎️</span><div><strong>The Reception Desk</strong> — <span>REST (Day 15). A fixed menu of nouns and bell-hops who each know one verb; human-readable, synchronous.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🧾</span><div><strong>The Concierge Booth</strong> — <span>GraphQL (Day 16). One window, a blank order slip; the client describes the exact shape it wants back in one trip.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📮</span><div><strong>The Pneumatic Tube Room</strong> — <span>gRPC (Day 17). Staff-only binary capsules over an HTTP/2 tube — fast, typed, still <em>synchronous</em>: you drop a capsule and wait for one back.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📬</span><div><strong>The Mailroom</strong> — <span>Message Queues &amp; Pub/Sub (today). You drop a slip in the inbox tray and <em>walk away</em> — the tray (broker) holds it safely until a clerk is free. A <em>work order</em> goes to one clerk (queue); an <em>announcement</em> is photocopied to every subscribed department (pub/sub). Spikes pile up and drain; a clerk out sick just means a taller tray, not a failed customer. This is where the house stops being a chain of people waiting on each other.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📼</span><div><strong>The Records Room (next door)</strong> — <span>Apache Kafka (Day 19). Not a tray you empty, but a <em>ledger</em> that keeps every announcement on a shelf so any department can re-read the history from where it left off.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">REST (Day 15)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">GraphQL (Day 16)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">gRPC (Day 17)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Message Queues (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Kafka (Day 19)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Pub/Sub (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Event-Driven Architecture (Day 21)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Idempotency (later)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Microservices (Phase 2)</span>
+        </div>
+        <p>Days 15–17 were the <strong>synchronous</strong> arc — one service calling another and <em>waiting</em>.
+        Today flips the polarity: <strong>asynchronous</strong> communication, where services stop calling each other
+        by name and talk through a broker instead. That single idea is the foundation for almost everything ahead:
+        <strong>Kafka</strong> (Day 19) is a specific, log-shaped take on it; <strong>event-driven architecture</strong>
+        (Day 21) is a whole system built on pub/sub; <strong>idempotency</strong> (later) is the discipline that makes
+        at-least-once delivery safe; and loosely-coupled <strong>microservices</strong> (Phase 2) lean on queues to
+        avoid becoming a brittle web of direct calls. When you later meet <strong>circuit breakers</strong>, a queue is
+        often the thing that lets a struggling service catch its breath instead of collapsing.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"A queue makes my system faster."</td><td>It makes the <em>producer</em> respond faster by deferring work — the total work still happens, just later and elsewhere. Throughput and resilience improve; the follow-up task isn't instant, it's <em>eventual</em>.</td></tr>
+          <tr><td>"Messages are delivered exactly once."</td><td>Almost always it's <strong>at-least-once</strong>. Crashes between "work done" and "ack sent" cause redelivery, so you <em>will</em> see duplicates. Design idempotent consumers; don't assume exactly-once.</td></tr>
+          <tr><td>"Queues guarantee order."</td><td>Not with multiple competing consumers. Ordering is only preserved <em>within a partition/key</em> (Kafka) or a single FIFO queue — the moment you scale workers out, global order is gone.</td></tr>
+          <tr><td>"Queue and pub/sub are the same thing."</td><td>A <strong>queue</strong> gives a message to <em>one</em> consumer (workers share load); <strong>pub/sub</strong> gives a copy to <em>every</em> subscriber (fan-out). Adding consumers means opposite things in each.</td></tr>
+          <tr><td>"If a consumer is down, I lose messages."</td><td>The opposite is the point — the broker <strong>holds</strong> them (durably, on disk) and the backlog grows. When the consumer recovers, it drains the backlog. That's the resilience you bought.</td></tr>
+          <tr><td>"I should put everything behind a queue."</td><td>Anything the user is actively waiting on (their order number, payment result) must stay synchronous. Queues are for <em>follow-up</em> and <em>fan-out</em>, not for the answer someone's staring at the screen for.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ Your payment consumer reads an <code>OrderPlaced</code> message,
+          successfully charges the customer's card, and then the worker crashes <em>before</em> it can send the ack.
+          What does the broker do next, what problem does that create, and how do you make it safe? (click to reveal)</div>
+          <div class="recall-answer">Because the consumer never acked, the broker assumes the work <em>didn't</em>
+          finish. After the ack timeout, it makes the message <strong>visible again</strong> and hands it to another
+          worker — this is <strong>at-least-once</strong> delivery keeping its promise not to lose the message. The
+          problem: the card was <em>already charged</em> on the first attempt, so a naive retry would charge it a
+          <strong>second time</strong> (a duplicate). The fix is <strong>idempotency</strong>: make "charge for order
+          991" a no-op if it's already been done — e.g. record the charge under the order ID (or a unique message ID)
+          and check for it before charging, so a redelivery detects "already handled" and just re-acks. This is the
+          golden rule of queues: <em>assume at-least-once, design every consumer to tolerate seeing the same message
+          more than once.</em> The alternative (acking <em>before</em> doing the work) would avoid duplicates but could
+          silently <em>lose</em> the charge on a crash — usually a far worse outcome.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🛒 Amazon &amp; AWS</div><p>Amazon runs on asynchronous messaging internally, and turned it into products: <strong>SQS</strong> (managed queues) and <strong>SNS</strong> (pub/sub) are foundational AWS services. The classic pattern — SNS fanning one event out into many SQS queues, one per consuming team — is everywhere in cloud architectures.</p></div>
+          <div class="realworld-card"><div class="rw-company">🚗 Uber &amp; DoorDash</div><p>A trip or an order kicks off a storm of follow-up work — pricing, matching, notifications, receipts, analytics. Publishing one event and letting many services react asynchronously is how they keep the user-facing action fast while a dozen downstream systems do their part.</p></div>
+          <div class="realworld-card"><div class="rw-company">💳 Payment &amp; email pipelines</div><p>Sending emails, generating invoices, and settling payments are the textbook queue use case: slow, retry-prone, external, and <em>not</em> something the user should wait on. Put them behind a queue with a dead-letter queue for the ones that keep failing, and the checkout button stays instant.</p></div>
+          <div class="realworld-card"><div class="rw-company">🎬 Netflix &amp; LinkedIn</div><p>Both process staggering event volumes (views, clicks, playback signals) through message/streaming systems — LinkedIn <em>invented</em> Kafka for exactly this. When millions of small events must fan out to analytics, personalization, and monitoring, a broker is the only sane middle.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: In one sentence, what problem does a message queue solve?</div>
+          <div class="fc-a">A: It decouples a producer from a consumer in <strong>time</strong> — the producer publishes and moves on, a durable broker buffers the message, and the consumer processes it whenever it's ready — which buys decoupling, buffering of spikes, and resilience to downstream outages.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What's the difference between a point-to-point queue and pub/sub?</div>
+          <div class="fc-a">A: A <strong>queue</strong> delivers each message to <em>exactly one</em> of many competing workers (they share the load — add workers to drain faster). <strong>Pub/sub</strong> copies each message to <em>every</em> subscriber on the topic (fan-out — each new subscriber is a whole new reaction, not shared load).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why must queue consumers usually be idempotent?</div>
+          <div class="fc-a">A: Because the common guarantee is <strong>at-least-once</strong>: if a consumer crashes after doing the work but before acking, the broker redelivers, so the same message can be processed more than once. Idempotency makes a repeat a no-op (e.g. keyed on the order/message ID), preventing double charges.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is an acknowledgement (ack), and when should you send it?</div>
+          <div class="fc-a">A: An ack tells the broker "this message is fully handled, delete it." You send it <strong>after</strong> the work is done — until then the broker keeps the message and will redeliver it if the consumer dies. Acking early risks silently losing messages on a crash.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is a dead-letter queue (DLQ)?</div>
+          <div class="fc-a">A: A side queue where the broker parks "poison" messages that have failed processing N times, so a single bad message can't retry forever and block the pipeline. Humans (or a separate process) inspect the DLQ to diagnose and reprocess.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Explain, using the checkout example, why moving the confirmation email behind a queue makes the system both faster to respond and more resilient.</li>
+          <li>Trace a message's full lifecycle: producer → broker → consumer → ack. What happens if the ack never arrives?</li>
+          <li>You have a growing backlog on a task queue. Name two things you could do, and why adding workers helps a queue but not a single pub/sub subscriber.</li>
+          <li>Contrast at-most-once, at-least-once, and exactly-once delivery. Which is the practical default, and what does it demand of your consumers?</li>
+          <li>Why is global message ordering hard once you have multiple competing consumers, and how do systems like Kafka preserve order anyway?</li>
+          <li>Give one task that clearly belongs behind a queue and one that clearly must stay synchronous. Justify each.</li>
+          <li>What is a dead-letter queue, and what problem does it prevent?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: a message queue lets a service <strong>drop the letter and walk away</strong>.
+          The producer publishes and moves on, a durable broker holds the message, and a consumer handles it when it's
+          ready — turning a brittle chain of synchronous calls into <strong>decoupled, buffered, resilient</strong>
+          async work. A <em>queue</em> shares one message among competing workers; <em>pub/sub</em> fans a copy out to
+          every subscriber. The price is that results become <em>eventual</em>, you run a new critical system, and —
+          because delivery is at-least-once — your consumers must be <strong>idempotent</strong> and ready for
+          duplicates, out-of-order arrivals, and the occasional poison message. Use it for follow-up work, spiky
+          traffic, and fan-out; keep the user's answer synchronous. Tomorrow (Day 19) we open the room next door — where
+          the mailroom's tray becomes a <em>permanent ledger</em> you can replay: <strong>Apache Kafka</strong>.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-17.html">← Day 17: gRPC &amp; Protocol Buffers</a>
+        <a href="day-19.html" class="coming-soon-link">Day 19: Apache Kafka Deep Dive →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 18 of 90 — Message Queues &amp; Pub/Sub</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── Backlog simulator: producer → broker → consumers ─────────────────
+  var PER = 4;        // messages one consumer clears per second
+  var TICK = 400;     // ms per simulation tick
+  var DT = TICK / 1000;
+
+  var state = {
+    running: false, mode: 'queue',
+    rate: 6, consumers: 2,
+    produced: 0, delivered: 0,
+    qDepth: 0,      // shared backlog (queue mode)
+    subDepth: 0     // per-subscriber backlog (pub/sub mode — symmetric across subs)
+  };
+  var timer = null;
+
+  var el = function(id){ return document.getElementById(id); };
+  var rate = el('rate'), consumers = el('consumers');
+  var rateVal = el('rate-val'), consVal = el('cons-val');
+  var consLabel = el('consumers-label'), depthLbl = el('depth-lbl'), capLbl = el('cap-lbl');
+  var mProd = el('m-prod'), mDepth = el('m-depth'), mDeliv = el('m-deliv');
+  var status = el('sim-status');
+  var barRate = el('bar-rate'), barCap = el('bar-cap'), barDepth = el('bar-depth');
+  var barRateV = el('bar-rate-v'), barCapV = el('bar-cap-v'), barDepthV = el('bar-depth-v');
+  var consumerRow = el('consumer-row');
+  var toggleBtn = el('sim-toggle');
+
+  function capacityPerSec(){
+    // Queue: workers share the load. Pub/sub: each subscriber drains its own copy at PER.
+    return state.mode === 'queue' ? state.consumers * PER : PER;
+  }
+
+  function tick(){
+    var prod = state.rate * DT;
+    state.produced += prod;
+    if (state.mode === 'queue') {
+      state.qDepth += prod;
+      var take = Math.min(state.qDepth, state.consumers * PER * DT);
+      state.qDepth -= take;
+      state.delivered += take;
+    } else {
+      // every subscriber receives every message; each drains independently at PER
+      state.subDepth += prod;
+      var drain = Math.min(state.subDepth, PER * DT);
+      state.subDepth -= drain;
+      state.delivered += drain * state.consumers; // copies delivered across all subscribers
+    }
+    render();
+  }
+
+  function currentDepth(){ return state.mode === 'queue' ? state.qDepth : state.subDepth; }
+
+  function renderConsumers(){
+    consumerRow.innerHTML = '';
+    var icon = state.mode === 'queue' ? '⚙️' : '📥';
+    var name = state.mode === 'queue' ? 'Worker' : 'Sub';
+    for (var i = 1; i <= state.consumers; i++) {
+      var box = document.createElement('div');
+      box.className = 'consumer-box';
+      box.innerHTML = '<div class="cb-icon">' + icon + '</div><div class="cb-name">' + name + ' ' + i + '</div>';
+      consumerRow.appendChild(box);
+    }
+  }
+
+  function render(){
+    mProd.textContent = Math.round(state.produced);
+    mDeliv.textContent = Math.round(state.delivered);
+    mDepth.textContent = Math.round(currentDepth());
+
+    var cap = capacityPerSec();
+    // bars are scaled against a fixed 24 msg/s ceiling; backlog against 40
+    barRate.style.width = Math.min(100, state.rate / 24 * 100) + '%';
+    barCap.style.width = Math.min(100, cap / 24 * 100) + '%';
+    barDepth.style.width = Math.min(100, currentDepth() / 40 * 100) + '%';
+    barRateV.textContent = state.rate + '/s';
+    barCapV.textContent = cap + '/s';
+    barDepthV.textContent = Math.round(currentDepth());
+
+    // status
+    if (state.mode === 'queue') {
+      if (state.rate <= cap) {
+        status.className = 'status-line ok';
+        status.textContent = currentDepth() > 5
+          ? '✅ Draining — workers out-pace arrivals, the backlog is shrinking.'
+          : '✅ Keeping up — ' + state.consumers + ' workers clear ' + cap + '/s vs ' + state.rate + '/s arriving.';
+      } else {
+        status.className = 'status-line bad';
+        status.textContent = '⚠️ Backing up — ' + state.rate + '/s arriving beats ' + cap + '/s capacity. Add workers or the backlog grows without bound.';
+      }
+    } else {
+      if (state.rate <= cap) {
+        status.className = 'status-line ok';
+        status.textContent = '✅ Each of ' + state.consumers + ' subscribers gets every message and keeps up (' + PER + '/s each). Extra subscribers add reactions, not shared load.';
+      } else {
+        status.className = 'status-line bad';
+        status.textContent = '⚠️ Fan-out backing up — every subscriber must handle all ' + state.rate + '/s, but each only clears ' + PER + '/s. Adding subscribers does NOT help here.';
+      }
+    }
+  }
+
+  function setMode(mode){
+    state.mode = mode;
+    el('mode-queue').classList.toggle('active', mode === 'queue');
+    el('mode-pubsub').classList.toggle('active', mode === 'pubsub');
+    consLabel.childNodes[0].nodeValue = (mode === 'queue' ? 'Workers — ' : 'Subscribers — ');
+    depthLbl.textContent = mode === 'queue' ? 'Queue depth' : 'Per-sub backlog';
+    capLbl.textContent = mode === 'queue' ? 'Capacity' : 'Per-sub cap';
+    renderConsumers();
+    render();
+  }
+
+  function start(){ if (timer) return; state.running = true; toggleBtn.textContent = '❚❚ Pause'; timer = setInterval(tick, TICK); }
+  function pause(){ state.running = false; toggleBtn.textContent = '▶ Start'; if (timer){ clearInterval(timer); timer = null; } }
+
+  toggleBtn.addEventListener('click', function(){ state.running ? pause() : start(); });
+  el('sim-burst').addEventListener('click', function(){
+    if (state.mode === 'queue') state.qDepth += 25; else state.subDepth += 25;
+    render();
+  });
+  el('sim-reset').addEventListener('click', function(){
+    pause();
+    state.produced = 0; state.delivered = 0; state.qDepth = 0; state.subDepth = 0;
+    render();
+  });
+  rate.addEventListener('input', function(){ state.rate = +rate.value; rateVal.textContent = state.rate + ' msg/s'; render(); });
+  consumers.addEventListener('input', function(){ state.consumers = +consumers.value; consVal.textContent = state.consumers; renderConsumers(); render(); });
+  el('mode-queue').addEventListener('click', function(){ setMode('queue'); });
+  el('mode-pubsub').addEventListener('click', function(){ setMode('pubsub'); });
+
+  setMode('queue');
+
+  // ── Anchor diagram: producer → broker → consumers (queue + pub/sub) ───
+  function drawDiagram(){
+    var svg = document.getElementById('mq-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var NS = 'http://www.w3.org/2000/svg';
+
+    function txt(x, y, text, color, size, weight, mono, anchor){
+      var t = document.createElementNS(NS, 'text');
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      t.setAttribute('text-anchor', anchor || 'middle');
+      t.setAttribute('fill', color || '#cbd5e1');
+      t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+      t.setAttribute('font-size', size || '11');
+      if (weight) t.setAttribute('font-weight', weight);
+      t.textContent = text;
+      svg.appendChild(t);
+    }
+
+    txt(410, 24, 'Producers drop messages and move on — the broker holds them until consumers are ready', '#e2e8f0', '13', '700');
+
+    // Producer box (left)
+    var pbox = rs.rectangle(40, 150, 170, 100, { stroke:'#3b82f6', strokeWidth:2, roughness:1.1, fill:'#3b82f622', fillStyle:'solid' });
+    svg.appendChild(pbox);
+    txt(125, 186, 'Order Service', '#dbeafe', '12', '700');
+    txt(125, 206, 'PRODUCER', '#93c5fd', '9', '700', true);
+    txt(125, 230, 'publish & move on', '#94a3b8', '9');
+
+    // Broker box (center) with stacked message tiles
+    var bbox = rs.rectangle(300, 110, 210, 180, { stroke:'#f59e0b', strokeWidth:2, roughness:1.05, fill:'#f59e0b18', fillStyle:'solid' });
+    svg.appendChild(bbox);
+    txt(405, 134, 'MESSAGE BROKER', '#fcd34d', '10', '700', true);
+    txt(405, 150, 'durable buffer (the tray)', '#94a3b8', '8.5');
+    var msgs = ['OrderPlaced #994', 'OrderPlaced #993', 'OrderPlaced #992', 'OrderPlaced #991'];
+    msgs.forEach(function(m, i){
+      var my = 166 + i * 28;
+      var tile = rs.rectangle(320, my, 170, 22, { stroke:'#eab308', strokeWidth:1.2, roughness:1.1, fill:'#eab30822', fillStyle:'solid' });
+      svg.appendChild(tile);
+      txt(405, my + 15, '✉ ' + m, '#fde68a', '8.5', '600', true);
+    });
+
+    // arrow producer → broker
+    svg.appendChild(rs.line(210, 195, 300, 195, { stroke:'#3b82f6', strokeWidth:1.8, roughness:1 }));
+    txt(255, 186, 'publish', '#93c5fd', '8.5', '600', true);
+
+    // Consumers (right) — top pair = queue (one gets it), bottom = pub/sub (all get it)
+    // Queue: competing workers
+    var w1 = rs.rectangle(620, 118, 160, 46, { stroke:'#22c55e', strokeWidth:1.8, roughness:1.1, fill:'#22c55e22', fillStyle:'solid' });
+    svg.appendChild(w1);
+    txt(700, 138, '⚙ Worker A', '#dcfce7', '10.5', '700', true);
+    txt(700, 153, 'queue: one worker gets it', '#86efac', '8', '600', true);
+    var w2 = rs.rectangle(620, 172, 160, 40, { stroke:'#22c55e', strokeWidth:1.4, roughness:1.1, fill:'#22c55e14', fillStyle:'solid' });
+    svg.appendChild(w2);
+    txt(700, 196, '⚙ Worker B  (shares load)', '#bbf7d0', '9', '600', true);
+
+    // Pub/sub subscribers
+    var s1 = rs.rectangle(620, 226, 160, 30, { stroke:'#a78bfa', strokeWidth:1.4, roughness:1.1, fill:'#a78bfa1c', fillStyle:'solid' });
+    svg.appendChild(s1);
+    txt(700, 245, '📥 email + 📥 analytics', '#ddd6fe', '9', '600', true);
+    var s2 = rs.rectangle(620, 262, 160, 30, { stroke:'#a78bfa', strokeWidth:1.4, roughness:1.1, fill:'#a78bfa1c', fillStyle:'solid' });
+    svg.appendChild(s2);
+    txt(700, 281, 'pub/sub: everyone gets a copy', '#c4b5fd', '8', '600', true);
+
+    // arrows broker → consumers
+    svg.appendChild(rs.line(510, 160, 620, 141, { stroke:'#22c55e', strokeWidth:1.6, roughness:1 }));
+    svg.appendChild(rs.line(510, 230, 620, 250, { stroke:'#a78bfa', strokeWidth:1.6, roughness:1 }));
+    txt(560, 150, 'to ONE', '#86efac', '8', '700', true);
+    txt(560, 252, 'to ALL', '#c4b5fd', '8', '700', true);
+
+    txt(410, 322, 'Decoupled in time: a slow or down consumer just grows the backlog — the producer never waits.', '#94a3b8', '10.5');
+    txt(410, 344, 'Queue = share the load (one worker per message).   Pub/Sub = fan-out (a copy per subscriber).', '#cbd5e1', '10.5', '600');
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawDiagram, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawDiagram);
+  }
+})();
+</script>
+
+</body>
+</html>
