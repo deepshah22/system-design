@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 19: Apache Kafka Deep Dive | System Design Mastery</title>
+  <meta name="description" content="A traditional queue empties when a message is read. Kafka doesn't — it's a distributed, append-only commit log that keeps messages for days and lets many consumers read (and replay) the same stream. Learn topics, partitions, offsets, brokers, consumer groups, replication and ISR, how partition keys give you ordering, why parallelism is capped by partition count, log retention and compaction — and the sharp trade-offs of running a log instead of a queue. Taught through a library-ledger story, a live partition→consumer-group simulator, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* kafka simulator */
+    .q-controls { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:1rem 1.5rem; margin:1rem 0 1.25rem; }
+    .q-control label { display:block; font-size:.8rem; color:var(--text-muted); font-weight:600; margin-bottom:.35rem; }
+    .q-control input[type=range] { width:100%; accent-color: var(--accent); }
+    .q-control .q-val { color:var(--accent-light); font-weight:700; }
+    .prop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:.75rem; margin:0 0 1rem; }
+    .prop-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.8rem 1rem; text-align:center; }
+    .prop-card .val { font-size:1.5rem; font-weight:800; }
+    .prop-card .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .prop-card .val.part { color:#f59e0b; } .prop-card .val.cons { color:#3b82f6; } .prop-card .val.par { color:#22c55e; } .prop-card .val.idle { color:#a78bfa; }
+    .q-status { text-align:center; font-weight:800; font-size:.95rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .k-assign { background:var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.1rem; }
+    .k-assign-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; margin-bottom:.6rem; }
+    .k-part-row { display:flex; align-items:center; gap:.6rem; padding:.35rem 0; flex-wrap:wrap; }
+    .k-part { flex-shrink:0; min-width:132px; font-family:'JetBrains Mono',monospace; font-size:.8rem; color:#fcd34d; background:#f59e0b14; border:1px solid #f59e0b55; border-radius:6px; padding:.3rem .55rem; }
+    .k-arrow { color:var(--text-muted); }
+    .k-owner { font-size:.8rem; font-weight:700; padding:.28rem .6rem; border-radius:6px; }
+    .k-consumers { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.9rem; }
+    .k-consumer { font-size:.78rem; font-weight:700; padding:.35rem .7rem; border-radius:8px; border:1px solid var(--border); display:flex; align-items:center; gap:.4rem; }
+    .k-consumer.idle { opacity:.4; }
+    .k-consumer .k-c-emoji { font-size:1rem; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 19</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 19 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 3 — Communication Patterns</span>
+    </div>
+    <h1>Apache Kafka Deep Dive<br><span style="color:var(--accent)">The Log That Never Forgets</span></h1>
+    <p class="lead">
+      Yesterday (Day 18) a queue was a mailbox: a message is read <em>once</em> and then it's gone. Kafka rewrites
+      that rule. It's not a mailbox that empties — it's an <strong>append-only logbook</strong> that keeps every
+      message for days, hands out a permanent <strong>page number</strong> (offset) to each one, and lets
+      <em>many</em> independent readers move through it at their own pace and even <strong>rewind</strong>. That one
+      change — <em>keep the messages instead of deleting them</em> — is why Kafka became the backbone of event
+      streaming at LinkedIn, Uber, Netflix and almost every large system you use. Let's see exactly how it works.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#depth">The Core Machinery</a>
+        <a href="#groups">Consumer Groups</a>
+        <a href="#durability">Replication &amp; Durability</a>
+        <a href="#speed">Why Kafka Is So Fast</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#variants">Kafka vs the Field</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">📖🔢</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Imagine a giant library that keeps a <strong>ledger</strong> — a bound book where every event in the
+            town gets written on the <em>next blank line</em>, in the order it happened, and <em>nothing is ever erased</em>.
+            Line 1, line 2, line 3… each line has a permanent <strong>number</strong>. Because one enormous book would
+            be a bottleneck, the librarian splits it into several <strong>volumes</strong> — Volume A, Volume B,
+            Volume C — and decides which volume an event goes into by a rule (all events about <em>customer 42</em>
+            always go in Volume B, so <em>customer 42's</em> story stays in order). Now the clever part: readers don't
+            <em>take</em> pages away. Each reader just keeps a <strong>bookmark</strong> — "I've read Volume B up to
+            line 5,120" — and reads forward from there whenever they like. A new reader can start from line 1 and
+            replay the town's <em>entire history</em>. The accountant, the historian, and the fraud investigator each
+            keep their <em>own</em> bookmark in the same book and never interfere with each other. That ledger is
+            <strong>Kafka</strong>: an append-only, numbered, replayable log, split into <em>partitions</em>
+            (volumes), read by many via <em>offsets</em> (bookmarks). Hold that image: <em>the log that never
+            forgets.</em></p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="kafka-diagram" width="820" height="440" viewBox="0 0 820 440"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Streaming Sana</span> ran data at a fast-growing ride-share company. Every
+            trip produced a flood of events — <code>RideRequested</code>, <code>DriverMatched</code>,
+            <code>RideStarted</code>, <code>RideEnded</code>, <code>PaymentCharged</code> — and a dozen teams wanted
+            them. Pricing wanted them for surge. Fraud wanted them live. The data-science team wanted to reprocess a
+            <em>whole month</em> of history to train a new model. Finance wanted a nightly batch. On Day 18's mailbox
+            queue, this was a nightmare: once the fraud consumer read a <code>RideEnded</code> message, it was
+            <strong>gone</strong> — the data scientist couldn't go back and read last Tuesday, because last Tuesday had
+            already been deleted the instant someone consumed it.
+          </p>
+          <p>
+            So Sana kept spinning up a <em>separate</em> queue for every team, and the producer had to publish the same
+            event to all of them. Twelve teams meant twelve copies, twelve places to fall out of sync, and still no way
+            to <em>replay</em> history when a consumer had a bug and processed a day's worth of events wrong. The system
+            was drowning not in traffic, but in <strong>copies and lost history</strong>.
+          </p>
+          <p>
+            Then Sana moved to <strong>Kafka</strong>, and the shape of the problem changed. The producer now writes
+            each event <strong>once</strong> to a <strong>topic</strong> — say <code>rides</code> — which Kafka stores
+            as an ordered, append-only <strong>log</strong> retained for <em>seven days</em>. Every team is its own
+            <strong>consumer group</strong> reading the <em>same</em> log independently, each tracking its own
+            <strong>offset</strong> (its bookmark). Fraud reads the tail in real time. Finance's nightly batch reads
+            from where it left off. And when the data scientist wants last month? Because Sana bumped retention on a
+            dedicated topic, she just <strong>resets her group's offset to zero and replays</strong> — no re-publishing,
+            no special pipeline, just reading the same immutable history again. One write, many readers, full history,
+            replay for free.
+          </p>
+          <p>
+            To make one topic handle a million events a second, Kafka splits it into <strong>partitions</strong> spread
+            across a cluster of machines (<strong>brokers</strong>). Sana partitioned <code>rides</code> by
+            <code>rider_id</code>, so every event for one rider lands in the same partition and stays in
+            <em>order</em> — while different riders' events fan out across partitions for parallelism. She'd stopped
+            thinking of messaging as "send and delete" and started thinking of it as <strong>an immutable stream of
+            facts the whole company can read, re-read, and rewind.</strong> That mental shift — <em>events as a
+            replayable log, not messages that vanish</em> — is the whole reason Kafka exists.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">Kafka is a <strong>distributed, append-only commit log</strong>. Producers
+          <em>append</em> records to the <strong>end</strong> of a <strong>topic</strong>; the topic is split into
+          <strong>partitions</strong> (each an ordered, immutable sequence) spread across <strong>brokers</strong> for
+          scale and replicated for durability. Every record in a partition gets a monotonically increasing
+          <strong>offset</strong> — its permanent address. Unlike a queue, reading does <em>not</em> delete: records
+          stay for a <strong>retention</strong> window (time or size), and each consumer tracks <em>its own</em> offset,
+          so many independent <strong>consumer groups</strong> can read — and <strong>replay</strong> — the same stream.
+          Within a group, each partition is owned by exactly <em>one</em> consumer, so
+          <strong>parallelism is capped by the partition count</strong>, and <strong>ordering is guaranteed only within
+          a partition</strong> — which is why you choose a <strong>partition key</strong> (e.g. <code>user_id</code>)
+          to keep related events together and in order. The price: it's a heavyweight distributed system to operate,
+          only ordered per-partition, and the wrong tool when you just want a simple task queue or a request/response
+          answer.</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Partitions &amp; Consumer Groups</h2>
+        <div class="sim-box">
+          <p>Here's the single most important — and most misunderstood — rule in Kafka: <strong>within one consumer
+          group, each partition is read by exactly one consumer.</strong> That means your parallelism (how many
+          consumers can work at once) is capped by the number of <em>partitions</em>, not the number of consumers you
+          throw at it. Drag the sliders and watch how Kafka hands partitions out — and what happens when you add more
+          consumers than there are partitions.</p>
+
+          <div class="q-controls">
+            <div class="q-control">
+              <label>Partitions in the topic: <span class="q-val" id="k-part-v">4</span></label>
+              <input type="range" id="k-part" min="1" max="8" value="4" />
+            </div>
+            <div class="q-control">
+              <label>Consumers in the group: <span class="q-val" id="k-cons-v">3</span></label>
+              <input type="range" id="k-cons" min="1" max="8" value="3" />
+            </div>
+          </div>
+
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val part" id="m-part">—</div><div class="lbl">Partitions</div></div>
+            <div class="prop-card"><div class="val cons" id="m-cons">—</div><div class="lbl">Consumers</div></div>
+            <div class="prop-card"><div class="val par" id="m-par">—</div><div class="lbl">Effective parallelism</div></div>
+            <div class="prop-card"><div class="val idle" id="m-idle">—</div><div class="lbl">Idle consumers</div></div>
+          </div>
+
+          <div class="q-status ok" id="k-status">Balanced ✅</div>
+
+          <div class="k-assign">
+            <div class="k-assign-label">Partition → owning consumer (in this one group)</div>
+            <div id="k-rows"></div>
+            <div class="k-assign-label" style="margin-top:1rem;">Consumers in the group</div>
+            <div class="k-consumers" id="k-consumers"></div>
+          </div>
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: set 4 partitions and 4
+          consumers — perfectly balanced, one partition each. Now drag consumers to 6: <strong>two consumers sit
+          completely idle</strong>, because there are no spare partitions to give them. Parallelism is stuck at 4. The
+          only way to go faster is to <em>add partitions</em> — which is why picking a partition count is one of the
+          most consequential early decisions in a Kafka design. Drop consumers to 2 and each one now handles two
+          partitions.</p>
+        </div>
+      </section>
+
+      <section id="depth">
+        <h2>The Core Machinery — Topics, Partitions, Offsets, Brokers</h2>
+        <p>Kafka has a small vocabulary, and once these five words click, everything else is detail. Learn them in
+        order — each builds on the last.</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Record.</strong><span>The unit Kafka moves: a <em>key</em>, a
+          <em>value</em> (the payload — JSON, Avro, protobuf, bytes), a timestamp, and headers. The <em>key</em> is
+          special: it decides which partition the record lands in.</span></div>
+          <div class="flow-step"><strong>Topic.</strong><span>A named stream of records — <code>rides</code>,
+          <code>payments</code>, <code>clicks</code>. It's the thing producers write to and consumers read from. A
+          topic is a <em>category</em>, not a single file: under the hood it's split into partitions.</span></div>
+          <div class="flow-step"><strong>Partition.</strong><span>The real engine. Each topic is divided into N
+          partitions, and <em>each partition is an ordered, append-only log</em> — records are only ever added to the
+          end, never inserted or changed. Partitions are what let one topic scale across many machines and be read in
+          parallel. <strong>Order is guaranteed within a partition, never across partitions.</strong></span></div>
+          <div class="flow-step"><strong>Offset.</strong><span>Every record in a partition gets a sequential ID — 0,
+          1, 2, 3… — called its <em>offset</em>. It's the record's permanent address and also the consumer's bookmark:
+          "consumer group <code>fraud</code> is at offset 5,120 in partition 2." Reading is just "give me everything
+          after my offset." Rewinding is just "set my offset back."</span></div>
+          <div class="flow-step"><strong>Broker &amp; cluster.</strong><span>A <em>broker</em> is one Kafka server;
+          a <em>cluster</em> is several of them. Partitions are distributed across brokers so the load and storage
+          spread out, and each partition is replicated to other brokers so a machine can die without losing data. Add
+          brokers → more capacity.</span></div>
+        </div>
+        <p>Put it together: a producer sends a record with key <code>rider_42</code>; Kafka hashes the key to pick a
+        partition (say partition 2), <em>appends</em> it at the next offset, and replicates it. Any number of consumer
+        groups can later read partition 2 from any offset they choose. The record isn't deleted when it's read — it
+        sits in the log until <strong>retention</strong> (e.g. 7 days, or 100 GB per partition) expires and old
+        segments are dropped from the front. That "keep it, don't delete it on read" is the entire difference from a
+        Day 18 queue.</p>
+
+        <div class="code-label">A producer and a consumer, in spirit</div>
+        <div class="code-panel"><span class="muted"># PRODUCER — write once to the topic, keyed for ordering</span>
+producer.<span class="f">send</span>(
+    topic=<span class="s">"rides"</span>,
+    key=<span class="s">"rider_42"</span>,        <span class="muted"># same key → same partition → in order</span>
+    value={<span class="s">"event"</span>: <span class="s">"RideEnded"</span>, <span class="s">"fare"</span>: <span class="n">18.50</span>}
+)
+
+<span class="muted"># CONSUMER — many groups read the SAME log independently</span>
+consumer = <span class="f">KafkaConsumer</span>(
+    <span class="s">"rides"</span>,
+    group_id=<span class="s">"fraud-detection"</span>   <span class="muted"># finance, pricing use different group_ids</span>
+)
+<span class="k">for</span> record <span class="k">in</span> consumer:
+    <span class="f">handle</span>(record.value)          <span class="muted"># offset is tracked per group, auto-committed or manual</span></div>
+      </section>
+
+      <section id="groups">
+        <h2>Consumer Groups — Kafka's Trick for Being Both a Queue and Pub/Sub</h2>
+        <p>Day 18 forced a choice: a <em>work queue</em> spreads one message across competing workers, while
+        <em>pub/sub</em> copies each message to every subscriber. Kafka does <strong>both at once</strong> with a single
+        elegant idea: the <strong>consumer group</strong>.</p>
+
+        <h3>Within a group: it behaves like a work queue</h3>
+        <p>A consumer group is a set of consumers with the same <code>group_id</code> that cooperate to read a topic.
+        Kafka assigns each <strong>partition to exactly one consumer</strong> in the group. So if a topic has 6
+        partitions and the group has 3 consumers, each consumer owns 2 partitions and they split the work — competing
+        consumers, just like a work queue. This is also why <strong>adding consumers beyond the partition count does
+        nothing</strong> (you saw it in the simulator): there are no free partitions to hand them, so they sit idle.
+        Parallelism = <code>min(partitions, consumers)</code>.</p>
+
+        <h3>Across groups: it behaves like pub/sub</h3>
+        <p>Now run a <em>second</em> group with a different <code>group_id</code> on the same topic. It gets its
+        <strong>own</strong> full copy of the assignment and its <strong>own</strong> offsets. Group
+        <code>fraud</code> and group <code>analytics</code> both read <em>every</em> record in <code>rides</code>,
+        independently, without affecting each other — that's pub/sub fan-out. One topic feeds unlimited groups, and
+        each group internally load-balances across its own consumers. <strong>That's the whole magic: work-queue
+        <em>inside</em> a group, pub/sub <em>across</em> groups.</strong></p>
+
+        <div class="diagram-box">
+          <svg id="groups-diagram" width="820" height="330" viewBox="0 0 820 330"></svg>
+        </div>
+
+        <p>When a consumer joins, leaves, or crashes, Kafka triggers a <strong>rebalance</strong>: it reassigns
+        partitions across the surviving consumers so every partition still has an owner. Rebalances are essential (they
+        make the group fault-tolerant) but they briefly pause consumption, so a group that rebalances constantly —
+        because consumers keep timing out — is a common production headache.</p>
+      </section>
+
+      <section id="durability">
+        <h2>Replication &amp; Durability — Why Kafka Doesn't Lose Data</h2>
+        <p>A log is only trustworthy if it survives a dead machine. Kafka's answer is <strong>per-partition
+        replication</strong> with a leader and followers.</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Leader &amp; followers.</strong><span>Each partition has one
+          <em>leader</em> replica (on one broker) and a configurable number of <em>follower</em> replicas on other
+          brokers (replication factor, commonly 3). All reads and writes go to the leader; followers continuously copy
+          the leader's log.</span></div>
+          <div class="flow-step"><strong>In-Sync Replicas (ISR).</strong><span>The set of replicas that are fully
+          caught up with the leader. If the leader dies, Kafka promotes one of the ISR followers to be the new leader —
+          no data lost, because an ISR replica had everything. A replica that falls behind drops out of the ISR until
+          it catches up.</span></div>
+          <div class="flow-step"><strong>Producer <code>acks</code>.</strong><span>The durability dial.
+          <code>acks=0</code>: fire and forget (fastest, can lose data). <code>acks=1</code>: wait for the leader only
+          (fast, but a leader crash before followers copy loses the record). <code>acks=all</code>: wait until all ISR
+          replicas have it (safest, slightly slower). Production systems that can't lose data use
+          <code>acks=all</code>.</span></div>
+          <div class="flow-step"><strong><code>min.insync.replicas</code>.</strong><span>The safety floor. With
+          replication factor 3 and <code>min.insync.replicas=2</code>, a write with <code>acks=all</code> needs at
+          least 2 replicas to accept it — so you tolerate one broker down and still never lose an acknowledged write.
+          This is the classic durable configuration.</span></div>
+        </div>
+        <p>The through-line: Kafka lets <em>you</em> pick where you sit on the speed-vs-durability curve, per producer.
+        A clickstream that can afford to lose a few events runs <code>acks=1</code> for throughput; a payments stream
+        runs <code>acks=all</code> with <code>min.insync.replicas=2</code> so an acknowledged event is truly safe. (Modern
+        Kafka manages this cluster metadata with a built-in Raft-based controller — <strong>KRaft</strong> — replacing
+        the old ZooKeeper dependency; we'll meet Raft itself on Day 32.)</p>
+      </section>
+
+      <section id="speed">
+        <h2>Why Kafka Is So Fast — Sequential Disk, Zero-Copy, Batching</h2>
+        <p>Newcomers assume Kafka must keep everything in memory to hit millions of messages a second. It doesn't — it
+        writes to <em>disk</em>, and it's fast <em>because</em> of how it uses the disk, not in spite of it. Three
+        ideas do the heavy lifting:</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Sequential, append-only writes.</strong><span>Because a partition is only ever
+          <em>appended</em> to, Kafka writes to disk in one long sequential stream. Sequential disk I/O is
+          <em>hundreds of times</em> faster than the random seeks a database does — a spinning disk or SSD is happiest
+          writing in order, and the OS page cache turns most reads into memory reads anyway.</span></div>
+          <div class="flow-step"><strong>Zero-copy transfer.</strong><span>To send data to a consumer, Kafka uses the
+          OS <code>sendfile</code> call to move bytes straight from the page cache to the network socket, <em>without</em>
+          copying them up into the application and back down. Fewer copies, less CPU, more throughput.</span></div>
+          <div class="flow-step"><strong>Batching &amp; compression.</strong><span>Producers group many records into a
+          single batch and compress it; consumers fetch in big chunks. Amortizing the per-message overhead across a
+          batch is what turns "one network round-trip per message" into "one round-trip per thousand
+          messages."</span></div>
+        </div>
+        <p>The lesson worth carrying beyond Kafka: <strong>an append-only log is a beautiful data structure.</strong>
+        Writes are sequential (fast), reads are sequential (fast), history is preserved (replayable), and there's
+        nothing to update in place (simple). Half the systems in Phase 2 — write-ahead logs, replication logs, event
+        sourcing (Day 76) — are the same idea wearing different clothes.</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts — What Kafka Costs You</h2>
+        <p>Kafka is astonishingly capable, which is exactly why it gets misused. "We'll just put Kafka in front of it"
+        is a real over-engineering trap. Four costs separate "we run Kafka" from "we know when <em>not</em> to."</p>
+
+        <h3>1. It's a heavyweight distributed system to operate</h3>
+        <p>A production Kafka cluster is brokers, replication, partitions to size, retention to tune, consumer lag to
+        monitor, and rebalances to tame. It is <em>far</em> more to run than a single SQS queue or a Redis list. Managed
+        options (Confluent Cloud, AWS MSK) absorb a lot of this, but the conceptual weight — partitions, offsets,
+        groups, ISR — never goes away. For a small app that just needs a task queue, Kafka is a cannon aimed at a
+        mosquito.</p>
+
+        <h3>2. Ordering is only per-partition — and partition count is sticky</h3>
+        <p>You get order <em>within</em> a partition and nowhere else. If global ordering matters you're funneled to a
+        single partition (killing parallelism), so most designs settle for per-key ordering via the partition key. And
+        the partition count is hard to change later — <em>increasing</em> partitions reshuffles which key goes where
+        (breaking the "same key → same partition" promise for existing data), so you must plan capacity up front. It's
+        one of the few genuinely one-way doors in a Kafka design.</p>
+
+        <h3>3. At-least-once by default; exactly-once is narrow</h3>
+        <p>Same physics as Day 18: by default a consumer that processes a record then crashes before committing its
+        offset will re-read it — duplicates. Kafka <em>does</em> offer exactly-once <em>within Kafka</em> (idempotent
+        producers + transactions across topics), but the moment your consumer touches an external system (charges a
+        card, writes to another database) you're back to needing <strong>idempotent consumers</strong> (Day 24). Assume
+        duplicates, design so they don't hurt.</p>
+
+        <h3>4. It's the wrong tool for the wrong job</h3>
+        <p>Kafka is built for <em>high-throughput streams you want to retain and replay</em>. It's a poor fit for: a
+        simple background task queue (SQS/RabbitMQ are lighter and give per-message acks and easy priorities), tiny
+        low-traffic apps (the operational cost dwarfs the benefit), and anything request/response where a caller needs
+        an answer now (that's still gRPC/REST). Reach for Kafka when history and replay and scale are the point — not
+        as a default message bus.</p>
+
+        <p style="margin-top:1rem;">The through-line: Kafka trades <em>operational simplicity and per-message
+        flexibility</em> for <em>durability, replayability, and enormous ordered throughput</em>. A brilliant trade for
+        an event backbone the whole company reads; a needless tax for a modest task queue.</p>
+      </section>
+
+      <section id="variants">
+        <h2>Kafka vs the Field — When Each One Wins</h2>
+        <div class="family-grid">
+          <div class="family-card">
+            <h4>Apache Kafka</h4>
+            <p>The distributed log standard. Partitioned, replicated, retained topics; huge throughput; replay; a rich
+            ecosystem (Connect, Streams, ksqlDB). The default when events are a first-class, long-lived asset.</p>
+            <div class="eg">Best for: event streaming, event sourcing, log aggregation, stream processing at scale.</div>
+          </div>
+          <div class="family-card">
+            <h4>RabbitMQ / SQS</h4>
+            <p>Classic queues (Day 18). Delete-on-ack, per-message acks, priorities, easy routing. Lighter to run and
+            simpler when you just need to offload tasks and don't need history or replay.</p>
+            <div class="eg">Best for: task queues, RPC-style work distribution, "run this job later."</div>
+          </div>
+          <div class="family-card">
+            <h4>Apache Pulsar</h4>
+            <p>A newer log+queue hybrid that separates serving (brokers) from storage (BookKeeper), aiming for easier
+            scaling and multi-tenancy. Overlaps heavily with Kafka; smaller but growing ecosystem.</p>
+            <div class="eg">Best for: teams wanting log semantics with tiered storage and geo-replication built in.</div>
+          </div>
+          <div class="family-card">
+            <h4>Redpanda / Kinesis</h4>
+            <p><strong>Redpanda</strong> is a Kafka-API-compatible engine in C++ (no JVM, no ZooKeeper) chasing lower
+            latency. <strong>AWS Kinesis</strong> is a managed Kafka-like stream — same shard/partition ideas, less to
+            operate, locked to AWS.</p>
+            <div class="eg">Best for: "Kafka semantics, less ops" — either self-hosted (Redpanda) or managed (Kinesis).</div>
+          </div>
+        </div>
+        <p>The headline: if the question is <em>"who does this one job?"</em> a queue is simpler. If the question is
+        <em>"what happened, who all needs to know, and can we replay it later?"</em> you want a log — and Kafka is the
+        one everyone else is measured against.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You leave the Mailroom, and behind it a heavy door opens onto a vast, quiet room lined with numbered
+          ledgers on rolling shelves — the Records Room.</h4>
+          <div class="palace-room"><span class="palace-icon">🛎️</span><div><strong>The Reception Desk</strong> — <span>REST API Design (Day 15). A fixed menu of nouns and five bell-hops who each know one verb.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🧾</span><div><strong>The Concierge Booth</strong> — <span>GraphQL (Day 16). One window, a blank order slip; the client describes the exact shape it wants back.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📮</span><div><strong>The Pneumatic Tube Room</strong> — <span>gRPC (Day 17). Tiny numbered binary capsules between back kitchens — fast, but the sender still waits.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📬</span><div><strong>The Mailroom</strong> — <span>Message Queues &amp; Pub/Sub (Day 18). Drop a slip and walk away; a worker reads it once and it's <em>gone</em>.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📖</span><div><strong>The Records Room</strong> — <span>Apache Kafka (today). Not a mailbox that empties but a wall of <strong>numbered ledgers</strong> (partitions) where every event is written on the next line and <em>never erased</em>. Readers keep <strong>bookmarks</strong> (offsets), many teams (consumer groups) read the same ledgers independently, and anyone can <strong>rewind to line 1 and replay</strong> the whole history. Each ledger is copied to a second shelf (replication) so a fire can't destroy it.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🔌</span><div><strong>The Next Room</strong> — <span>WebSockets &amp; Server-Sent Events (Day 20). A live open phone line straight to the guest's room — the server can speak first, without being asked.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">gRPC (Day 17)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Message Queues (Day 18)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Kafka (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Event-Driven Arch (Day 21)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Event Sourcing (Day 76)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Partitions (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Sharding (Day 13)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Consistent Hashing (Day 14)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Replication (Day 12)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Raft (Day 32)</span>
+        </div>
+        <p>Kafka is where half of Phase 1 quietly reassembles. Its <strong>partitions</strong> are exactly the
+        <strong>sharding</strong> idea from Day 13 (split one dataset across machines by a key), and the "same key →
+        same partition" rule is the ordering cousin of the <strong>consistent hashing</strong> you learned on Day 14.
+        Its leader/follower <strong>replication</strong> and ISR are the <strong>database replication</strong> concepts
+        of Day 12 applied to a log, and its KRaft controller runs the <strong>Raft consensus</strong> you'll meet on
+        Day 32. It takes the <strong>pub/sub</strong> and <strong>at-least-once/idempotency</strong> lessons from Day
+        18 and industrializes them. Looking forward, Kafka is the substrate for <strong>event-driven architecture</strong>
+        (Day 21), <strong>stream processing</strong> (Day 59), and <strong>event sourcing / CQRS</strong> (Days 75–76).
+        Tomorrow (Day 20) we swap async broadcast for a live, always-open connection: <strong>WebSockets</strong>.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Kafka is just a faster message queue."</td><td>It's a <em>log</em>, not a queue. A queue deletes a message when it's read; Kafka <em>keeps</em> records for a retention window and lets many groups read and replay the same stream. That difference — persistence + replay — is the whole point, not speed.</td></tr>
+          <tr><td>"Add more consumers to a group and it goes faster."</td><td>Only up to the partition count. Each partition is owned by exactly one consumer in a group, so consumers beyond the number of partitions sit <em>idle</em>. Parallelism = <code>min(partitions, consumers)</code>. To scale further you must add <em>partitions</em>.</td></tr>
+          <tr><td>"Kafka guarantees global ordering."</td><td>Order is guaranteed only <em>within a single partition</em>. Across partitions there is no ordering. You keep related events in order by giving them the same <strong>partition key</strong> (e.g. <code>user_id</code>), which routes them to the same partition.</td></tr>
+          <tr><td>"Reading a message removes it (so two consumers can't both get it)."</td><td>Reading never removes anything. Consumers just advance their own offset. Two different consumer groups both read every record independently; a message only disappears when <em>retention</em> expires, regardless of who has or hasn't read it.</td></tr>
+          <tr><td>"Kafka gives you exactly-once for free."</td><td>Exactly-once exists only <em>within Kafka</em> (idempotent producer + transactions). The instant a consumer writes to an outside system, you're back to at-least-once and must make processing idempotent. Assume duplicates.</td></tr>
+          <tr><td>"Kafka must keep everything in RAM to be that fast."</td><td>It writes to <em>disk</em>. It's fast because partitions are append-only (sequential I/O), it uses zero-copy <code>sendfile</code> to the network, and it batches + compresses — not because of a giant memory buffer.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ You run a Kafka topic <code>payments</code> with <strong>3
+          partitions</strong>. A teammate says throughput is too low, so they scale the consumer group from 3 consumers
+          up to <strong>9 consumers</strong> — and see no improvement at all. Two questions: (1) why didn't it speed up,
+          and (2) they also notice that payments for a single account sometimes get processed out of order — what likely
+          caused that, and how do you fix both problems together? (click to reveal)</div>
+          <div class="recall-answer"><strong>(1) No speed-up</strong> because within one consumer group each partition
+          is owned by exactly <em>one</em> consumer, so with only 3 partitions just 3 of the 9 consumers get work — the
+          other 6 sit <strong>idle</strong>. Parallelism is capped at <code>min(partitions, consumers) = min(3, 9) =
+          3</code>. Adding consumers past the partition count does nothing; you must <strong>add partitions</strong> to
+          raise the ceiling. <strong>(2) Out-of-order account events</strong> happen because ordering is guaranteed only
+          <em>within</em> a partition, and if records aren't keyed by account, one account's events scatter across all 3
+          partitions and get processed in parallel with no ordering between them. The fix ties both problems together:
+          <strong>partition by <code>account_id</code></strong> (so every event for one account lands in the same
+          partition and stays ordered) <em>and</em> increase the partition count (say to 12) so you can run up to 12
+          consumers in parallel. One decision — a good partition key plus enough partitions — buys you both ordering and
+          scalable throughput. Mantra: <em>order lives inside a partition; parallelism is capped by partition
+          count.</em></div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">💼 LinkedIn</div><p>Kafka was <em>born</em> at LinkedIn (2011) to unify a tangle of point-to-point data pipelines into one central log every system could publish to and read from. It now moves <em>trillions</em> of messages a day there — the original "central nervous system for data" that the whole industry copied.</p></div>
+          <div class="realworld-card"><div class="rw-company">🚗 Uber</div><p>Uber runs one of the largest Kafka deployments on earth — trip events, driver locations, pricing, fraud signals and analytics all flow through Kafka. It's the backbone that lets dozens of independent teams react to the same stream of real-world events without calling each other.</p></div>
+          <div class="realworld-card"><div class="rw-company">🎬 Netflix</div><p>Netflix pipes a firehose of playback, UI and operational events through Kafka into its real-time analytics and monitoring (the Keystone pipeline) — powering everything from A/B tests to instant detection of a stream that's buffering for too many members.</p></div>
+          <div class="realworld-card"><div class="rw-company">🏦 Banks &amp; retail</div><p>Payment networks, exchanges and retailers use Kafka as an ordered, replayable ledger of transactions and inventory changes — with <code>acks=all</code> and replication for durability, and replay to rebuild downstream views or recover after a bad deploy.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: In one sentence, how is Kafka different from a traditional message queue?</div>
+          <div class="fc-a">A: A queue deletes a message once it's read; Kafka is an append-only <strong>log</strong> that <em>keeps</em> records for a retention window, so many independent consumer groups can read — and replay — the same ordered stream, each tracking its own offset.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What are a topic, a partition, and an offset?</div>
+          <div class="fc-a">A: A <strong>topic</strong> is a named stream of records. It's split into <strong>partitions</strong>, each an ordered, append-only log spread across brokers for scale and parallelism. An <strong>offset</strong> is the sequential ID of a record within a partition — its permanent address and the consumer's bookmark.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: How does a consumer group make Kafka act like both a queue and pub/sub?</div>
+          <div class="fc-a">A: <strong>Within</strong> a group, each partition is owned by one consumer, so the group splits the work like a work queue. <strong>Across</strong> groups, each group has its own offsets and reads every record independently — pub/sub fan-out. Work-queue inside, pub/sub across.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is parallelism capped by partition count, and how do you get ordering?</div>
+          <div class="fc-a">A: Each partition is consumed by exactly one consumer in a group, so at most <code>min(partitions, consumers)</code> work in parallel — extra consumers idle. Ordering is guaranteed only within a partition, so you route related records to the same partition using a <strong>partition key</strong> (e.g. <code>user_id</code>).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What do replication factor, ISR, and <code>acks=all</code> give you?</div>
+          <div class="fc-a">A: Each partition is replicated to several brokers (leader + followers); the <strong>ISR</strong> is the set fully caught up. With <code>acks=all</code> and <code>min.insync.replicas=2</code>, a write isn't acknowledged until enough replicas have it — so a broker can die without losing any acknowledged record.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Explain, in the ledger image, why Kafka can replay last month's events but a Day 18 queue cannot.</li>
+          <li>Define topic, partition, offset, broker and consumer group, and say how they fit together.</li>
+          <li>A topic has 6 partitions; a consumer group has 8 consumers. How many are doing work, and why?</li>
+          <li>Where is ordering guaranteed in Kafka, and what do you do to keep one user's events in order?</li>
+          <li>Walk through what happens to an acknowledged write when the partition leader crashes, given replication factor 3 and <code>acks=all</code>.</li>
+          <li>Give the three reasons Kafka is fast despite writing to disk.</li>
+          <li>Name two situations where a plain queue (SQS/RabbitMQ) is the better choice than Kafka, and why.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: Kafka is <strong>the log that never forgets</strong>. Instead of a mailbox
+          that deletes a message when it's read, Kafka <em>appends</em> every event to an ordered, immutable
+          <strong>partitioned log</strong> and keeps it for a retention window, so many <strong>consumer groups</strong>
+          can read — and <strong>replay</strong> — the same stream, each with its own <strong>offset</strong>. Learn the
+          two rules cold: <strong>ordering lives inside a partition</strong> (so you pick a partition key to keep related
+          events together), and <strong>parallelism is capped by the partition count</strong> (each partition is owned
+          by one consumer per group, so extra consumers idle). Replication + ISR + <code>acks=all</code> make
+          acknowledged writes durable; sequential disk I/O, zero-copy and batching make it blazing fast. And remember
+          the cost: it's a heavyweight system to operate, only per-partition ordered, at-least-once by default, and the
+          wrong tool for a simple task queue or a request/response answer. Reach for Kafka when events are a durable,
+          replayable asset the whole company reads. Tomorrow (Day 20) we open a live two-way channel where the server
+          can push without being asked: <strong>WebSockets &amp; Server-Sent Events</strong>.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-18.html">← Day 18: Message Queues &amp; Pub/Sub</a>
+        <a href="day-20.html" class="coming-soon-link">Day 20: WebSockets &amp; Server-Sent Events →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 19 of 90 — Apache Kafka Deep Dive</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── Partition → Consumer-group assignment simulator ──────────────────
+  var COLORS = ['#3b82f6','#22c55e','#a78bfa','#f472b6','#f59e0b','#14b8a6','#fb7185','#38bdf8'];
+  var els = {
+    part:  document.getElementById('k-part'),
+    cons:  document.getElementById('k-cons'),
+    partV: document.getElementById('k-part-v'),
+    consV: document.getElementById('k-cons-v'),
+    mPart: document.getElementById('m-part'),
+    mCons: document.getElementById('m-cons'),
+    mPar:  document.getElementById('m-par'),
+    mIdle: document.getElementById('m-idle'),
+    status:document.getElementById('k-status'),
+    rows:  document.getElementById('k-rows'),
+    consumers: document.getElementById('k-consumers')
+  };
+
+  function render() {
+    var P = +els.part.value;
+    var C = +els.cons.value;
+    els.partV.textContent = P;
+    els.consV.textContent = C;
+
+    // Kafka's assignment: partition i → consumer (i mod C). This means the
+    // first (P mod C) consumers may own one extra partition; consumers with
+    // index >= P are never assigned anything (idle) when C > P.
+    var owner = [];
+    var ownsCount = [];
+    for (var c = 0; c < C; c++) ownsCount[c] = 0;
+    for (var i = 0; i < P; i++) {
+      var c2 = i % C;
+      owner[i] = c2;
+      ownsCount[c2] += 1;
+    }
+    var activeConsumers = Math.min(P, C);
+    var idle = Math.max(0, C - P);
+
+    els.mPart.textContent = P;
+    els.mCons.textContent = C;
+    els.mPar.textContent = activeConsumers;
+    els.mIdle.textContent = idle;
+
+    if (idle > 0) {
+      els.status.className = 'q-status warn';
+      els.status.textContent = '⚠  ' + idle + ' consumer' + (idle > 1 ? 's' : '') +
+        ' idle — only ' + P + ' partition' + (P > 1 ? 's' : '') + ' to hand out. Parallelism capped at ' + P + '.';
+    } else if (P === C) {
+      els.status.className = 'q-status ok';
+      els.status.textContent = 'Perfectly balanced ✅  — one partition per consumer.';
+    } else {
+      els.status.className = 'q-status ok';
+      els.status.textContent = 'Balanced ✅  — each consumer owns ~' + Math.round(P / C * 10) / 10 +
+        ' partitions (' + P + ' partitions ÷ ' + C + ' consumers).';
+    }
+
+    // Partition → owner rows
+    els.rows.innerHTML = '';
+    for (var pi = 0; pi < P; pi++) {
+      var row = document.createElement('div');
+      row.className = 'k-part-row';
+      var col = COLORS[owner[pi] % COLORS.length];
+      row.innerHTML =
+        '<span class="k-part">partition ' + pi + '</span>' +
+        '<span class="k-arrow">→</span>' +
+        '<span class="k-owner" style="background:' + col + '22;color:' + col + ';border:1px solid ' + col + '66;">consumer ' + owner[pi] + '</span>';
+      els.rows.appendChild(row);
+    }
+
+    // Consumer chips
+    els.consumers.innerHTML = '';
+    for (var ci = 0; ci < C; ci++) {
+      var chip = document.createElement('div');
+      var isIdle = ownsCount[ci] === 0;
+      var ccol = COLORS[ci % COLORS.length];
+      chip.className = 'k-consumer' + (isIdle ? ' idle' : '');
+      chip.style.borderColor = isIdle ? '' : ccol + '88';
+      chip.style.color = isIdle ? '' : ccol;
+      chip.innerHTML = '<span class="k-c-emoji">' + (isIdle ? '💤' : '⚙️') + '</span>consumer ' + ci +
+        ' <span style="opacity:.75;font-weight:600;">· ' + ownsCount[ci] + ' part' + (ownsCount[ci] === 1 ? '' : 's') + '</span>';
+      els.consumers.appendChild(chip);
+    }
+  }
+
+  els.part.addEventListener('input', render);
+  els.cons.addEventListener('input', render);
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+
+  // Anchor diagram: a topic split into partitions, each an append-only
+  // numbered log; producer appends; a consumer group reads via offsets.
+  function drawKafkaDiagram() {
+    var svg = document.getElementById('kafka-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'Topic "rides" = an append-only log, split into partitions. Records are never deleted on read.', '#e2e8f0', '13', '700');
+
+    // Producer (left)
+    svg.appendChild(rs.rectangle(30, 175, 120, 80, { stroke:'#3b82f6', strokeWidth:2, roughness:1.1, fill:'#3b82f622', fillStyle:'solid' }));
+    T(90, 205, 'Producer', '#dbeafe', '12', '700');
+    T(90, 224, 'key=rider_42', '#93c5fd', '9', '600', true);
+    T(90, 242, 'append →', '#94a3b8', '9');
+
+    // Three partitions, each a row of numbered offset cells
+    var parts = [
+      { y: 70,  label: 'Partition 0', color:'#f59e0b' },
+      { y: 175, label: 'Partition 1', color:'#22c55e' },
+      { y: 280, label: 'Partition 2', color:'#a78bfa' }
+    ];
+    parts.forEach(function(pt){
+      T(250, pt.y - 8, pt.label, pt.color, '10', '700', true);
+      for (var o = 0; o < 6; o++) {
+        var cx = 190 + o*66;
+        var filled = o < 5;
+        svg.appendChild(rs.rectangle(cx, pt.y, 60, 40, {
+          stroke: pt.color, strokeWidth: 1.4, roughness: 1.15,
+          fill: filled ? pt.color + '20' : '#0b1120', fillStyle:'solid'
+        }));
+        T(cx + 30, pt.y + 18, filled ? 'rec' : 'next', filled ? '#e2e8f0' : '#64748b', '8.5', '600', true);
+        T(cx + 30, pt.y + 32, 'off ' + o, pt.color, '8', '600', true);
+      }
+    });
+
+    // arrows producer → each partition tail
+    parts.forEach(function(pt){
+      svg.appendChild(rs.line(150, 215, 190, pt.y + 20, { stroke:'#3b82f6', strokeWidth:1.3, roughness:1 }));
+    });
+    T(560, 45, 'new records appended at the end →', '#94a3b8', '9.5');
+
+    // Consumer group reading with an offset bookmark on partition 1
+    svg.appendChild(rs.rectangle(600, 350, 190, 60, { stroke:'#22c55e', strokeWidth:1.8, roughness:1.1, fill:'#22c55e18', fillStyle:'solid' }));
+    T(695, 374, 'Consumer group "fraud"', '#dcfce7', '10', '700');
+    T(695, 392, 'reads forward from its offset', '#86efac', '8.5');
+    svg.appendChild(rs.line(520, 215, 640, 350, { stroke:'#22c55e', strokeWidth:1.4, roughness:1, strokeLineDash:[5,4] }));
+
+    T(410, 428, 'Same log, read by many groups independently — each keeps its own offset and can rewind (replay).', '#94a3b8', '10.5');
+  }
+
+  // Consumer-groups diagram: one topic, two groups; work-queue inside a
+  // group, pub/sub across groups.
+  function drawGroupsDiagram() {
+    var svg = document.getElementById('groups-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'One topic (4 partitions) → work-queue INSIDE a group, pub/sub ACROSS groups', '#e2e8f0', '12.5', '700');
+
+    // Topic partitions in the middle-left
+    var py = [60, 108, 156, 204];
+    py.forEach(function(y, i){
+      svg.appendChild(rs.rectangle(60, y, 150, 38, { stroke:'#f59e0b', strokeWidth:1.6, roughness:1.1, fill:'#f59e0b18', fillStyle:'solid' }));
+      T(135, y + 23, 'partition ' + i, '#fcd34d', '10', '600');
+    });
+    T(135, 262, 'topic "rides"', '#94a3b8', '10', '700');
+
+    // Group A (top-right): 2 consumers, each owns 2 partitions
+    svg.appendChild(rs.rectangle(430, 44, 350, 110, { stroke:'#22c55e', strokeWidth:1.4, roughness:1, fill:'#22c55e10', fillStyle:'solid', strokeLineDash:[4,4] }));
+    T(605, 40, 'Group "fraud" — splits the 4 partitions', '#86efac', '10', '700');
+    svg.appendChild(rs.rectangle(455, 62, 130, 34, { stroke:'#22c55e', strokeWidth:1.6, roughness:1.1, fill:'#22c55e22', fillStyle:'solid' }));
+    T(520, 84, 'consumer A1', '#dcfce7', '9.5', '600');
+    svg.appendChild(rs.rectangle(455, 104, 130, 34, { stroke:'#22c55e', strokeWidth:1.6, roughness:1.1, fill:'#22c55e22', fillStyle:'solid' }));
+    T(520, 126, 'consumer A2', '#dcfce7', '9.5', '600');
+    T(700, 84, 'gets p0, p1', '#94a3b8', '8.5');
+    T(700, 126, 'gets p2, p3', '#94a3b8', '8.5');
+    svg.appendChild(rs.line(210, 79, 455, 79, { stroke:'#22c55e', strokeWidth:1.2, roughness:1 }));
+    svg.appendChild(rs.line(210, 127, 455, 121, { stroke:'#22c55e', strokeWidth:1.2, roughness:1 }));
+
+    // Group B (bottom-right): 1 consumer, owns all 4 — full independent copy
+    svg.appendChild(rs.rectangle(430, 176, 350, 84, { stroke:'#a78bfa', strokeWidth:1.4, roughness:1, fill:'#a78bfa10', fillStyle:'solid', strokeLineDash:[4,4] }));
+    T(605, 172, 'Group "analytics" — reads EVERY record too', '#c4b5fd', '10', '700');
+    svg.appendChild(rs.rectangle(455, 196, 150, 42, { stroke:'#a78bfa', strokeWidth:1.6, roughness:1.1, fill:'#a78bfa22', fillStyle:'solid' }));
+    T(530, 222, 'consumer B1', '#ede9fe', '9.5', '600');
+    T(695, 218, 'gets p0–p3 (its own offsets)', '#94a3b8', '8.5');
+    py.forEach(function(y){
+      svg.appendChild(rs.line(210, y + 19, 455, 217, { stroke:'#a78bfa', strokeWidth:1, roughness:1, strokeLineDash:[3,3] }));
+    });
+
+    T(410, 300, 'Both groups read the SAME immutable log — reading never deletes. Add a group → another full reader.', '#94a3b8', '10');
+  }
+
+  function drawAll() { drawKafkaDiagram(); drawGroupsDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
