@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 20: WebSockets &amp; Server-Sent Events | System Design Mastery</title>
+  <meta name="description" content="Plain HTTP is a customer who must always ask before the waiter says anything — request, then response, nothing in between. Real-time apps (chat, live scores, collaborative editing, streaming AI answers) need the server to speak first. Learn WebSockets (one handshake that upgrades an HTTP connection into a permanent, full-duplex channel) and Server-Sent Events (a single never-ending HTTP response the server streams down), how they beat polling on both latency and load, the handshake and frames, why long-lived connections are hard to scale (sticky routing + a pub/sub backplane), and when each one wins. Taught through an open-phone-line story, a live polling-vs-push simulator, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* polling-vs-push simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .q-controls { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:1rem 1.5rem; margin:1rem 0 1.25rem; }
+    .q-control label { display:block; font-size:.8rem; color:var(--text-muted); font-weight:600; margin-bottom:.35rem; }
+    .q-control input[type=range] { width:100%; accent-color: var(--accent); }
+    .q-control .q-val { color:var(--accent-light); font-weight:700; }
+    .q-control.dim { opacity:.4; }
+    .prop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:.75rem; margin:0 0 1rem; }
+    .prop-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.8rem 1rem; text-align:center; }
+    .prop-card .val { font-size:1.4rem; font-weight:800; }
+    .prop-card .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .prop-card .val.load { color:#f59e0b; } .prop-card .val.waste { color:#fb7185; } .prop-card .val.lat { color:#3b82f6; } .prop-card .val.conn { color:#a78bfa; }
+    .q-status { text-align:center; font-weight:800; font-size:.92rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; line-height:1.5; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 20</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 20 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 3 — Communication Patterns</span>
+    </div>
+    <h1>WebSockets &amp; Server-Sent Events<br><span style="color:var(--accent)">When the Server Speaks First</span></h1>
+    <p class="lead">
+      Every protocol so far — REST, GraphQL, gRPC — shares one silent assumption: the <em>client</em> speaks first, the
+      server answers, and then it goes quiet. That's fine for "load this page." It's hopeless for a chat message that
+      should appear <em>the instant</em> your friend sends it, a stock price that ticks on its own, cursors gliding in a
+      shared document, or an AI answer streaming word-by-word. For those, the server needs to <strong>speak first</strong>
+      — to push. Today we meet the two tools that let it: <strong>WebSockets</strong>, a permanent two-way phone line, and
+      <strong>Server-Sent Events</strong>, a one-way live broadcast. Both start life as an ordinary HTTP request — and
+      then refuse to hang up.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#depth">The WebSocket Handshake</a>
+        <a href="#sse">Server-Sent Events</a>
+        <a href="#scale">The Scaling Problem</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#variants">WebSockets vs the Field</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🔌📞</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Picture three ways two people can stay in touch. The <strong>first</strong> is a restless kid in the back
+            seat: every few seconds, <em>"Are we there yet? … Are we there yet? … Are we there yet?"</em> Ninety-nine
+            times out of a hundred the answer is "no." That's <strong>HTTP polling</strong> — the client keeps asking,
+            most answers are empty, and real news still arrives late (only on the <em>next</em> ask). The
+            <strong>second</strong> is picking up a <strong>phone and leaving the line open</strong>: you dial once, and
+            after that either person can just <em>speak the moment they have something to say</em> — no redialing, no
+            asking permission. That's a <strong>WebSocket</strong>: one connection, held open, both directions, instant.
+            The <strong>third</strong> is a <strong>radio station</strong>: you tune in once, and the station broadcasts
+            news to you as it happens — you only listen, you never talk back on that channel. That's
+            <strong>Server-Sent Events</strong>: one connection, held open, but one-way (server → you). Burn in the
+            image: <em>polling is asking over and over; WebSocket is an open phone line; SSE is a radio you tune into.</em>
+            The whole lesson is knowing which one to reach for.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="ws-diagram" width="820" height="450" viewBox="0 0 820 450"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Realtime Rhea</span> was building a live-ops dashboard and chat for a food
+            delivery app. Support agents needed to see orders update <em>live</em> and chat with couriers in real time.
+            Her first version used what she already knew: plain HTTP. The browser asked the server <em>"any new
+            messages? any order updates?"</em> every 3 seconds. It technically worked — but it was quietly awful. With
+            5,000 agents online, the server was pounded with <strong>~1.6 million requests an hour</strong>, and the
+            overwhelming majority came back empty: <em>"nope, nothing new."</em> Worse, a courier's "I'm at the door"
+            message could sit invisible for up to 3 seconds, because that's how long until the browser next bothered to
+            ask. Fast <em>and</em> cheap were both impossible: poll more often and the server melts; poll less often and
+            the app feels laggy.
+          </p>
+          <p>
+            She tried a clever patch called <strong>long-polling</strong> — the browser asks, and the server just
+            <em>holds the request open</em> until it actually has news, then answers and the browser immediately asks
+            again. Latency got much better. But it was fiddly: every message meant tearing down and re-establishing a
+            request, timeouts to manage, and it was still fundamentally the client doing all the asking. It felt like
+            forcing a one-way street to carry two-way traffic.
+          </p>
+          <p>
+            Then Rhea split her problem in two and picked the right tool for each half. For <strong>chat</strong> — where
+            <em>both</em> sides send messages constantly — she used a <strong>WebSocket</strong>. The browser opens one
+            connection with a quick HTTP "upgrade" handshake, and from then on the agent and the courier send messages
+            over the <em>same</em> open line, in either direction, arriving in milliseconds. For the <strong>order-status
+            feed</strong> and <strong>notifications</strong> — where data only flows <em>one way</em>, server to browser
+            — she used <strong>Server-Sent Events</strong>: the browser opens one long-lived HTTP request, and the server
+            streams updates down it as they happen, with automatic reconnection for free when the Wi-Fi hiccups.
+          </p>
+          <p>
+            The result: the server went from millions of pointless "anything new?" requests to a handful of connections
+            that stayed quiet until there was <em>actually</em> something to send. Latency dropped from seconds to
+            milliseconds, and load dropped through the floor. Rhea had learned the core lesson of real-time systems:
+            <strong>stop making the client ask — let the server speak the moment it has something to say.</strong> The
+            only new cost was that those open connections are <em>stateful</em>, and stateful connections, as she'd soon
+            discover, are their own kind of hard.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">Plain HTTP is <strong>half-duplex request/response</strong>: the client must ask
+          before the server can say anything, so "live" data is faked by <strong>polling</strong> (ask repeatedly — most
+          answers empty, news always a poll-interval late). <strong>WebSockets</strong> and <strong>Server-Sent
+          Events</strong> both start as a normal HTTP request and then <em>keep the connection open</em> so the server can
+          <strong>push</strong>. A <strong>WebSocket</strong> performs an HTTP <em>Upgrade</em> handshake (<code>101
+          Switching Protocols</code>) that turns the connection into a persistent, <strong>full-duplex</strong> channel —
+          either side sends <em>frames</em> anytime, over <code>ws://</code>/<code>wss://</code>, binary or text.
+          <strong>SSE</strong> is simpler and <strong>one-way</strong>: a single never-ending HTTP response of
+          <code>text/event-stream</code> that the server writes updates into, with built-in auto-reconnect and event IDs.
+          Use <strong>WebSockets when both sides talk</strong> (chat, games, collaborative editing); use <strong>SSE when
+          only the server talks</strong> (notifications, live feeds, streaming AI tokens). The price of both: open
+          connections are <strong>stateful</strong> — they eat memory and file descriptors, need heartbeats and
+          reconnection logic, resist load balancers, and to scale past one server they need a <strong>pub/sub
+          backplane</strong> so a message arriving on one node reaches a user connected to another.</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Polling vs Push</h2>
+        <div class="sim-box">
+          <p>Why not just poll faster? Because polling forces an ugly trade between <em>server load</em> and
+          <em>latency</em>, and you can't win both. Below, a server produces new data at some rate, and some number of
+          clients want it. Flip between <strong>Short Polling</strong> (each client re-asks on a fixed interval) and
+          <strong>Push</strong> (WebSocket/SSE — one open connection, the server sends only when there's real news). Watch
+          the request count, the wasted empty responses, and the latency.</p>
+
+          <div class="mode-toggle" id="mode-toggle">
+            <button data-mode="poll" class="active">Short Polling</button>
+            <button data-mode="push">Push (WebSocket / SSE)</button>
+          </div>
+
+          <div class="q-controls">
+            <div class="q-control" id="ctl-interval">
+              <label>Poll interval: <span class="q-val" id="w-int-v">5</span>s</label>
+              <input type="range" id="w-int" min="1" max="30" value="5" />
+            </div>
+            <div class="q-control">
+              <label>Real updates from server: <span class="q-val" id="w-evt-v">6</span>/min</label>
+              <input type="range" id="w-evt" min="1" max="120" value="6" />
+            </div>
+            <div class="q-control">
+              <label>Connected clients: <span class="q-val" id="w-cli-v">100</span></label>
+              <input type="range" id="w-cli" min="1" max="1000" value="100" step="1" />
+            </div>
+          </div>
+
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val load" id="m-load">—</div><div class="lbl">Requests / min</div></div>
+            <div class="prop-card"><div class="val waste" id="m-waste">—</div><div class="lbl">Wasted (empty)</div></div>
+            <div class="prop-card"><div class="val lat" id="m-lat">—</div><div class="lbl">Avg latency</div></div>
+            <div class="prop-card"><div class="val conn" id="m-conn">—</div><div class="lbl">Open connections</div></div>
+          </div>
+
+          <div class="q-status warn" id="w-status">—</div>
+
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: in <strong>Short
+          Polling</strong>, drag the poll interval down to 1s to chase low latency — requests <em>explode</em> and most
+          are still wasted. Now push updates up to 120/min: waste drops to zero (data changes faster than you poll) but
+          latency is <em>still</em> half your interval, and you silently miss every update between polls. Then flip to
+          <strong>Push</strong>: requests collapse to one handshake per client, zero waste, near-instant latency — you
+          just now hold one <em>open connection per client</em>, which is the whole cost you're trading for.</p>
+        </div>
+      </section>
+
+      <section id="depth">
+        <h2>The WebSocket Handshake — How an HTTP Request Becomes an Open Line</h2>
+        <p>The clever thing about a WebSocket is that it doesn't need a new port or a separate protocol negotiation with
+        the firewall — it <em>borrows</em> an ordinary HTTP connection and then asks to be promoted. That promotion is
+        the <strong>handshake</strong>.</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>1. The client asks to upgrade.</strong><span>The browser sends a normal
+          <code>GET</code> request with special headers: <code>Upgrade: websocket</code>, <code>Connection:
+          Upgrade</code>, a random <code>Sec-WebSocket-Key</code>, and <code>Sec-WebSocket-Version: 13</code>. It's still
+          plain HTTP at this point — which is why it sails through the same ports (80/443) and proxies as any web
+          request.</span></div>
+          <div class="flow-step"><strong>2. The server switches protocols.</strong><span>If it agrees, the server
+          replies <code>101 Switching Protocols</code> with a <code>Sec-WebSocket-Accept</code> header (a hash of the
+          client's key, proving it understood). That <code>101</code> is the moment the connection stops being HTTP and
+          becomes a raw, persistent <strong>WebSocket</strong> — <code>wss://</code> when it's over TLS, which it should
+          always be.</span></div>
+          <div class="flow-step"><strong>3. Both sides now exchange frames.</strong><span>The same TCP connection stays
+          open and carries lightweight <em>frames</em> instead of requests. A frame has a tiny header (a few bytes) and a
+          payload — <em>text</em> or <em>binary</em>. Either side sends whenever it wants: <strong>full-duplex</strong>.
+          No more headers-per-message, no more "ask first."</span></div>
+          <div class="flow-step"><strong>4. Heartbeats keep it alive.</strong><span>Idle connections get silently killed
+          by proxies and NAT boxes, so the two sides exchange <em>ping</em>/<em>pong</em> control frames to prove they're
+          still there. If pongs stop coming, you know the connection died and can reconnect.</span></div>
+          <div class="flow-step"><strong>5. Either side can close.</strong><span>A <em>close</em> frame (with a status
+          code) ends it cleanly. In practice the client also reconnects — with backoff — whenever the line drops, because
+          on real networks it <em>will</em> drop.</span></div>
+        </div>
+        <p>The payoff: after one handshake, a message is just a frame with a few bytes of overhead flying down an already
+        open pipe — versus a fresh HTTP request (headers, cookies, maybe a new TLS handshake) every single time with
+        polling. That's why WebSockets are both <strong>faster</strong> (lower latency) and <strong>cheaper</strong>
+        (less overhead) once data is flowing frequently in both directions.</p>
+
+        <div class="code-label">Client side — a WebSocket in the browser</div>
+        <div class="code-panel"><span class="k">const</span> ws = <span class="k">new</span> <span class="f">WebSocket</span>(<span class="s">"wss://chat.example.com/socket"</span>);
+
+ws.<span class="f">onopen</span>  = () => ws.<span class="f">send</span>(<span class="s">"hello from the courier"</span>);   <span class="muted">// I can speak first now</span>
+ws.<span class="f">onmessage</span> = (e) => <span class="f">render</span>(e.data);              <span class="muted">// server pushed something — instantly</span>
+ws.<span class="f">onclose</span>  = () => <span class="f">reconnectWithBackoff</span>();       <span class="muted">// networks drop; always reconnect</span></div>
+      </section>
+
+      <section id="sse">
+        <h2>Server-Sent Events — The One-Way Radio</h2>
+        <p>Half the time you don't actually need two-way traffic. Notifications, a live scoreboard, a price ticker, a
+        progress bar, an AI answer streaming in — the data only ever flows <em>server → client</em>. For that,
+        WebSockets are overkill, and <strong>Server-Sent Events</strong> are the elegant, boring, wonderful answer.</p>
+        <p>SSE isn't a new protocol at all — it's <em>just an HTTP response that never ends</em>. The client opens a
+        normal request; the server replies with <code>Content-Type: text/event-stream</code> and then simply
+        <em>keeps writing</em> to the response, one event at a time, forever. The browser exposes this as a one-line
+        API, <code>EventSource</code>, that hides all the plumbing.</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>The wire format is dead simple.</strong><span>Each message is text:
+          <code>data: {...}</code> followed by a blank line. Optional fields make it powerful:
+          <code>id:</code> tags each event, <code>event:</code> names a type your client can listen for, and
+          <code>retry:</code> tells the browser how long to wait before reconnecting.</span></div>
+          <div class="flow-step"><strong>Reconnection is automatic — and resumable.</strong><span>If the connection
+          drops, the browser reconnects <em>on its own</em>, and sends the last <code>id</code> it saw in a
+          <code>Last-Event-ID</code> header. A well-written server uses that to replay only what was missed. You get
+          "don't lose messages across a blip" nearly for free — something you'd have to hand-build on a
+          WebSocket.</span></div>
+          <div class="flow-step"><strong>It's just HTTP, so it's friendly.</strong><span>SSE flows over normal
+          HTTP(S), so it works through proxies, CDNs, and corporate firewalls that sometimes block WebSockets, and it
+          inherits HTTP auth, cookies, and compression with no special handling.</span></div>
+          <div class="flow-step"><strong>The limits.</strong><span>One-way only (no client → server on this channel —
+          you still use a normal request for that), <em>text</em> only (UTF-8, no binary), and on old HTTP/1.1 a browser
+          caps you at ~6 concurrent connections per domain — a real gotcha that HTTP/2 multiplexing removes.</span></div>
+        </div>
+
+        <div class="code-label">SSE — one line on the client, plain text on the wire</div>
+        <div class="code-panel"><span class="muted">// CLIENT — the whole API is one object</span>
+<span class="k">const</span> es = <span class="k">new</span> <span class="f">EventSource</span>(<span class="s">"/orders/stream"</span>);
+es.<span class="f">onmessage</span> = (e) => <span class="f">updateOrder</span>(<span class="f">JSON</span>.<span class="f">parse</span>(e.data));  <span class="muted">// auto-reconnects for free</span>
+
+<span class="muted"># SERVER — the response literally never ends</span>
+Content-Type: text/event-stream
+
+<span class="n">id:</span> 1042
+<span class="n">data:</span> {<span class="s">"order"</span>: 42, <span class="s">"status"</span>: <span class="s">"picked_up"</span>}
+
+<span class="n">id:</span> 1043
+<span class="n">data:</span> {<span class="s">"order"</span>: 42, <span class="s">"status"</span>: <span class="s">"delivered"</span>}</div>
+        <p style="margin-top:1rem;">Here's the modern twist that makes SSE suddenly everywhere: <strong>every streaming
+        LLM answer you've seen — ChatGPT, Claude — arrives over SSE.</strong> The model produces tokens one at a time and
+        the server streams each down an <code>text/event-stream</code> response, which is exactly why the text appears to
+        type itself. One-way, server-push, resumable: a perfect fit.</p>
+      </section>
+
+      <section id="scale">
+        <h2>The Scaling Problem — Why Open Connections Are Hard</h2>
+        <p>Everything above is easy on one server. The difficulty — and the reason this is a <em>system design</em> topic,
+        not a frontend trick — shows up the moment you have <strong>more than one</strong> server, which you always do.</p>
+        <p>Plain HTTP is <strong>stateless</strong>: any request can hit any server, because the server remembers nothing
+        between requests (Day 2's whole point). WebSockets and SSE are the opposite — a connection is <strong>pinned to
+        one specific server</strong> for its entire life. That breaks two things at once:</p>
+        <h3>1. Load balancers must route by connection, not by request</h3>
+        <p>A normal load balancer sprays each request wherever it likes. But a WebSocket's frames must all reach the
+        <em>same</em> server that holds the connection, so you need <strong>connection-aware (Layer 4 / sticky)
+        routing</strong> and a balancer that understands the HTTP upgrade. And every open connection consumes memory and
+        a file descriptor on that server, so "how many concurrent connections can one box hold?" (the famous
+        <strong>C10K → C10M</strong> problem) becomes a real capacity question — you tune the OS, not just the app.</p>
+        <h3>2. You need a pub/sub backplane to fan messages across servers</h3>
+        <p>Here's the classic bug, and it's worth burning in. Alice is connected to <strong>Server 1</strong>. Bob is
+        connected to <strong>Server 2</strong>. Alice sends a chat message — it arrives at Server 1. But Bob's connection
+        lives on Server 2, which never saw it. Bob gets nothing. The fix is a <strong>message backplane</strong>: every
+        server <em>publishes</em> incoming messages to a shared pub/sub layer (Redis Pub/Sub, or Kafka from Day 19), and
+        every server <em>subscribes</em> and pushes to whichever of <em>its</em> connections care. Server 1 publishes
+        Alice's message; Server 2 receives it from the backplane and forwards it down Bob's socket.</p>
+
+        <div class="diagram-box">
+          <svg id="scale-diagram" width="820" height="360" viewBox="0 0 820 360"></svg>
+        </div>
+
+        <p>Notice how this reuses <em>exactly</em> the pub/sub idea from Day 18 and the durable log from Day 19 — the
+        realtime edge (WebSockets/SSE) is the last hop to the user, but behind it sits the same event backbone you've
+        already been building. Real-time systems are pub/sub with a live delivery layer bolted onto the front.</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts — What Persistent Connections Cost You</h2>
+        <p>Push feels magical, so teams reach for WebSockets by reflex. But "hold a connection open forever" is a bill
+        that comes due in four ways.</p>
+
+        <h3>1. State is expensive and fragile</h3>
+        <p>A stateless HTTP server can be killed and replaced freely — no request cares. A WebSocket server holds
+        thousands of live connections, each with memory and a file descriptor; a deploy or crash <em>drops all of
+        them</em> at once (a "reconnect storm" as everyone rushes back). You now own heartbeats, timeouts, graceful
+        draining on deploy, and backpressure when a slow client can't keep up. None of that existed with request/response.</p>
+
+        <h3>2. Reconnection, missed messages, and ordering</h3>
+        <p>On a real network, connections drop constantly — phones change towers, laptops sleep, Wi-Fi blips. So you
+        <em>must</em> assume disconnects and design for them: reconnect with exponential backoff, and figure out what the
+        client missed while it was gone. SSE hands you <code>Last-Event-ID</code> for this; with WebSockets you build
+        your own cursor/sequence-number scheme. Skip it and users silently lose messages.</p>
+
+        <h3>3. Load balancers, proxies, and firewalls fight you</h3>
+        <p>Long-lived connections irritate infrastructure built for short requests: proxies impose idle timeouts (hence
+        heartbeats), some corporate firewalls block WebSocket upgrades entirely (a reason to prefer SSE, or keep a
+        long-polling fallback), and sticky routing complicates otherwise-simple load balancing. The realtime layer needs
+        infrastructure that's <em>aware</em> of it.</p>
+
+        <h3>4. It's the wrong tool when you don't need push</h3>
+        <p>If data changes rarely, or the client only needs it when it acts, don't hold a socket open — a plain
+        request is simpler, cacheable, and stateless. If updates are one-way, prefer <strong>SSE</strong> over a
+        WebSocket (less to operate, free reconnection). Reserve full WebSockets for genuinely <em>bidirectional,
+        high-frequency</em> interaction. Reaching for a WebSocket to occasionally refresh a number is the real-time
+        equivalent of Day 19's "put Kafka in front of everything."</p>
+
+        <p style="margin-top:1rem;">The through-line: WebSockets and SSE trade <strong>statelessness</strong> — the thing
+        that made HTTP so easy to scale — for <strong>instant, server-initiated delivery</strong>. A brilliant trade when
+        liveness is the product; a self-inflicted operational wound when it isn't.</p>
+      </section>
+
+      <section id="variants">
+        <h2>WebSockets vs the Field — When Each One Wins</h2>
+        <div class="family-grid">
+          <div class="family-card">
+            <h4>WebSockets</h4>
+            <p>One handshake, then a persistent <strong>full-duplex</strong> channel. Both sides push text or binary
+            frames anytime, lowest latency. The most powerful and the most to operate.</p>
+            <div class="eg">Best for: chat, multiplayer games, collaborative editing, live cursors, trading terminals.</div>
+          </div>
+          <div class="family-card">
+            <h4>Server-Sent Events</h4>
+            <p>A never-ending HTTP response — <strong>one-way</strong> server→client, text only, with auto-reconnect and
+            event IDs built in. Simplest push, and firewall-friendly because it's just HTTP.</p>
+            <div class="eg">Best for: notifications, live feeds/dashboards, progress, streaming LLM tokens.</div>
+          </div>
+          <div class="family-card">
+            <h4>HTTP Long-Polling</h4>
+            <p>The client asks, the server <em>holds</em> the request until it has news, then answers and the client
+            re-asks. Works everywhere with no special support — the universal fallback, but clumsy and higher overhead.</p>
+            <div class="eg">Best for: a compatibility fallback when WebSockets/SSE are blocked.</div>
+          </div>
+          <div class="family-card">
+            <h4>Socket.IO / SockJS</h4>
+            <p>Libraries that wrap WebSockets with automatic <strong>fallbacks</strong> (to long-polling), reconnection,
+            rooms, and heartbeats. Convenience and robustness at the cost of a non-standard protocol on both ends.</p>
+            <div class="eg">Best for: teams wanting "just works" realtime without hand-building reconnection/fallbacks.</div>
+          </div>
+          <div class="family-card">
+            <h4>gRPC streaming</h4>
+            <p>From Day 17 — server/client/bidirectional streaming over HTTP/2. Great <em>service-to-service</em>, but no
+            direct browser support (needs grpc-web + a proxy), so rarely the browser-facing choice.</p>
+            <div class="eg">Best for: streaming between backend services, not browser ↔ server.</div>
+          </div>
+          <div class="family-card">
+            <h4>WebTransport (HTTP/3)</h4>
+            <p>The emerging successor: bidirectional streams <em>and</em> unreliable datagrams over QUIC/HTTP-3, no
+            head-of-line blocking. Still maturing and unevenly supported, but where low-latency realtime is heading.</p>
+            <div class="eg">Best for: the future — games and media needing UDP-like speed with web security.</div>
+          </div>
+        </div>
+        <p>The decision tree is short: <strong>Does only the server talk?</strong> → SSE. <strong>Do both sides talk,
+        often?</strong> → WebSocket. <strong>Does data change rarely, or only when the user acts?</strong> → you didn't
+        need push at all; use a plain request.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You leave the quiet Records Room, and a narrow corridor ends at a small booth with a red phone off its
+          hook and a radio crackling on the shelf — the Open Line Room.</h4>
+          <div class="palace-room"><span class="palace-icon">🛎️</span><div><strong>The Reception Desk</strong> — <span>REST API Design (Day 15). A fixed menu of nouns and five bell-hops who each know one verb.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🧾</span><div><strong>The Concierge Booth</strong> — <span>GraphQL (Day 16). One window, a blank order slip; the client describes the exact shape it wants back.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📮</span><div><strong>The Pneumatic Tube Room</strong> — <span>gRPC (Day 17). Tiny numbered binary capsules between back kitchens — fast, but the sender still waits.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📬</span><div><strong>The Mailroom</strong> — <span>Message Queues &amp; Pub/Sub (Day 18). Drop a slip and walk away; a worker reads it once and it's gone.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📖</span><div><strong>The Records Room</strong> — <span>Apache Kafka (Day 19). A wall of numbered ledgers where every event is written and never erased; readers keep bookmarks and can rewind.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🔌</span><div><strong>The Open Line Room</strong> — <span>WebSockets &amp; SSE (today). A red <strong>phone left off the hook</strong> — dial once, then either side just <em>talks</em> the instant there's news (WebSocket, two-way). Beside it a <strong>radio</strong> the front desk broadcasts on while you only listen (SSE, one-way). A tangle of wires runs to a shared switchboard in the basement (the pub/sub backplane) so a call on one line can reach a guest on another.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🔔</span><div><strong>The Next Room</strong> — <span>Event-Driven Architecture (Day 21). The whole building wired so that one event automatically sets off a chain of reactions across every department.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">HTTP / TCP (Day 3)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">REST (Day 15)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">WebSockets &amp; SSE (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Event-Driven Arch (Day 21)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Scaling push (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Pub/Sub (Day 18)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Kafka (Day 19)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Redis (Day 7)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Load Balancing (Day 5)</span>
+        </div>
+        <p>Today closes the Communication Patterns arc. We went from the client always asking — <strong>REST</strong> (Day
+        15), <strong>GraphQL</strong> (Day 16), <strong>gRPC</strong> (Day 17) — through the async pivot of
+        <strong>queues</strong> (Day 18) and <strong>Kafka</strong> (Day 19), to the final piece: letting the server
+        <em>reach the user live</em>. The WebSocket handshake is the same <strong>HTTP/TCP</strong> from Day 3, upgraded;
+        scaling those open connections pulls in the <strong>pub/sub</strong> of Day 18, the <strong>Kafka</strong> log of
+        Day 19, <strong>Redis</strong> (Day 7) as a fast backplane, and the connection-aware <strong>load balancing</strong>
+        of Day 5. Tomorrow (Day 21) we zoom out from the wire to the pattern it enables: <strong>Event-Driven
+        Architecture</strong>, where the whole system is choreographed by events instead of direct calls.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"WebSockets are a totally separate protocol from HTTP."</td><td>They <em>start</em> as an ordinary HTTP request and are <em>upgraded</em> via a <code>101 Switching Protocols</code> handshake — which is exactly why they reuse ports 80/443 and pass through the same infrastructure. After the handshake they're their own frame-based protocol.</td></tr>
+          <tr><td>"Just poll faster and it'll feel real-time."</td><td>Faster polling means more load <em>and</em> more waste, and latency is still ~half your interval — you're always a poll behind, and you miss updates between polls. Push (WebSocket/SSE) removes both the load and the latency at once.</td></tr>
+          <tr><td>"WebSockets are always better than SSE."</td><td>Only when you need <em>two-way</em> traffic. For server→client-only feeds, SSE is simpler, is plain HTTP (proxy/firewall friendly), and gives auto-reconnect + resumability for free. Reaching for a full WebSocket there is over-engineering.</td></tr>
+          <tr><td>"If it works on one server, it'll work at scale."</td><td>A connection is pinned to one server. With multiple servers a message arriving on Server 1 never reaches a user on Server 2 unless you add a <strong>pub/sub backplane</strong> (Redis/Kafka) to fan messages across nodes — plus sticky, connection-aware load balancing.</td></tr>
+          <tr><td>"An open connection is basically free to keep around."</td><td>Each one holds memory and a file descriptor for its whole life, needs heartbeats to survive proxy timeouts, and all of them drop at once on a deploy/crash (reconnect storm). Statefulness is the real cost you're paying for instant delivery.</td></tr>
+          <tr><td>"The connection will just stay up."</td><td>On real networks it <em>will</em> drop — phones roam, laptops sleep, Wi-Fi blips. You must assume disconnects: reconnect with backoff and recover missed messages (SSE's <code>Last-Event-ID</code>, or your own sequence numbers on a WebSocket).</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ You ship a chat feature over WebSockets. It's flawless in testing, so
+          you scale to <strong>3 app servers behind a round-robin load balancer</strong>. In production, users complain
+          that messages <em>sometimes</em> reach some people and not others — seemingly at random. Two questions: (1)
+          what's the root cause, and (2) what two changes fix it? Bonus: a teammate then asks why you used SSE, not a
+          WebSocket, for the separate "order status" feed. (click to reveal)</div>
+          <div class="recall-answer"><strong>(1) Root cause:</strong> each WebSocket is pinned to <em>one</em> server for
+          its lifetime, and round-robin scatters users across all three. When Alice (on Server 1) sends a message, it
+          arrives only at Server 1 — but Bob's connection lives on Server 2, which never saw the message, so Bob gets
+          nothing. Whether a message "works" depends entirely on whether sender and recipient happen to share a server,
+          which looks random. <strong>(2) Two fixes, together:</strong> first, add a <strong>pub/sub backplane</strong>
+          (Redis Pub/Sub or Kafka) — every server publishes incoming messages to it and subscribes to it, so Server 1
+          publishes Alice's message and Server 2 receives it and pushes it down Bob's socket; second, make the load
+          balancer <strong>connection-aware / sticky</strong> so a connection's upgrade and all its frames land on the
+          same server. <strong>Bonus — SSE for order status:</strong> that feed is <em>one-way</em> (server→client only),
+          so a full bidirectional WebSocket is unnecessary weight; SSE is plain HTTP (passes proxies/firewalls cleanly)
+          and gives you automatic reconnection and <code>Last-Event-ID</code> resume for free. Mantra: <em>WebSocket when
+          both sides talk, SSE when only the server does — and either way, one server's connection can't reach another's
+          user without a backplane.</em></div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">💬 Slack &amp; Discord</div><p>Both use <strong>WebSockets</strong> as the live spine of messaging — the moment someone types, presence changes, or a reaction lands, it's pushed down an open socket. Behind it sits a fan-out layer so a message in a busy channel reaches thousands of connected clients across many servers.</p></div>
+          <div class="realworld-card"><div class="rw-company">🎨 Figma</div><p>Multiplayer design runs on <strong>WebSockets</strong>: every cursor move, selection, and edit streams bidirectionally in real time so a dozen designers see each other's changes instantly. It's a textbook case of genuinely two-way, high-frequency interaction where nothing but a WebSocket will do.</p></div>
+          <div class="realworld-card"><div class="rw-company">🤖 ChatGPT &amp; Claude</div><p>The word-by-word "typing" effect of a streaming AI answer is <strong>Server-Sent Events</strong>: the model emits tokens one at a time and the server streams each down a <code>text/event-stream</code> response. One-way, resumable, plain HTTP — SSE's perfect use case, now used by the whole AI industry.</p></div>
+          <div class="realworld-card"><div class="rw-company">📈 Trading &amp; live scores</div><p>Brokerages and sports apps push price ticks and score updates over <strong>WebSockets</strong> (or SSE for pure one-way feeds), where a half-second of staleness is unacceptable. The backends front the socket layer with a market-data <strong>pub/sub</strong> bus to fan the same tick to millions of screens at once.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: In one sentence, what problem do WebSockets and SSE solve that plain HTTP can't?</div>
+          <div class="fc-a">A: Plain HTTP is request/response — the client must ask first — so "live" data is faked by wasteful, laggy polling. WebSockets and SSE keep a connection open so the <strong>server can push</strong> the instant it has something, with no re-asking.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: How does a WebSocket connection get established?</div>
+          <div class="fc-a">A: Via an HTTP <strong>Upgrade handshake</strong>: the client sends a <code>GET</code> with <code>Upgrade: websocket</code>/<code>Connection: Upgrade</code>/<code>Sec-WebSocket-Key</code>; the server replies <code>101 Switching Protocols</code>. The same TCP connection then carries full-duplex text/binary <strong>frames</strong> (<code>wss://</code> over TLS).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: WebSocket vs SSE — when do you pick each?</div>
+          <div class="fc-a">A: <strong>WebSocket</strong> when both sides talk often (chat, games, collaborative editing) — full-duplex, binary-capable. <strong>SSE</strong> when only the server talks (notifications, feeds, streaming LLM tokens) — one-way, plain HTTP, auto-reconnect + <code>Last-Event-ID</code> resume for free.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why can't you scale WebSockets across servers by just adding boxes?</div>
+          <div class="fc-a">A: A connection is pinned to one server, so a message arriving on Server 1 won't reach a user connected to Server 2. You need a <strong>pub/sub backplane</strong> (Redis/Kafka) so every server publishes and subscribes, plus <strong>connection-aware/sticky</strong> load balancing.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is polling a bad way to fake real-time?</div>
+          <div class="fc-a">A: It forces a lose-lose trade: poll often → huge load and mostly-empty responses; poll rarely → high latency (news is always up to one interval late) and missed updates in between. Push removes both the load and the latency at once.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Using the phone/radio image, explain the difference between polling, a WebSocket, and SSE.</li>
+          <li>Walk through the WebSocket handshake — what does the client send, and what does the server reply?</li>
+          <li>Give three concrete reasons SSE can be the better choice than a WebSocket, and one thing SSE can't do.</li>
+          <li>A message sent on Server 1 never reaches a user on Server 2. Why, and what fixes it?</li>
+          <li>Name two things you must build to survive real networks (hint: connections drop) and what SSE gives you for one of them.</li>
+          <li>Why does polling force a trade-off between server load and latency, and how does push escape it?</li>
+          <li>Name two situations where you should <em>not</em> use a WebSocket, and say what to use instead.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>WebSockets and SSE exist so the server can speak first.</strong> Plain
+          HTTP makes the client ask, so real-time gets faked with polling — wasteful and laggy. Both real answers begin
+          as an HTTP request that refuses to close: a <strong>WebSocket</strong> upgrades (<code>101 Switching
+          Protocols</code>) into a persistent <strong>full-duplex</strong> channel where either side sends frames anytime
+          — use it when <em>both sides talk</em> (chat, games, collaborative editing). <strong>SSE</strong> is a
+          never-ending, one-way <code>text/event-stream</code> HTTP response with free auto-reconnect and resume — use it
+          when <em>only the server talks</em> (notifications, live feeds, streaming AI tokens). The price you pay is
+          <strong>state</strong>: open connections cost memory and file descriptors, need heartbeats and reconnection, fight
+          load balancers, and require a <strong>pub/sub backplane</strong> to fan messages across servers — the same Day
+          18/19 pub/sub and log, now with a live delivery layer on the front. And when you don't need push at all, a plain
+          request still wins. Tomorrow (Day 21) we step back to the pattern all of this enables: <strong>Event-Driven
+          Architecture</strong>.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-19.html">← Day 19: Apache Kafka Deep Dive</a>
+        <a href="day-21.html" class="coming-soon-link">Day 21: Event-Driven Architecture →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 20 of 90 — WebSockets &amp; Server-Sent Events</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── Polling vs Push simulator ────────────────────────────────────────
+  var mode = 'poll';
+  var els = {
+    toggle: document.getElementById('mode-toggle'),
+    int:  document.getElementById('w-int'),
+    evt:  document.getElementById('w-evt'),
+    cli:  document.getElementById('w-cli'),
+    intV: document.getElementById('w-int-v'),
+    evtV: document.getElementById('w-evt-v'),
+    cliV: document.getElementById('w-cli-v'),
+    ctlInt: document.getElementById('ctl-interval'),
+    load: document.getElementById('m-load'),
+    waste:document.getElementById('m-waste'),
+    lat:  document.getElementById('m-lat'),
+    conn: document.getElementById('m-conn'),
+    status: document.getElementById('w-status')
+  };
+
+  function fmt(n) {
+    if (n >= 1000000) return (n/1000000).toFixed(n >= 10000000 ? 0 : 1) + 'M';
+    if (n >= 1000) return (n/1000).toFixed(n >= 10000 ? 0 : 1) + 'k';
+    return String(Math.round(n));
+  }
+
+  function render() {
+    var interval = +els.int.value;   // seconds between polls
+    var events   = +els.evt.value;   // real server updates per minute
+    var clients  = +els.cli.value;
+
+    els.intV.textContent = interval;
+    els.evtV.textContent = events;
+    els.cliV.textContent = clients;
+
+    // Poll interval only matters in polling mode.
+    els.ctlInt.classList.toggle('dim', mode !== 'poll');
+
+    if (mode === 'poll') {
+      var pollsPerClient = 60 / interval;                 // requests per client per minute
+      var totalReqs = pollsPerClient * clients;
+      // A poll is "useful" only if new data appeared since the last one. You
+      // can't learn of more updates than the server actually produced, and no
+      // more often than you poll: useful polls per client = min(polls, events).
+      var usefulPerClient = Math.min(pollsPerClient, events);
+      var wastedPerClient = pollsPerClient - usefulPerClient;
+      var totalWasted = wastedPerClient * clients;
+      var wastePct = pollsPerClient > 0 ? Math.round(wastedPerClient / pollsPerClient * 100) : 0;
+      var avgLatency = interval / 2;                       // on average, half an interval late
+
+      els.load.textContent  = fmt(totalReqs);
+      els.waste.textContent = fmt(totalWasted) + ' (' + wastePct + '%)';
+      els.lat.textContent   = avgLatency >= 1 ? avgLatency.toFixed(avgLatency < 10 ? 1 : 0) + 's' : Math.round(avgLatency*1000) + 'ms';
+      els.conn.textContent  = '0';
+
+      var latTxt = avgLatency >= 1 ? avgLatency.toFixed(1) + 's' : Math.round(avgLatency*1000) + 'ms';
+      if (wastePct >= 40) {
+        els.status.className = wastePct >= 60 ? 'q-status bad' : 'q-status warn';
+        els.status.textContent = 'Polling: ' + fmt(totalReqs) + ' requests/min, ' + wastePct +
+          '% wasted, ~' + latTxt + ' stale. Hammering the server to mostly hear "nothing new".';
+      } else if (avgLatency >= 2) {
+        els.status.className = 'q-status warn';
+        els.status.textContent = 'Polling: waste is low now (data changes faster than you poll) — but you\'re still ~' +
+          latTxt + ' behind and miss every update between polls.';
+      } else {
+        els.status.className = 'q-status warn';
+        els.status.textContent = 'Polling: latency is ok now, but look at the request count — ' + fmt(totalReqs) +
+          '/min just to stay current. That cost never goes away.';
+      }
+    } else {
+      // Push: one persistent connection per client. After the initial
+      // handshake there are ~no ongoing requests — the server sends only when
+      // real events occur, so zero wasted responses and near-instant delivery.
+      els.load.textContent  = fmt(clients) + ' ⇢ 0';
+      els.waste.textContent = '0 (0%)';
+      els.lat.textContent   = '~instant';
+      els.conn.textContent  = fmt(clients);
+
+      els.status.className = 'q-status ok';
+      els.status.textContent = 'Push: one handshake per client, then silence until real news — ' + fmt(clients) +
+        ' updates delivered in ~real time, 0 wasted. The only cost: ' + fmt(clients) + ' open connections held on the server.';
+    }
+  }
+
+  Array.prototype.forEach.call(els.toggle.querySelectorAll('button'), function(btn){
+    btn.addEventListener('click', function(){
+      mode = btn.getAttribute('data-mode');
+      Array.prototype.forEach.call(els.toggle.querySelectorAll('button'), function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      render();
+    });
+  });
+  els.int.addEventListener('input', render);
+  els.evt.addEventListener('input', render);
+  els.cli.addEventListener('input', render);
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+
+  // Anchor diagram: three communication styles stacked — polling (ask/empty
+  // repeatedly), WebSocket (one handshake then two-way frames), SSE (one
+  // request then a one-way stream of server events).
+  function drawWsDiagram() {
+    var svg = document.getElementById('ws-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    var clientX = 40, serverX = 640, boxW = 140, boxH = 44;
+
+    function lane(y, title, color) {
+      // client + server boxes
+      svg.appendChild(rs.rectangle(clientX, y, boxW, boxH, { stroke:'#3b82f6', strokeWidth:1.8, roughness:1.1, fill:'#3b82f622', fillStyle:'solid' }));
+      T(clientX + boxW/2, y + 27, 'Client', '#dbeafe', '11', '700');
+      svg.appendChild(rs.rectangle(serverX, y, boxW, boxH, { stroke: color, strokeWidth:1.8, roughness:1.1, fill: color + '22', fillStyle:'solid' }));
+      T(serverX + boxW/2, y + 27, 'Server', '#e2e8f0', '11', '700');
+      T(clientX, y - 12, title, color, '11.5', '700', false, 'start');
+    }
+
+    // Lane 1 — Polling
+    lane(52, 'HTTP POLLING — ask over and over, mostly empty', '#fb7185');
+    var midL = clientX + boxW, midR = serverX;
+    // draw stacked tiny request/response arrows across the gap
+    var reqs = [
+      { y: 66, txt:'“any news yet?”', dir:1, c:'#94a3b8' },
+      { y: 82, txt:'“nope.”',          dir:-1, c:'#64748b' },
+      { y: 98, txt:'“any news yet?”', dir:1, c:'#94a3b8' }
+    ];
+    reqs.forEach(function(r){
+      if (r.dir === 1) svg.appendChild(rs.line(midL+6, r.y, midR-6, r.y, { stroke:r.c, strokeWidth:1.2, roughness:0.8 }));
+      else svg.appendChild(rs.line(midR-6, r.y, midL+6, r.y, { stroke:r.c, strokeWidth:1.2, roughness:0.8, strokeLineDash:[4,3] }));
+      T((midL+midR)/2, r.y - 3, r.txt, r.c, '9', r.dir===1?'600':'500', false);
+    });
+    T((midL+midR)/2, 118, '…repeat forever — wasteful & always a beat late', '#fb7185', '9', '600');
+
+    // Lane 2 — WebSocket
+    lane(178, 'WEBSOCKET — one handshake, then a two-way open line', '#22c55e');
+    svg.appendChild(rs.line(midL+6, 188, midR-6, 188, { stroke:'#a78bfa', strokeWidth:1.6, roughness:0.9 }));
+    T((midL+midR)/2, 184, 'GET  Upgrade: websocket  →', '#c4b5fd', '9', '600', true);
+    svg.appendChild(rs.line(midR-6, 202, midL+6, 202, { stroke:'#a78bfa', strokeWidth:1.6, roughness:0.9 }));
+    T((midL+midR)/2, 198, '←  101 Switching Protocols', '#c4b5fd', '9', '600', true);
+    // the open pipe: a thick two-headed channel
+    svg.appendChild(rs.rectangle(midL+10, 214, (midR-midL)-20, 22, { stroke:'#22c55e', strokeWidth:1.6, roughness:1, fill:'#22c55e18', fillStyle:'solid' }));
+    T((midL+midR)/2, 229, '⇄  frames both ways, anytime  ⇄', '#86efac', '9.5', '700');
+
+    // Lane 3 — SSE
+    lane(304, 'SERVER-SENT EVENTS — one request, a one-way stream down', '#f59e0b');
+    svg.appendChild(rs.line(midL+6, 314, midR-6, 314, { stroke:'#94a3b8', strokeWidth:1.3, roughness:0.9 }));
+    T((midL+midR)/2, 310, 'GET /stream   (opens once)  →', '#94a3b8', '9', '600', true);
+    [0,1,2].forEach(function(i){
+      var yy = 328 + i*14;
+      svg.appendChild(rs.line(midR-6, yy, midL+6, yy, { stroke:'#f59e0b', strokeWidth:1.5, roughness:0.8 }));
+    });
+    T((midL+midR)/2, 326, '←  data: … (event)', '#fcd34d', '9', '600', true);
+    T((midL+midR)/2, 366, 'server streams updates as they happen — auto-reconnects', '#f59e0b', '9', '600');
+
+    T(410, 432, 'Polling asks; a WebSocket is an open phone line (two-way); SSE is a radio the server broadcasts on (one-way).', '#94a3b8', '10.5', '600');
+  }
+
+  // Scaling diagram: two clients on two servers; a pub/sub backplane fans a
+  // message from one server to the other so it reaches the right connection.
+  function drawScaleDiagram() {
+    var svg = document.getElementById('scale-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'One server\'s open connection can\'t reach another server\'s user — without a pub/sub backplane', '#e2e8f0', '12', '700');
+
+    // Clients
+    svg.appendChild(rs.rectangle(30, 70, 120, 54, { stroke:'#3b82f6', strokeWidth:1.8, roughness:1.1, fill:'#3b82f622', fillStyle:'solid' }));
+    T(90, 92, 'Alice', '#dbeafe', '11', '700'); T(90, 110, 'wss:// → Server 1', '#93c5fd', '8.5', '600', true);
+    svg.appendChild(rs.rectangle(30, 236, 120, 54, { stroke:'#3b82f6', strokeWidth:1.8, roughness:1.1, fill:'#3b82f622', fillStyle:'solid' }));
+    T(90, 258, 'Bob', '#dbeafe', '11', '700'); T(90, 276, 'wss:// → Server 2', '#93c5fd', '8.5', '600', true);
+
+    // Servers
+    svg.appendChild(rs.rectangle(300, 66, 150, 62, { stroke:'#22c55e', strokeWidth:1.8, roughness:1.1, fill:'#22c55e18', fillStyle:'solid' }));
+    T(375, 90, 'Server 1', '#dcfce7', '11', '700'); T(375, 110, 'holds Alice\'s socket', '#86efac', '8.5', '600');
+    svg.appendChild(rs.rectangle(300, 232, 150, 62, { stroke:'#22c55e', strokeWidth:1.8, roughness:1.1, fill:'#22c55e18', fillStyle:'solid' }));
+    T(375, 256, 'Server 2', '#dcfce7', '11', '700'); T(375, 276, 'holds Bob\'s socket', '#86efac', '8.5', '600');
+
+    // client ↔ server open lines
+    svg.appendChild(rs.line(150, 97, 300, 97, { stroke:'#22c55e', strokeWidth:1.6, roughness:1 }));
+    svg.appendChild(rs.line(150, 263, 300, 263, { stroke:'#22c55e', strokeWidth:1.6, roughness:1 }));
+
+    // Backplane
+    svg.appendChild(rs.rectangle(600, 140, 180, 80, { stroke:'#a78bfa', strokeWidth:2, roughness:1.1, fill:'#a78bfa18', fillStyle:'solid' }));
+    T(690, 170, 'Pub/Sub Backplane', '#ede9fe', '11', '700');
+    T(690, 190, 'Redis / Kafka', '#c4b5fd', '9', '600');
+    T(690, 208, '(fan-out across nodes)', '#94a3b8', '8', '500');
+
+    // Server1 publishes up to backplane, backplane pushes down to Server2
+    svg.appendChild(rs.line(450, 97, 640, 145, { stroke:'#a78bfa', strokeWidth:1.6, roughness:1 }));
+    T(560, 108, 'publish', '#c4b5fd', '9', '700');
+    svg.appendChild(rs.line(640, 215, 450, 263, { stroke:'#a78bfa', strokeWidth:1.6, roughness:1, strokeLineDash:[5,4] }));
+    T(560, 252, 'deliver', '#c4b5fd', '9', '700');
+
+    // Alice's message flow label
+    T(225, 84, 'Alice sends →', '#fbbf24', '9', '700');
+    T(225, 250, '→ reaches Bob', '#fbbf24', '9', '700');
+
+    T(410, 330, 'Server 1 publishes Alice\'s message to the backplane; Server 2 receives it and pushes it down Bob\'s socket.', '#94a3b8', '10');
+  }
+
+  function drawAll() { drawWsDiagram(); drawScaleDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>

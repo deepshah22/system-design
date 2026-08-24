@@ -78,6 +78,26 @@ def publish(path):
     with open(INDEX, "w", encoding="utf-8") as f:
         f.write(index_html)
 
+    # Un-dim the previous day's forward nav link now that this day is live.
+    # (The page-nav "next" link on day N-1 is authored with class
+    # "coming-soon-link", which dims it and disables the click until its target
+    # actually exists. When we publish day N, remove that class from day N-1's
+    # link pointing at day N so it becomes a live, clickable link.)
+    prev_fname = "day-{:02d}.html".format(day_num - 1)
+    prev_path = os.path.join(DAYS, prev_fname)
+    if os.path.exists(prev_path):
+        with open(prev_path, encoding="utf-8") as f:
+            prev_html = f.read()
+        prev_html, n_undim = re.subn(
+            r'(<a href="{}")\s+class="coming-soon-link"'.format(re.escape(fname)),
+            r"\1",
+            prev_html,
+            count=1,
+        )
+        if n_undim:
+            with open(prev_path, "w", encoding="utf-8") as f:
+                f.write(prev_html)
+
     # Mark Published + append a progress log row in plan.md.
     with open(PLAN, encoding="utf-8") as f:
         plan = f.read()
