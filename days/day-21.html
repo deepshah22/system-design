@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 21: Event-Driven Architecture | System Design Mastery</title>
+  <meta name="description" content="For 20 lessons, services have talked by asking each other directly: 'do this, wait for the answer.' That's request-driven, and it quietly welds your whole system together — one slow or broken service can stall or crash everything upstream, and every new feature means editing the code that started the flow. Event-Driven Architecture flips it: a service does its own job, announces a fact ('OrderPlaced'), and walks away. Anyone who cares reacts on their own. Learn commands vs events, orchestration vs choreography, the three flavors of EDA (event notification, event-carried state transfer, event sourcing), why decoupling buys extensibility and resilience, and the real price — eventual consistency, no single stack trace, duplicates, and the distributed-monolith trap. Taught through a checkout-that-announces story, a live request-vs-event simulator, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* request-vs-event simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .toggle-row { display:flex; gap:1.25rem; flex-wrap:wrap; align-items:center; }
+    .toggle-row .tog-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; }
+    .q-controls { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:1rem 1.5rem; margin:1rem 0 1.25rem; }
+    .q-control label { display:block; font-size:.8rem; color:var(--text-muted); font-weight:600; margin-bottom:.35rem; }
+    .q-control input[type=range] { width:100%; accent-color: var(--accent); }
+    .q-control .q-val { color:var(--accent-light); font-weight:700; }
+    .q-control.dim { opacity:.4; }
+    .prop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:.75rem; margin:0 0 1rem; }
+    .prop-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.8rem 1rem; text-align:center; }
+    .prop-card .val { font-size:1.25rem; font-weight:800; }
+    .prop-card .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .prop-card .val.load { color:#f59e0b; } .prop-card .val.waste { color:#fb7185; } .prop-card .val.lat { color:#3b82f6; } .prop-card .val.conn { color:#a78bfa; }
+    .q-status { text-align:center; font-weight:800; font-size:.92rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; line-height:1.5; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 21</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 21 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 3 — Communication Patterns</span>
+    </div>
+    <h1>Event-Driven Architecture<br><span style="color:var(--accent)">Announce a Fact, Then Walk Away</span></h1>
+    <p class="lead">
+      For twenty lessons, services have communicated by <em>asking each other directly</em>: "Shipping, ship this. Now
+      wait. Billing, charge this. Now wait." That's <strong>request-driven</strong>, and it quietly welds your whole
+      system into one brittle chain — one slow or broken service stalls or crashes everything upstream, and every new
+      feature means editing the code that kicked off the flow. Today we invert it. In <strong>Event-Driven
+      Architecture</strong>, a service does its own small job, <strong>announces a fact</strong> — "an order was placed"
+      — and walks away. It doesn't know or care who's listening. Anyone who cares reacts on their own time. This one
+      change — from <em>commanding</em> to <em>announcing</em> — is how modern systems get loosely coupled, endlessly
+      extensible, and resilient to failure. And it comes with a bill you must understand before you pay it.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#depth">Commands, Events &amp; Coupling</a>
+        <a href="#chain">Choreography &amp; Cascades</a>
+        <a href="#flavors">Three Flavors of EDA</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">📣🔔</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Two ways to run a busy office when an order comes in. In the <strong>first</strong>, the manager grabs a
+            phone and calls each department <em>in turn</em>: <em>"Warehouse — ship it. …Done? Good. Accounting — bill
+            it. …Done? Good. Front desk — email the receipt. …Done?"</em> The manager must personally <strong>know every
+            department</strong>, call them <strong>one by one</strong>, and <strong>wait</strong> for each — and if the
+            Accounting line is busy, the whole order jams right there. That's <strong>request-driven</strong>: command,
+            wait, command, wait. In the <strong>second</strong>, the manager simply steps to the door and
+            <strong>rings a bell</strong>: <em>"Order forty-two has been placed!"</em> — then goes back to work. The
+            warehouse hears it and starts packing. Accounting hears it and bills. The front desk hears it and emails.
+            Nobody was phoned; each department <strong>reacts on its own</strong>, in parallel, and if one is on a coffee
+            break the bell was still rung — they'll catch up. The manager <strong>doesn't know or care</strong> who's
+            listening. That bell is an <strong>event</strong>. Burn in the image: <em>request-driven is phoning each
+            department and waiting; event-driven is ringing one bell and walking away.</em></p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="eda-diagram" width="820" height="470" viewBox="0 0 820 470"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Coupling Omar</span> built the checkout for a fast-growing online store, and at
+            first it was one tidy function. When a customer clicked <em>Pay</em>, his code ran down a list: save the
+            order, then <strong>call the payment service</strong> and wait, then <strong>call the warehouse</strong> and
+            wait, then <strong>call the email service</strong> and wait, then <strong>update loyalty points</strong> and
+            wait, then <strong>notify analytics</strong> and wait — and only then tell the customer "Order confirmed!"
+            Clean, readable, and easy to follow top-to-bottom. It worked beautifully in the demo.
+          </p>
+          <p>
+            Then reality arrived. The email provider had a slow afternoon, and because checkout <em>waited</em> for it,
+            customers stared at a spinner for eight seconds — some gave up and their carts died. Worse, one evening the
+            loyalty service crashed, and because it sat in the middle of the chain, <strong>checkout itself started
+            failing</strong> — people literally couldn't buy anything because a <em>points</em> service was down. Omar
+            had accidentally made every downstream service a <strong>single point of failure</strong> for his most
+            important flow. And every time the company wanted something new — fraud screening, a warehouse in a second
+            country, a "you might also like" recommender — Omar had to crack open the sacred checkout function
+            <em>again</em>, re-test the whole thing, and pray. Checkout had quietly become a spider at the center of a
+            web it couldn't stop growing.
+          </p>
+          <p>
+            So Omar made one change that changed everything. Checkout would now do <strong>only its own job</strong> —
+            validate the cart, save the order — and then publish a single <strong>event</strong> to the broker (the same
+            Kafka/pub-sub bus from Days 18–19): <code>OrderPlaced { orderId, userId, total }</code>. Then it returned
+            "Order confirmed!" <em>immediately</em>. It no longer called anyone. It no longer waited for anyone. It
+            didn't even know who was out there. Payment, warehouse, email, loyalty, and analytics each became an
+            independent <strong>subscriber</strong> to <code>OrderPlaced</code>, doing its work on its own time.
+          </p>
+          <p>
+            The wins stacked up fast. The slow email provider? Now irrelevant to checkout — the receipt just went out a
+            second later while the customer already had their confirmation. The loyalty crash? Now harmless to checkout —
+            the points event simply waited in the queue and was processed when the service recovered, and <em>nobody was
+            blocked from buying</em>. Adding fraud screening? Omar wrote a <strong>new</strong> service that subscribed
+            to <code>OrderPlaced</code> and shipped it — <em>without touching checkout at all</em>. The system had gone
+            from a rigid chain to a loose federation of services that each minded their own business.
+          </p>
+          <p>
+            But Omar also met the new bill. The order's side-effects no longer all happened by the time checkout
+            returned — the receipt, the shipment, the points now <strong>settled a little later</strong> (welcome to
+            <em>eventual consistency</em>). When something went wrong, there was no single stack trace to read — a
+            problem meant <strong>tracing an event across five services</strong>. And when the broker once delivered an
+            <code>OrderPlaced</code> event twice, a customer got <em>charged twice</em> until Omar made his consumers
+            <strong>idempotent</strong>. He'd traded the comfort of a straight line for the power of decoupling — and,
+            like every real engineer, he now had to <em>manage</em> that trade instead of pretending it was free.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">A <strong>request-driven</strong> system moves by <em>commands</em>: "do this, and
+          I'll wait." The caller must <strong>know</strong> every service it calls, and it's <strong>coupled</strong> to
+          them in three ways at once — in <em>time</em> (both must be up together), in <em>space</em> (it needs their
+          addresses), and in <em>knowledge</em> (it must know they exist). An <strong>event-driven</strong> system moves
+          by <em>facts</em>: a producer announces <strong>"this happened"</strong> (<code>OrderPlaced</code>,
+          <code>PaymentFailed</code>) to a <strong>broker</strong>, and any number of consumers <strong>react</strong> on
+          their own. The producer knows <em>nothing</em> about the consumers — that's the whole point. A
+          <strong>command</strong> targets one handler and expects it to act; an <strong>event</strong> targets no one
+          and simply reports the past. This inversion buys three superpowers — <strong>loose coupling</strong> (change
+          consumers freely), <strong>extensibility</strong> (add new reactions without touching the producer), and
+          <strong>resilience</strong> (a down consumer just delays its own work; the producer already moved on) — and
+          charges three real costs: <strong>eventual consistency</strong> (side-effects settle later), <strong>harder
+          reasoning &amp; debugging</strong> (no single call stack — you trace events across services), and <strong>the
+          duplicate/ordering problem</strong> (consumers must be idempotent and tolerate out-of-order delivery). Use it
+          where reactions are many, independent, and can settle asynchronously; avoid it where you truly need one
+          synchronous answer right now.</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Request-Driven vs Event-Driven</h2>
+        <div class="sim-box">
+          <p>Here's the core trade in one panel. A checkout has to trigger some number of downstream reactions
+          (ship, bill, email, points, analytics…). Flip between <strong>Request-Driven</strong> (checkout calls each one
+          and waits) and <strong>Event-Driven</strong> (checkout emits <em>one</em> event and returns). Then flip the
+          scenario to make <strong>one downstream service go down</strong> and watch what happens to checkout itself.</p>
+
+          <div class="mode-toggle" id="arch-toggle">
+            <button data-arch="req" class="active">Request-Driven (direct calls)</button>
+            <button data-arch="evt">Event-Driven (events)</button>
+          </div>
+          <div class="toggle-row" style="margin:-.4rem 0 1rem;">
+            <span class="tog-label">Scenario:</span>
+            <div class="mode-toggle" id="scen-toggle" style="margin:0;">
+              <button data-scen="ok" class="active">All healthy</button>
+              <button data-scen="down">One service is down</button>
+            </div>
+          </div>
+
+          <div class="q-controls">
+            <div class="q-control">
+              <label>Downstream reactions: <span class="q-val" id="e-n-v">4</span></label>
+              <input type="range" id="e-n" min="1" max="8" value="4" />
+            </div>
+            <div class="q-control">
+              <label>Work per reaction: <span class="q-val" id="e-w-v">80</span>ms</label>
+              <input type="range" id="e-w" min="10" max="300" value="80" step="10" />
+            </div>
+          </div>
+
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val lat" id="m-resp">—</div><div class="lbl">Checkout response</div></div>
+            <div class="prop-card"><div class="val waste" id="m-blast">—</div><div class="lbl">Failure blast radius</div></div>
+            <div class="prop-card"><div class="val conn" id="m-know">—</div><div class="lbl">Producer must know</div></div>
+            <div class="prop-card"><div class="val load" id="m-add">—</div><div class="lbl">Add a new reaction</div></div>
+          </div>
+
+          <div class="q-status warn" id="e-status">—</div>
+
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: in <strong>Request-Driven</strong>,
+          drag "downstream reactions" up — checkout's response time climbs with <em>every</em> service because it waits
+          for each in turn, and it must know all of them. Now flip the scenario to <strong>one service is down</strong>:
+          checkout itself <em>fails</em>, because a single dependency took the whole flow down. Then switch to
+          <strong>Event-Driven</strong>: response time flattens to ~one publish no matter how many reactions you add,
+          the producer knows <em>zero</em> of them, and with a service down checkout <em>still succeeds</em> — the failed
+          reaction just waits in the queue and retries. That flat line and that surviving checkout <em>are</em> the
+          lesson.</p>
+        </div>
+      </section>
+
+      <section id="depth">
+        <h2>Commands, Events &amp; the Three Kinds of Coupling</h2>
+        <p>The whole shift lives in one distinction. A <strong>command</strong> is an instruction aimed at a specific
+        handler: <em>"ShipOrder"</em>, <em>"ChargeCard"</em>. It's phrased in the imperative, it expects to be obeyed,
+        and the sender usually wants a result. An <strong>event</strong> is a statement of fact about the past, announced
+        to no one in particular: <em>"OrderPlaced"</em>, <em>"PaymentFailed"</em>. It's phrased in the past tense, it
+        expects nothing, and the sender doesn't know who (if anyone) will act on it. Same wire, opposite intent — and
+        that intent is what decides how tightly your system is welded together.</p>
+
+        <div class="flow-box">
+          <div class="flow-step"><strong>Command → tight coupling.</strong><span>"ChargeCard" names a target and awaits an
+          answer. The sender must know the payment service exists, know its address, and have it be up <em>right
+          now</em>. One recipient, synchronous expectation, three-way coupling.</span></div>
+          <div class="flow-step"><strong>Event → loose coupling.</strong><span>"OrderPlaced" names no one. Zero or many
+          consumers may react, later, on their own. The producer needs to know only <em>the broker</em>. This is what
+          "decoupled" actually means in practice.</span></div>
+          <div class="flow-step"><strong>Decoupled in <em>time</em>.</strong><span>Producer and consumer don't have to be
+          running at the same moment. The event waits in the broker; a consumer that's down catches up when it returns.
+          (This is exactly the queue durability of Day 18 and the retained log of Day 19.)</span></div>
+          <div class="flow-step"><strong>Decoupled in <em>space</em>.</strong><span>The producer doesn't know consumers'
+          addresses, count, or location. You can move, replace, or scale a consumer with the producer none the
+          wiser.</span></div>
+          <div class="flow-step"><strong>Decoupled in <em>knowledge</em>.</strong><span>The producer doesn't know
+          consumers <em>exist</em>. This is the superpower behind extensibility: add a brand-new consumer and the
+          producer's code never changes.</span></div>
+        </div>
+
+        <h3>Orchestration vs Choreography</h3>
+        <p>Once work spans many services, there are two ways to coordinate it — and the words come up in every senior
+        interview. <strong>Orchestration</strong> is a central conductor: one service (an "orchestrator") explicitly
+        tells each other service what to do and in what order — closer to request-driven, easy to see the whole flow in
+        one place, but the conductor knows and is coupled to everyone. <strong>Choreography</strong> is a dance with no
+        conductor: each service just <em>reacts</em> to events and <em>emits</em> its own, and the overall behavior
+        <em>emerges</em> from those reactions — maximally decoupled and extensible, but there's no single place that
+        shows the whole flow. Real systems mix both: choreography for the loose, fan-out reactions; a deliberate
+        orchestrator (often a <em>Saga</em>, a Phase-2 topic) when a multi-step process needs a clear owner and a way to
+        undo half-finished work.</p>
+
+        <div class="code-label">The inversion, in code — producer stops calling, starts announcing</div>
+        <div class="code-panel"><span class="muted">// BEFORE — request-driven: checkout knows everyone and waits for each</span>
+<span class="k">function</span> <span class="f">checkout</span>(cart) {
+  <span class="k">const</span> order = <span class="f">saveOrder</span>(cart);
+  <span class="f">payment</span>.<span class="f">charge</span>(order);      <span class="muted">// wait…  ← knows payment</span>
+  <span class="f">warehouse</span>.<span class="f">ship</span>(order);      <span class="muted">// wait…  ← knows warehouse</span>
+  <span class="f">email</span>.<span class="f">sendReceipt</span>(order);   <span class="muted">// wait…  ← knows email (and it's slow)</span>
+  <span class="f">loyalty</span>.<span class="f">addPoints</span>(order);   <span class="muted">// wait…  ← if this is DOWN, checkout FAILS</span>
+  <span class="k">return</span> <span class="s">"confirmed"</span>;         <span class="muted">// only now, after everyone</span>
+}
+
+<span class="muted">// AFTER — event-driven: checkout does its job, announces a fact, returns</span>
+<span class="k">function</span> <span class="f">checkout</span>(cart) {
+  <span class="k">const</span> order = <span class="f">saveOrder</span>(cart);
+  bus.<span class="f">publish</span>(<span class="s">"OrderPlaced"</span>, { orderId: order.id, userId: order.user, total: order.total });
+  <span class="k">return</span> <span class="s">"confirmed"</span>;         <span class="muted">// immediately — knows no one downstream</span>
+}
+
+<span class="muted">// Each reaction is an independent subscriber. Adding fraud = a NEW file, checkout untouched.</span>
+bus.<span class="f">subscribe</span>(<span class="s">"OrderPlaced"</span>, (e) => <span class="f">emailReceipt</span>(e.userId, e.orderId));
+bus.<span class="f">subscribe</span>(<span class="s">"OrderPlaced"</span>, (e) => <span class="f">awardPoints</span>(e.userId, e.total));
+bus.<span class="f">subscribe</span>(<span class="s">"OrderPlaced"</span>, (e) => <span class="f">screenForFraud</span>(e.orderId));   <span class="muted">// ← added later, zero producer changes</span></div>
+      </section>
+
+      <section id="chain">
+        <h2>Choreography &amp; Cascades — How Events Trigger Events</h2>
+        <p>An event-driven system rarely stops at one hop. A consumer reacts to an event and, in doing its job, emits a
+        <em>new</em> event that other services react to — and so on. The business process becomes a <strong>cascade of
+        reactions</strong> with no central controller directing traffic. This is choreography in motion, and it's both
+        the beauty and the danger of EDA.</p>
+
+        <div class="diagram-box">
+          <svg id="chain-diagram" width="820" height="300" viewBox="0 0 820 300"></svg>
+        </div>
+
+        <p>Notice three things. First, <strong>there is no orchestrator box</strong> — each service knows only the event
+        it reacts to and the event it emits; the end-to-end flow is <em>emergent</em>, not written down anywhere. That's
+        wonderfully flexible (drop a new service into the chain by subscribing) and genuinely hard to reason about (no
+        one file shows you "what happens when an order is placed"). Second, the arrows take <strong>time</strong>: the
+        customer sees "confirmed" at <code>t=0</code>, but the shipment and the notification settle over the next
+        hundreds of milliseconds or seconds — the system is <strong>eventually consistent</strong>, not instantly
+        consistent. Third, the very last hop is often the <strong>WebSocket/SSE layer from Day 20</strong>: a "Notify"
+        service consumes <code>Shipped</code> and pushes it live to the user's browser. The realtime edge you learned
+        yesterday is just one more consumer hanging off the event backbone.</p>
+      </section>
+
+      <section id="flavors">
+        <h2>Three Flavors of EDA — How Much Does the Event Carry?</h2>
+        <p>"Event-driven" isn't one thing. The big design choice is <strong>how much data the event carries</strong>,
+        and it changes coupling, autonomy, and storage in real ways. Here are the three you'll be asked to compare.</p>
+        <div class="family-grid">
+          <div class="family-card">
+            <h4>1 · Event Notification</h4>
+            <p>The event is a <strong>thin ping</strong>: "Order 42 changed." Consumers that need details call back to the
+            source to fetch them. Lowest coupling on data, but <em>chatty</em> — every reaction may trigger a fresh
+            request, and you're partly back to request-driven for the details.</p>
+            <div class="eg">Event: <code>{ "orderId": 42 }</code> → consumer fetches the rest.</div>
+          </div>
+          <div class="family-card">
+            <h4>2 · Event-Carried State Transfer</h4>
+            <p>The event <strong>carries all the data</strong> a consumer needs: "Order 42 placed, user 7, $58, these
+            items." Consumers act with <em>zero callbacks</em> — fully autonomous, resilient if the source is down — at
+            the cost of <strong>duplicated data</strong> and bigger, versioned events.</p>
+            <div class="eg">Event: <code>{ orderId, user, total, items[] }</code> → consumer needs no one.</div>
+          </div>
+          <div class="family-card">
+            <h4>3 · Event Sourcing</h4>
+            <p>The events <strong>are</strong> the source of truth. Instead of storing current state, you store the full
+            <em>log</em> of events and rebuild state by replaying them — the Day-19 append-only log as your database.
+            Perfect audit trail and time-travel; more complex to query (usually paired with <strong>CQRS</strong>).</p>
+            <div class="eg">State = replay(<code>Placed → Paid → Shipped → …</code>). A Phase-2 deep dive.</div>
+          </div>
+          <div class="family-card">
+            <h4>Orchestration</h4>
+            <p>A central <strong>coordinator</strong> commands each step in order and can undo them on failure. Easy to
+            see and control the whole flow; the coordinator is coupled to everyone. The <strong>Saga</strong> pattern
+            (Day 34) formalizes this for long transactions.</p>
+            <div class="eg">Best for: multi-step processes needing a clear owner + rollback.</div>
+          </div>
+          <div class="family-card">
+            <h4>Choreography</h4>
+            <p>No coordinator — services react to events and emit their own; behavior <strong>emerges</strong>. Maximally
+            decoupled and extensible; hardest to trace end-to-end. The default "shape" of most event-driven systems.</p>
+            <div class="eg">Best for: loose, fan-out reactions where adding consumers must be free.</div>
+          </div>
+          <div class="family-card">
+            <h4>vs · Request/Response</h4>
+            <p>The Day 15–17 baseline: synchronous, one caller expects one answer <em>now</em>. Still the right choice
+            when you genuinely need an immediate result (a price quote, an auth check). EDA doesn't replace it — it
+            handles the <em>reactions</em> that don't need to be synchronous.</p>
+            <div class="eg">Best for: "I need the answer to continue," not "let others know."</div>
+          </div>
+        </div>
+        <p>The decision is short: <strong>Do others just need to know something happened?</strong> → emit an event
+        (carry state if you want them autonomous). <strong>Does one step own a multi-part process with rollback?</strong>
+        → orchestrate it (a Saga). <strong>Do you need an answer to keep going right now?</strong> → a plain synchronous
+        request still wins.</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts — What Decoupling Costs You</h2>
+        <p>EDA feels liberating, so teams over-adopt it and then get hurt. The freedom is real, but it's bought with four
+        hard currencies.</p>
+
+        <h3>1. Eventual consistency is now your default</h3>
+        <p>The moment you stop waiting, side-effects happen <em>later</em>. The order is "confirmed" before the receipt
+        is sent, the points awarded, or the warehouse notified. Usually that's fine — even better UX. But you must design
+        for the gap: what does the UI show while things settle? What if two events settle out of order? "It'll be
+        consistent… eventually" is a promise you now have to keep on purpose (this is the CAP/consistency world of Days
+        10–12, made concrete).</p>
+
+        <h3>2. There's no single stack trace</h3>
+        <p>In request-driven code, a failure gives you one call stack top to bottom. In EDA, "placing an order" is a
+        <em>cascade across five services</em> connected only by a broker. When something breaks, you can't read one
+        trace — you must follow an event's journey. This is exactly why <strong>distributed tracing, correlation IDs,
+        and observability</strong> (Day 26) stop being nice-to-haves and become survival gear. Debugging is genuinely
+        harder; budget for the tooling.</p>
+
+        <h3>3. Duplicates and ordering — make consumers idempotent</h3>
+        <p>Brokers deliver <strong>at least once</strong>, which means <em>sometimes twice</em> (Day 18/19). If a
+        naive consumer processes <code>OrderPlaced</code> twice, it double-charges or double-ships. The fix is
+        <strong>idempotency</strong>: design each consumer so that handling the same event twice equals handling it once
+        (dedupe on an event ID, use upserts). Likewise, events can arrive <em>out of order</em>, so consumers must
+        tolerate that or rely on per-key ordering (Kafka partitions). Idempotency gets its own lesson later — for now,
+        remember it's <em>mandatory</em>, not optional.</p>
+
+        <h3>4. The distributed-monolith trap</h3>
+        <p>The scariest failure mode: you split into services and connect them with events, but every service still
+        depends on every other's events in a fixed order — so you get <em>all</em> the operational pain of distribution
+        and <em>none</em> of the decoupling. If adding a feature still means editing five services, or if one service
+        being down still breaks the flow, you didn't build event-driven — you built a <strong>distributed
+        monolith</strong>. Events are a tool for <em>independence</em>; if your services aren't independent, the events
+        are just expensive function calls.</p>
+
+        <p style="margin-top:1rem;">The through-line: EDA trades <strong>the certainty of a straight line</strong> — one
+        flow, one trace, immediate consistency — for <strong>independence and reach</strong> — services that evolve,
+        scale, and fail alone. A brilliant trade when you have many independent reactions to one thing happening; an
+        over-engineered mess when you had a simple, synchronous request all along.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You step out of the Open Line Room into the building's central atrium, where a single great bell hangs — ring
+          it once and every department springs to life on its own. This is the Announcement Hall.</h4>
+          <div class="palace-room"><span class="palace-icon">📮</span><div><strong>The Mailroom</strong> — <span>Message Queues &amp; Pub/Sub (Day 18). Drop a slip and walk away; a worker reads it once and it's gone.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📖</span><div><strong>The Records Room</strong> — <span>Apache Kafka (Day 19). A wall of numbered ledgers where every event is written and never erased; readers keep bookmarks and can rewind.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🔌</span><div><strong>The Open Line Room</strong> — <span>WebSockets &amp; SSE (Day 20). A phone left off the hook (two-way) and a radio the front desk broadcasts on (one-way) — the live delivery layer to the guest.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📣</span><div><strong>The Announcement Hall</strong> — <span>Event-Driven Architecture (today). A great <strong>bell</strong> in the atrium. Anyone who does something worth knowing gives it one ring — <em>"OrderPlaced!"</em> — and walks off. Every department (warehouse, accounting, front desk) has an ear cocked and <strong>reacts on its own</strong>, some ringing <em>their own</em> bells in turn. The ringer never learns who listened; new departments just cup an ear and join, no permission asked.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🛡️</span><div><strong>The Next Room</strong> — <span>Fault Tolerance &amp; High Availability (Day 22). Now that departments run independently, we ask the harder question: how do we keep the whole building standing when any one room catches fire?</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Pub/Sub (Day 18)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Kafka (Day 19)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Event-Driven Arch (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Fault Tolerance (Day 22)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Consequences (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Eventual Consistency (Days 10–12)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">WebSockets/SSE (Day 20)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Observability (Day 26)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Saga (Day 34)</span>
+        </div>
+        <p>Today is the <em>pattern</em> that Days 18–19 were the <em>plumbing</em> for. The broker (<strong>pub/sub</strong>,
+        Day 18) and the durable <strong>log</strong> (Kafka, Day 19) are what let a producer safely "announce and walk
+        away"; Event-Driven Architecture is the way of <em>designing</em> a whole system around that. Its consequences
+        reach everywhere you've been: it makes <strong>eventual consistency</strong> (Days 10–12) your everyday reality,
+        it uses the <strong>WebSocket/SSE</strong> edge (Day 20) as its last hop to the user, it makes
+        <strong>observability</strong> (Day 26) essential because there's no single stack trace, and it hands off to the
+        <strong>Saga</strong> pattern (Day 34) when a cascade needs a coordinator and rollback. This lesson closes Week 3
+        (Communication Patterns): we've now covered every way services talk — synchronous (REST, GraphQL, gRPC),
+        buffered (queues, Kafka), live (WebSockets/SSE), and choreographed (events). Tomorrow (Day 22) we start Week 4 by
+        asking how to keep all of it <em>up</em>: Fault Tolerance &amp; High Availability.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Events and commands are the same — it's all just messages."</td><td>A <strong>command</strong> tells one known handler to <em>do</em> something and expects it to act ("ChargeCard"). An <strong>event</strong> announces that something <em>happened</em>, in the past tense, to no one in particular ("OrderPlaced"). The intent difference is what makes events decoupled and commands coupled.</td></tr>
+          <tr><td>"Event-driven means everything is asynchronous, so it's always faster."</td><td>The <em>producer</em> returns faster because it stops waiting — but the overall work still takes time, now spread out and <strong>eventually consistent</strong>. You've moved latency out of the critical path, not deleted it. Some flows genuinely need a synchronous answer and shouldn't be events at all.</td></tr>
+          <tr><td>"We use Kafka, so we're event-driven."</td><td>A broker is the plumbing, not the pattern. If your producer still knows every consumer, still waits on them, and adding a feature still edits five services, you built a <strong>distributed monolith</strong> over Kafka. Event-driven is about <em>independence</em>, not about which tool carries the bytes.</td></tr>
+          <tr><td>"A consumer only gets each event once."</td><td>Brokers deliver <strong>at least once</strong> — occasionally twice. Non-idempotent consumers double-charge, double-ship, double-email. You <em>must</em> make handling the same event twice equal to handling it once (dedupe on event ID, upserts).</td></tr>
+          <tr><td>"Events arrive in the order they were sent."</td><td>Not globally. Ordering holds only within a partition/key (Day 19), and across services events can settle out of order. Design consumers to tolerate reordering or pin related events to the same key.</td></tr>
+          <tr><td>"Choreography is always better because it's more decoupled."</td><td>Choreography maximizes decoupling but hides the end-to-end flow — no single place shows what happens. When a process has many steps and needs rollback, a deliberate <strong>orchestrator/Saga</strong> is clearer and safer. Real systems use both.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ Your checkout is one synchronous function that calls payment, warehouse,
+          email, and loyalty in turn and then returns "confirmed." Two incidents hit this week: (a) the email provider got
+          slow and customers watched an 8-second spinner, and (b) the loyalty service crashed and <em>checkout itself
+          started failing</em> so no one could buy anything. Product also wants to add fraud screening next sprint. Explain
+          (1) the root architectural problem, (2) how converting to event-driven fixes all three, and (3) the two new
+          problems you'd now have to handle. (click to reveal)</div>
+          <div class="recall-answer"><strong>(1) Root problem:</strong> checkout is <em>request-driven</em> and tightly
+          coupled — it knows and <em>waits on</em> every downstream service, so each one is both a latency contributor
+          and a <strong>single point of failure</strong> for the checkout flow. A slow email provider stalls checkout
+          (you wait for it); a crashed loyalty service <em>fails</em> checkout (a non-critical dependency takes down your
+          most critical path). And every new feature means editing the checkout function.
+          <strong>(2) Event-driven fix:</strong> checkout does only its own job (validate + save order), publishes one
+          <code>OrderPlaced</code> event to the broker, and returns immediately. Payment, warehouse, email, and loyalty
+          become independent subscribers. Now the slow email is irrelevant to checkout (the receipt just goes out a beat
+          later); the loyalty crash is harmless (its event waits in the queue and is processed on recovery — nobody is
+          blocked from buying); and fraud screening is a <em>new subscriber</em> to <code>OrderPlaced</code>, shipped
+          <em>without touching checkout</em>. That's loose coupling, resilience, and extensibility in one move.
+          <strong>(3) New problems:</strong> first, <strong>eventual consistency</strong> — the receipt/points/shipment
+          now settle after checkout returns, so you must design the UX and logic for that gap; second, <strong>duplicates
+          and no single trace</strong> — the broker may deliver an event twice (so consumers must be <em>idempotent</em>,
+          e.g. dedupe on order ID) and a failure now means tracing an event across services rather than reading one stack
+          trace (so you need correlation IDs / distributed tracing). Mantra: <em>announce a fact, walk away — but now own
+          the consistency gap and make every consumer idempotent.</em></div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🛒 Amazon &amp; e-commerce</div><p>A single "order placed" event fans out to dozens of independent reactions — payment, inventory, shipping, recommendations, fraud, analytics, email. Each team owns its consumer and ships on its own cadence; none can stall the buy button. The classic textbook case of EDA, and why checkout stays fast and always-available.</p></div>
+          <div class="realworld-card"><div class="rw-company">🎬 Netflix</div><p>Netflix runs a heavily event-driven backbone: a "play started," "title added," or "device registered" event triggers cascades across personalization, encoding, billing, and analytics. Decoupling lets hundreds of microservices evolve independently — and forces heavy investment in tracing and observability to follow events across the mesh.</p></div>
+          <div class="realworld-card"><div class="rw-company">🚗 Uber</div><p>A trip is a river of events — <code>RequestCreated</code>, <code>DriverMatched</code>, <code>TripStarted</code>, <code>TripEnded</code> — that dispatch, pricing, ETA, fraud, and payments all react to. Choreographed events let each domain react in real time while the last hop pushes updates to your phone over the Day-20 realtime edge.</p></div>
+          <div class="realworld-card"><div class="rw-company">🏦 Banks &amp; event sourcing</div><p>Ledgers are the purest event sourcing: an account's balance <em>is</em> the replay of every deposit and withdrawal event, never overwritten. The append-only log of events gives a perfect audit trail and time-travel — regulators love it, and it pairs naturally with CQRS for fast reads.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: In one sentence, what is Event-Driven Architecture and what problem does it solve?</div>
+          <div class="fc-a">A: Instead of services <em>commanding each other and waiting</em> (request-driven, tightly coupled), a service does its job, <strong>announces a fact</strong> ("OrderPlaced") to a broker, and walks away — decoupling producers from consumers so the system becomes loosely coupled, extensible, and resilient to a single service failing.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What's the difference between a command and an event?</div>
+          <div class="fc-a">A: A <strong>command</strong> is an instruction to a specific handler that expects action ("ChargeCard") — coupled. An <strong>event</strong> is a past-tense fact announced to no one in particular ("PaymentFailed") that zero or many consumers may react to — decoupled.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Orchestration vs choreography?</div>
+          <div class="fc-a">A: <strong>Orchestration</strong> = a central coordinator commands each step in order (visible, controllable, coupled to all; e.g. a Saga). <strong>Choreography</strong> = no coordinator; services react to events and emit their own, behavior emerges (decoupled, extensible, hard to trace end-to-end).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Name the three big costs of going event-driven.</div>
+          <div class="fc-a">A: (1) <strong>Eventual consistency</strong> — side-effects settle later; (2) <strong>harder debugging</strong> — no single stack trace, you trace events across services (need tracing/correlation IDs); (3) <strong>duplicates &amp; ordering</strong> — at-least-once delivery means consumers must be idempotent and tolerate reordering.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What's the "distributed monolith" trap?</div>
+          <div class="fc-a">A: Splitting into services connected by events but where each still depends on the others in a fixed way — so you get all the operational pain of distribution and none of the decoupling. Tell-tale signs: adding a feature still edits many services, or one service being down still breaks the flow.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Using the office/bell image, explain the difference between request-driven and event-driven communication.</li>
+          <li>Give the three kinds of coupling an event breaks (time, space, knowledge) and what each one enables.</li>
+          <li>A checkout is one synchronous function; a downstream service crashes and checkout fails. Why, and how does emitting an event fix it?</li>
+          <li>Contrast the three flavors of EDA: event notification, event-carried state transfer, and event sourcing.</li>
+          <li>Why must event consumers be idempotent, and what causes the duplicate delivery in the first place?</li>
+          <li>What does "eventual consistency" mean in an event-driven system, and where does it come from?</li>
+          <li>Name two situations where you should <em>not</em> use events, and say what to use instead.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>Event-Driven Architecture is the shift from commanding to
+          announcing.</strong> A request-driven service tells others what to do and waits, welding itself to every one of
+          them; one slow or broken dependency stalls or fails the whole flow, and every new feature edits the same code.
+          An event-driven service does its own job, publishes a past-tense <strong>fact</strong> ("OrderPlaced") to a
+          broker, and <em>walks away</em> — knowing nothing about who reacts. That inversion buys <strong>loose
+          coupling</strong>, <strong>extensibility</strong> (new consumers, zero producer changes), and
+          <strong>resilience</strong> (a down consumer only delays its own work). The price is real and must be managed:
+          <strong>eventual consistency</strong>, <strong>no single stack trace</strong> (so tracing and observability
+          become essential), and <strong>at-least-once delivery</strong> (so consumers must be idempotent and tolerate
+          reordering). Use it for the many independent reactions to one thing happening; keep synchronous requests for
+          when you truly need an answer now — and never mistake "we have Kafka" for "we're event-driven." Tomorrow (Day
+          22) we open Week 4 by asking how to keep this whole federation standing: <strong>Fault Tolerance &amp; High
+          Availability</strong>.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-20.html">← Day 20: WebSockets &amp; Server-Sent Events</a>
+        <a href="day-22.html" class="coming-soon-link">Day 22: Fault Tolerance &amp; High Availability →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 21 of 90 — Event-Driven Architecture</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── Request-driven vs Event-driven simulator ────────────────────────
+  var arch = 'req';   // 'req' | 'evt'
+  var scen = 'ok';    // 'ok' | 'down'
+  var OWN = 50, PUB = 6;   // checkout's own work; cost of publishing one event
+
+  var els = {
+    archT: document.getElementById('arch-toggle'),
+    scenT: document.getElementById('scen-toggle'),
+    n:   document.getElementById('e-n'),
+    w:   document.getElementById('e-w'),
+    nV:  document.getElementById('e-n-v'),
+    wV:  document.getElementById('e-w-v'),
+    resp:  document.getElementById('m-resp'),
+    blast: document.getElementById('m-blast'),
+    know:  document.getElementById('m-know'),
+    add:   document.getElementById('m-add'),
+    status:document.getElementById('e-status')
+  };
+
+  function ms(n) { return n >= 1000 ? (n/1000).toFixed(n < 10000 ? 1 : 0) + 's' : Math.round(n) + 'ms'; }
+
+  function render() {
+    var N = +els.n.value;      // downstream reactions
+    var w = +els.w.value;      // work per reaction (ms)
+    els.nV.textContent = N;
+    els.wV.textContent = w;
+
+    if (arch === 'req') {
+      // Synchronous, sequential: checkout waits for each service in turn.
+      var total = OWN + N * w;
+      els.know.textContent = N + (N === 1 ? ' service' : ' services');
+      els.add.textContent  = 'edit producer';
+      if (scen === 'down') {
+        els.resp.textContent  = '✕ error';
+        els.blast.textContent = 'Checkout DOWN';
+        els.status.className = 'q-status bad';
+        els.status.textContent = 'Request-driven: one dependency is down — and because checkout waits on it, the whole ' +
+          'checkout fails. Every service in the chain is a single point of failure.';
+      } else {
+        els.resp.textContent  = ms(total);
+        els.blast.textContent = N + ' in critical path';
+        els.status.className = 'q-status warn';
+        els.status.textContent = 'Request-driven: checkout waits on all ' + N + ' service' + (N===1?'':'s') +
+          ' in turn (~' + ms(total) + ') and must know every one. Any of them failing takes checkout down too.';
+      }
+    } else {
+      // Event-driven: checkout does its own work + one publish, then returns.
+      var resp = OWN + PUB;   // constant, independent of N
+      els.resp.textContent = ms(resp);
+      els.know.textContent = '0 (just the bus)';
+      els.add.textContent  = '0 changes';
+      if (scen === 'down') {
+        els.blast.textContent = '1 delayed (queued)';
+        els.status.className = 'q-status ok';
+        els.status.textContent = 'Event-driven: the down consumer\'s event just waits in the queue and retries on ' +
+          'recovery. Checkout still returned in ~' + ms(resp) + ' — only that one side-effect is delayed, nobody is blocked.';
+      } else {
+        els.blast.textContent = '0 — isolated';
+        els.status.className = 'q-status ok';
+        els.status.textContent = 'Event-driven: checkout does its own work, emits ONE event (~' + ms(resp) +
+          '), and walks away — flat no matter how many reactions you add, and it knows none of them.';
+      }
+    }
+  }
+
+  Array.prototype.forEach.call(els.archT.querySelectorAll('button'), function(btn){
+    btn.addEventListener('click', function(){
+      arch = btn.getAttribute('data-arch');
+      Array.prototype.forEach.call(els.archT.querySelectorAll('button'), function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      render();
+    });
+  });
+  Array.prototype.forEach.call(els.scenT.querySelectorAll('button'), function(btn){
+    btn.addEventListener('click', function(){
+      scen = btn.getAttribute('data-scen');
+      Array.prototype.forEach.call(els.scenT.querySelectorAll('button'), function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      render();
+    });
+  });
+  els.n.addEventListener('input', render);
+  els.w.addEventListener('input', render);
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+
+  // Anchor diagram: request-driven (checkout calls each service, knows/waits)
+  // vs event-driven (checkout emits one event to a bus; services subscribe).
+  function drawEdaDiagram() {
+    var svg = document.getElementById('eda-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    var services = ['Shipping', 'Billing', 'Email', 'Loyalty'];
+
+    // ---- LEFT: Request-Driven ----
+    T(205, 26, 'REQUEST-DRIVEN (Orchestration)', '#fb7185', '12', '700');
+    // checkout box
+    svg.appendChild(rs.rectangle(140, 46, 130, 44, { stroke:'#3b82f6', strokeWidth:1.8, roughness:1.1, fill:'#3b82f622', fillStyle:'solid' }));
+    T(205, 66, 'Checkout', '#dbeafe', '11', '700'); T(205, 82, 'calls each · waits', '#93c5fd', '8.5', '600');
+    // four service boxes, direct arrows from checkout
+    services.forEach(function(s, i){
+      var y = 150 + i*68;
+      svg.appendChild(rs.rectangle(85, y, 130, 44, { stroke:'#fb7185', strokeWidth:1.6, roughness:1.1, fill:'#fb718518', fillStyle:'solid' }));
+      T(150, y + 27, s, '#fecdd3', '10.5', '700');
+      svg.appendChild(rs.line(205, 90, 150, y, { stroke:'#fb7185', strokeWidth:1.4, roughness:0.9 }));
+    });
+    T(150, 452, 'knows all 4 · waits for each · any one down = checkout jams', '#fb7185', '9', '600');
+
+    // ---- divider ----
+    svg.appendChild(rs.line(410, 40, 410, 430, { stroke:'#334155', strokeWidth:1.2, roughness:1, strokeLineDash:[6,5] }));
+
+    // ---- RIGHT: Event-Driven ----
+    T(620, 26, 'EVENT-DRIVEN (Choreography)', '#22c55e', '12', '700');
+    // checkout box
+    svg.appendChild(rs.rectangle(555, 46, 130, 44, { stroke:'#3b82f6', strokeWidth:1.8, roughness:1.1, fill:'#3b82f622', fillStyle:'solid' }));
+    T(620, 66, 'Checkout', '#dbeafe', '11', '700'); T(620, 82, 'emits once · returns', '#93c5fd', '8.5', '600');
+    // event bus
+    svg.appendChild(rs.rectangle(505, 150, 230, 46, { stroke:'#a78bfa', strokeWidth:2, roughness:1.1, fill:'#a78bfa18', fillStyle:'solid' }));
+    T(620, 170, 'Event Bus', '#ede9fe', '11', '700'); T(620, 186, 'event: OrderPlaced', '#c4b5fd', '9', '600', true);
+    // publish arrow
+    svg.appendChild(rs.line(620, 90, 620, 150, { stroke:'#22c55e', strokeWidth:1.8, roughness:0.9 }));
+    T(620, 122, 'publish (once)', '#86efac', '9', '700');
+    // four subscribers in a row, arrows down from bus
+    var sx = [445, 535, 625, 715];
+    services.forEach(function(s, i){
+      var x = sx[i];
+      svg.appendChild(rs.rectangle(x, 250, 80, 60, { stroke:'#22c55e', strokeWidth:1.6, roughness:1.1, fill:'#22c55e18', fillStyle:'solid' }));
+      T(x + 40, 276, s, '#dcfce7', '9.5', '700'); T(x + 40, 292, 'subscribes', '#86efac', '7.5', '600');
+      svg.appendChild(rs.line(x + 40, 196, x + 40, 250, { stroke:'#a78bfa', strokeWidth:1.4, roughness:0.9, strokeLineDash:[4,3] }));
+    });
+    T(620, 340, 'each reacts on its own · producer knows none of them', '#86efac', '9', '600');
+    T(620, 372, '+ new service? just subscribe — checkout never changes', '#c4b5fd', '9', '700');
+
+    // bottom caption spanning both
+    T(410, 452, '', '#94a3b8', '10');
+  }
+
+  // Cascade diagram: OrderPlaced → Payment → Shipping → Notify, each emitting
+  // the next event; no orchestrator; time flows left→right (eventual consistency).
+  function drawChainDiagram() {
+    var svg = document.getElementById('chain-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'Choreography: one event triggers the next — no central controller', '#e2e8f0', '12', '700');
+
+    var stages = [
+      { x: 20,  name: 'Checkout',  sub: 'saves order', emit: 'OrderPlaced',      c:'#3b82f6', fc:'#dbeafe' },
+      { x: 220, name: 'Payment',   sub: 'reacts',      emit: 'PaymentCaptured',  c:'#22c55e', fc:'#dcfce7' },
+      { x: 420, name: 'Shipping',  sub: 'reacts',      emit: 'Shipped',          c:'#f59e0b', fc:'#fde68a' },
+      { x: 620, name: 'Notify',    sub: 'reacts → user', emit: null,             c:'#a78bfa', fc:'#ede9fe' }
+    ];
+    var W = 150, H = 56, Y = 96;
+
+    stages.forEach(function(s, i){
+      svg.appendChild(rs.rectangle(s.x, Y, W, H, { stroke:s.c, strokeWidth:1.8, roughness:1.1, fill:s.c + '18', fillStyle:'solid' }));
+      T(s.x + W/2, Y + 24, s.name, s.fc, '11', '700');
+      T(s.x + W/2, Y + 42, s.sub, '#94a3b8', '8.5', '600');
+      if (s.emit) {
+        // event pill / label above the arrow to the next stage
+        var ax1 = s.x + W, ax2 = stages[i+1].x;
+        svg.appendChild(rs.line(ax1 + 4, Y + H/2, ax2 - 4, Y + H/2, { stroke:s.c, strokeWidth:1.6, roughness:0.9 }));
+        T((ax1 + ax2)/2, Y - 6, s.emit, s.fc, '8.5', '700', true);
+        T((ax1 + ax2)/2, Y + H/2 + 16, 'emits →', '#94a3b8', '8', '600', true);
+      }
+    });
+
+    // time axis underneath
+    svg.appendChild(rs.line(20, 210, 770, 210, { stroke:'#475569', strokeWidth:1.2, roughness:0.8 }));
+    T(20, 226, 't = 0  (user sees "confirmed")', '#94a3b8', '9', '600', false, 'start');
+    T(770, 226, 't = later  (state settles)', '#94a3b8', '9', '600', false, 'end');
+    T(410, 258, 'No orchestrator box — the end-to-end flow is emergent, and settles over time (eventual consistency).', '#94a3b8', '10');
+    T(410, 280, 'The last hop (Notify) often pushes to the browser over the Day-20 WebSocket/SSE edge.', '#c4b5fd', '9.5', '600');
+  }
+
+  function drawAll() { drawEdaDiagram(); drawChainDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
