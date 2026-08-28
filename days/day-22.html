@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 22: Fault Tolerance & High Availability | System Design Mastery</title>
+  <meta name="description" content="Every component you've built — load balancers, app servers, databases, brokers — eventually fails. A disk dies, a process crashes, a whole data center loses power. The question that separates a toy from a real system is: when a part breaks, does the whole thing go down, or does it keep serving? Today we learn Fault Tolerance (keep working correctly despite a failure, by masking it with redundancy) and High Availability (be up for a very high fraction of time, measured in 'nines'). Learn why chaining components in series multiplies their failure rates, why redundancy multiplies nines back, the difference between active-passive and active-active failover, health checks, the split-brain trap, correlated failures, MTBF/MTTR, and the real cost of each extra nine. Taught through a checkout-that-refuses-to-die story, a live availability calculator, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* availability simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .toggle-row { display:flex; gap:1.25rem; flex-wrap:wrap; align-items:center; }
+    .toggle-row .tog-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; }
+    .q-controls { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:1rem 1.5rem; margin:1rem 0 1.25rem; }
+    .q-control label { display:block; font-size:.8rem; color:var(--text-muted); font-weight:600; margin-bottom:.35rem; }
+    .q-control input[type=range] { width:100%; accent-color: var(--accent); }
+    .q-control .q-val { color:var(--accent-light); font-weight:700; }
+    .q-control.dim { opacity:.4; }
+    .prop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:.75rem; margin:0 0 1rem; }
+    .prop-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.8rem 1rem; text-align:center; }
+    .prop-card .val { font-size:1.25rem; font-weight:800; }
+    .prop-card .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .prop-card .val.load { color:#f59e0b; } .prop-card .val.waste { color:#fb7185; } .prop-card .val.lat { color:#3b82f6; } .prop-card .val.conn { color:#a78bfa; } .prop-card .val.good { color:#22c55e; }
+    .q-status { text-align:center; font-weight:800; font-size:.92rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; line-height:1.5; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+    .nines-table td.g { color:#22c55e; font-weight:700; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 22</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 22 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 4 — Reliability &amp; Security</span>
+    </div>
+    <h1>Fault Tolerance &amp; High Availability<br><span style="color:var(--accent)">Building Things That Refuse to Die</span></h1>
+    <p class="lead">
+      For twenty-one lessons you've been building parts — load balancers, caches, databases, brokers, event pipelines.
+      Here's the uncomfortable truth about every one of them: <strong>it will fail.</strong> A disk dies, a process
+      crashes, a network link drops, a whole data center loses power. The only real question is what happens next —
+      does one dead part take the <em>whole system</em> down with it, or does the system shrug and keep serving your
+      users? Today's two ideas are how grown-up systems answer that. <strong>Fault Tolerance</strong> is keeping the
+      system working <em>correctly</em> even while a part is broken, by having spares that quietly take over.
+      <strong>High Availability</strong> is the measurable result — being up and serving for a very high fraction of the
+      time, counted in famous "nines." You'll learn why stringing components together <em>multiplies</em> their failure
+      rates, why redundancy <em>multiplies the nines back</em>, and the very real bill — money, complexity, and a nasty
+      trap called split-brain — that every extra nine charges you.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#depth">Redundancy, SPOFs &amp; Failover</a>
+        <a href="#nines">The Language of Nines</a>
+        <a href="#patterns">Patterns for HA</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">✈️🛞</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Two aircraft on the runway. The first is a small <strong>single-engine plane</strong>. It's cheap, it's
+            simple, and it flies beautifully — right up until that one engine coughs. When it does, there is no plan B:
+            the engine <em>is</em> the plane, and the flight is over. That single engine is a <strong>single point of
+            failure</strong> — one part whose death is the whole system's death. The second is a
+            <strong>twin-engine airliner</strong>. It costs far more and carries a second engine it hopes never to need.
+            But when one engine fails at 35,000 feet — and engines do fail — the plane simply keeps flying on the other
+            one, lands safely, and most passengers never even know. The failure <em>happened</em>; it was just
+            <strong>masked</strong> by a spare. That is <strong>fault tolerance</strong>: not "nothing breaks," but
+            "when something breaks, the system carries on." And the airline's <strong>availability</strong>? It's the
+            fraction of its scheduled flights that actually take off and land as promised — the reliability
+            <em>you can measure</em>, which the whole fleet of spare engines and backup systems exists to push as close
+            to 100% as money allows. Burn in the image: <em>a single-engine plane is a single point of failure; a
+            twin-engine plane keeps flying when one dies — that spare is redundancy, and it's the only reason the system
+            stays up.</em></p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="ha-diagram" width="820" height="470" viewBox="0 0 820 470"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Uptime Uma</span> ran the backend for a growing payments startup, and on paper
+            her architecture was clean: a load balancer in front, one application server behind it, and one database
+            holding every transaction. It was easy to draw, easy to reason about, and it handled the traffic just fine.
+            For months, nobody thought about failure at all — because nothing had failed yet.
+          </p>
+          <p>
+            Then, at 2:11 a.m. on a Tuesday, the database server rebooted itself to apply a kernel patch. It was down for
+            <strong>forty minutes</strong>. During those forty minutes the application server, healthy and willing, had
+            nothing to talk to — so <em>every single payment failed</em>. The next month a routine deploy crashed the
+            lone app server, and even though the database was perfectly fine, customers again saw nothing but errors,
+            because the one machine that served them was gone. The CEO pulled Uma aside with a simple, brutal question:
+            <em>"Why do we keep going completely dark every time one thing hiccups?"</em>
+          </p>
+          <p>
+            Uma sat down and did the math, and it stopped her cold. Her load balancer was up about 99.9% of the time. So
+            was her app server. So was her database. "Three nines each — that's great," she thought. But they were wired
+            in a <strong>series</strong>: a payment only succeeds if the LB <em>and</em> the app server <em>and</em> the
+            database are all up at once. So the real number was <code>0.999 × 0.999 × 0.999 ≈ 99.7%</code> — and every
+            single one of those three machines was a <strong>single point of failure</strong> that could black out the
+            whole company by itself. She hadn't built one reliable system; she'd built a chain of three, and
+            <em>a chain is only as strong as the product of its links.</em>
+          </p>
+          <p>
+            So Uma added spares — <strong>redundancy</strong> — at every tier. Two load balancers instead of one. Three
+            app servers behind them, with the load balancer running <strong>health checks</strong> so that the instant a
+            server stopped answering, it was pulled out of rotation and the survivors kept serving. And for the
+            database, a <strong>standby replica</strong> (the streaming replication from Day 12) that could be
+            <strong>promoted to primary</strong> automatically if the primary died. Now the math flipped in her favor:
+            with two independent load balancers, the chance <em>both</em> are down at once is
+            <code>0.001 × 0.001 = 0.000001</code> — one in a million. Redundancy didn't just help; it turned three nines
+            into <em>six</em>. The whole point: a redundant tier fails only when <strong>all</strong> its copies fail at
+            once, and that's exponentially rarer.
+          </p>
+          <p>
+            But Uma also met the bill — and it was steeper than she expected. Her cloud spend roughly doubled; spares
+            cost real money whether they're needed that day or not. Worse, the very first time her database failover
+            fired for real, it created a nightmare: the network briefly split, the standby couldn't hear the primary,
+            <em>assumed it was dead</em>, and promoted itself — but the original primary was actually alive the whole
+            time. For ninety seconds she had <strong>two databases both convinced they were the primary</strong>, each
+            accepting conflicting writes. This is <strong>split-brain</strong>, and it corrupted data until she added
+            <em>fencing</em> and a quorum so that a node can only lead if a majority agrees it should (a preview of the
+            leader-election and consensus lessons coming in Phase 2). And one more humbling lesson: her "two redundant
+            servers" had both been sitting in the <em>same</em> data center, so when that whole building lost power, her
+            redundancy bought her nothing. She learned to spread copies across <strong>failure domains</strong> —
+            separate availability zones — so that no single fire, flood, or power cut could take them all. Uma had
+            stopped asking "will it fail?" and started designing for "<em>when</em> it fails, what keeps serving?"
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement"><strong>Fault tolerance</strong> and <strong>high availability</strong> are cause
+          and effect. <em>Fault tolerance</em> is the <strong>mechanism</strong>: the system keeps working
+          <em>correctly</em> while a component is broken, because a <strong>redundant spare</strong> masks the failure.
+          <em>High availability</em> is the <strong>measured result</strong>: the fraction of time the system is up and
+          serving, counted in <strong>nines</strong> (99.9% = three nines ≈ 8.8 hours of downtime a year; each extra
+          nine cuts downtime 10×). The single most important intuition: components wired in <strong>series</strong> —
+          where the request needs <em>all</em> of them — <strong>multiply their availabilities</strong>, so five 99%
+          parts give only 0.99⁵ ≈ 95%, and every part is a <strong>single point of failure (SPOF)</strong>. The cure is
+          <strong>redundancy in parallel</strong>: put N copies of a component so the tier is down only when
+          <em>all N</em> are down (availability = 1 − (1−a)ᴺ), which turns two 99% copies into 99.99%. Redundancy needs
+          three companions to actually work: <strong>health checks</strong> (to notice a copy died), <strong>failover</strong>
+          (to route around it — active-passive keeps a warm standby; active-active serves from all copies at once), and
+          <strong>independent failure domains</strong> (copies in separate AZs so one disaster can't kill them together).
+          And it charges a real price: <strong>money</strong> (you pay for spares that mostly sit idle), <strong>complexity</strong>
+          (failover logic, the <strong>split-brain</strong> risk when two copies both think they're in charge), and
+          <strong>diminishing returns</strong> (each extra nine costs exponentially more). You don't buy 100% — you buy
+          the number of nines your business actually needs.</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — The Availability Calculator</h2>
+        <div class="sim-box">
+          <p>This one widget contains the entire lesson. Build a system out of components wired in <strong>series</strong>
+          (a request needs every tier — load balancer <em>and</em> app <em>and</em> database), then add
+          <strong>redundant copies</strong> of each tier. Watch two opposing forces fight: adding tiers in series
+          <em>drags availability down</em> (failures multiply), while adding redundant copies <em>pulls it back up</em>
+          (a tier dies only when all its copies die). The "downtime per year" number is the one your CEO actually feels.</p>
+
+          <div class="q-controls">
+            <div class="q-control">
+              <label>Availability of each component: <span class="q-val" id="a-a-v">99.0</span>%</label>
+              <input type="range" id="a-a" min="90" max="99.9" value="99" step="0.1" />
+            </div>
+            <div class="q-control">
+              <label>Components in series (all must be up): <span class="q-val" id="a-s-v">5</span></label>
+              <input type="range" id="a-s" min="1" max="12" value="5" />
+            </div>
+            <div class="q-control">
+              <label>Redundant copies per component: <span class="q-val" id="a-r-v">1</span></label>
+              <input type="range" id="a-r" min="1" max="4" value="1" />
+            </div>
+          </div>
+
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val good" id="m-avail">—</div><div class="lbl">System availability</div></div>
+            <div class="prop-card"><div class="val load" id="m-nines">—</div><div class="lbl">≈ Nines</div></div>
+            <div class="prop-card"><div class="val waste" id="m-down">—</div><div class="lbl">Downtime / year</div></div>
+            <div class="prop-card"><div class="val conn" id="m-spof">—</div><div class="lbl">Single points of failure</div></div>
+          </div>
+
+          <div class="q-status warn" id="a-status">—</div>
+
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: start with 5 components in
+          series at 99% each and <strong>1 copy</strong> — you get ~95%, nearly <em>18 days</em> of downtime a year, and
+          5 single points of failure. Now drag "redundant copies" to <strong>2</strong>: each 99% tier becomes 99.99%,
+          the system jumps to ~99.95%, downtime collapses to a few hours, and the SPOF count drops to zero. That's the
+          whole game — <em>series multiplies your failures, redundancy multiplies your nines back.</em> Then notice the
+          cruelty of the last nine: going from 3 copies to 4 barely moves the needle but doubles the extra hardware.</p>
+        </div>
+      </section>
+
+      <section id="depth">
+        <h2>Redundancy, Single Points of Failure &amp; Failover</h2>
+        <p>Everything in high availability grows from one seed idea: <strong>a single point of failure (SPOF)</strong> is
+        any component whose failure takes down the whole system. The entire discipline is (1) <em>find</em> every SPOF,
+        and (2) <em>eliminate</em> it by adding a redundant copy — and then make sure the traffic actually moves to that
+        copy when the original dies. Redundancy without automatic rerouting is just an expensive paperweight.</p>
+
+        <div class="flow-box">
+          <div class="flow-step"><strong>Redundancy.</strong><span>Have more than one of everything that matters — two
+          load balancers, N app servers, a primary <em>and</em> a replica database. The tier survives as long as
+          <em>at least one</em> copy is alive. This is the raw material of fault tolerance.</span></div>
+          <div class="flow-step"><strong>Health checks.</strong><span>You can't route around a dead copy you don't know is
+          dead. Something must continuously probe each copy ("are you alive and answering correctly?") — the load-balancer
+          health checks from Day 5, or heartbeats between database nodes. A copy that fails its checks is marked down and
+          taken out of rotation.</span></div>
+          <div class="flow-step"><strong>Failover.</strong><span>The act of shifting work off a failed copy onto a healthy
+          one. For stateless app servers behind a load balancer this is trivial (just stop sending it traffic). For a
+          stateful database it's the hard part — you must <em>promote</em> a replica to primary and repoint everyone at
+          it, ideally in seconds and without losing writes.</span></div>
+          <div class="flow-step"><strong>Failback.</strong><span>Once the original recovers, deciding whether to move work
+          back to it (or leave it as the new standby). Done carelessly, an over-eager failback can cause a second
+          outage — so mature systems make it deliberate, not automatic.</span></div>
+        </div>
+
+        <h3>Active-Passive vs Active-Active</h3>
+        <p>There are two fundamentally different ways to run redundant copies, and the choice comes up in every senior
+        design discussion. In <strong>active-passive</strong> (a.k.a. primary/standby), one copy does all the work while
+        the spare sits warm and idle, ready to take over on failure. It's simpler and avoids conflicts (only one node
+        writes), but the standby is money spinning idle, and there's a brief <strong>failover gap</strong> while it wakes
+        up and gets promoted. In <strong>active-active</strong>, <em>every</em> copy serves live traffic at once. There's
+        no idle hardware and no wake-up delay — a dead node just means the survivors carry more load — but now you must
+        handle concurrent writes to multiple nodes (conflict resolution, the multi-leader problem from Day 12) and make
+        sure losing one node doesn't overload the rest (capacity planning: N+1, not just N).</p>
+
+        <div class="diagram-box">
+          <svg id="failover-diagram" width="820" height="300" viewBox="0 0 820 300"></svg>
+        </div>
+
+        <p>The diagram traces an <strong>active-passive database failover</strong> in time. Notice the shape of the
+        outage: it isn't "the database is gone forever," it's a <strong>gap</strong> — the seconds between the primary
+        dying and the standby being detected-as-needed, promoted, and reconnected. Shrinking that gap is the whole job.
+        The two numbers that define it are <strong>MTBF</strong> (mean time between failures — how often it breaks) and
+        <strong>MTTR</strong> (mean time to recovery — how fast you heal). Availability is literally
+        <code>MTBF / (MTBF + MTTR)</code>: you push availability up either by failing <em>less often</em> or by
+        recovering <em>faster</em> — and for most real systems, <strong>getting MTTR down</strong> (fast automatic
+        failover) is the cheaper, bigger win than chasing components that never break.</p>
+      </section>
+
+      <section id="nines">
+        <h2>The Language of Nines</h2>
+        <p>"Highly available" is meaningless until you attach a number, and the industry counts availability in
+        <strong>nines</strong> — the count of leading 9s in the uptime percentage. The magic of the table below is that
+        <em>each extra nine cuts your allowed downtime by 10×</em>, and the jump in engineering effort to earn it grows
+        just as fast. This is the vocabulary of every SLA you'll ever sign.</p>
+        <table class="algo-table nines-table">
+          <tr><th>Availability</th><th>"Nines"</th><th>Downtime / year</th><th>Downtime / day</th><th>Feels like</th></tr>
+          <tr><td class="g">90%</td><td>one nine</td><td>36.5 days</td><td>2.4 hours</td><td>A hobby project</td></tr>
+          <tr><td class="g">99%</td><td>two nines</td><td>3.65 days</td><td>14 min</td><td>An internal tool</td></tr>
+          <tr><td class="g">99.9%</td><td>three nines</td><td>8.77 hours</td><td>1.4 min</td><td>A typical SaaS SLA</td></tr>
+          <tr><td class="g">99.99%</td><td>four nines</td><td>52.6 min</td><td>8.6 sec</td><td>Serious cloud service</td></tr>
+          <tr><td class="g">99.999%</td><td>five nines</td><td>5.26 min</td><td>0.86 sec</td><td>Telecom / payments core</td></tr>
+        </table>
+
+        <h3>SLA, SLO, and SLI — the three that get confused</h3>
+        <p>These three acronyms travel together and mean different things. An <strong>SLI</strong> (Service Level
+        <em>Indicator</em>) is the <em>measurement</em> — e.g. "the percentage of requests that succeeded in under
+        200ms." An <strong>SLO</strong> (Service Level <em>Objective</em>) is your internal <em>target</em> for that
+        indicator — "99.9% of requests succeed." An <strong>SLA</strong> (Service Level <em>Agreement</em>) is the
+        <em>contract</em> with your customer, usually a slightly weaker promise than your SLO, with <strong>penalties</strong>
+        (refunds, credits) if you miss it. Teams pick an SLO <em>below</em> 100% on purpose, and the gap between it and
+        100% is your <strong>error budget</strong> — the amount of failure you're <em>allowed</em> to spend on risky
+        deploys and experiments. Run out of error budget and you freeze risky changes until reliability recovers. This is
+        the beating heart of Google's SRE practice, and it reframes reliability from "never fail" to "fail no more than
+        we budgeted."</p>
+      </section>
+
+      <section id="patterns">
+        <h2>Patterns for High Availability</h2>
+        <p>Redundancy is the foundation, but real systems layer several patterns on top. Here are the ones you'll be
+        expected to name and reach for in an interview.</p>
+        <div class="family-grid">
+          <div class="family-card">
+            <h4>Eliminate SPOFs (N+1 redundancy)</h4>
+            <p>For every tier, run one <em>more</em> copy than you need to serve peak load, so losing one leaves you still
+            fully capable — not scrambling. "N+1" (or N+2) is the baseline; a single of anything is a SPOF by definition.</p>
+            <div class="eg">Two LBs, 3 app servers for a 2-server load, primary + replica DB.</div>
+          </div>
+          <div class="family-card">
+            <h4>Spread across failure domains</h4>
+            <p>Copies in the <em>same</em> rack, room, or data center fail <strong>together</strong> when that domain dies.
+            Distribute redundancy across <strong>availability zones</strong> (and, for disasters, regions — Day 64) so no
+            single power cut or flood takes them all.</p>
+            <div class="eg">AZ-a + AZ-b + AZ-c; a whole-AZ outage still leaves two-thirds serving.</div>
+          </div>
+          <div class="family-card">
+            <h4>Health checks + load-balancer eviction</h4>
+            <p>The load balancer (Day 5) continuously probes each backend and instantly stops routing to any that fail —
+            so a crashed instance becomes invisible to users within seconds, not minutes.</p>
+            <div class="eg">Deep health checks test the DB connection too, not just "is the port open?"</div>
+          </div>
+          <div class="family-card">
+            <h4>Graceful degradation</h4>
+            <p>When a non-critical dependency dies, serve a <em>reduced</em> experience instead of an error page. Better a
+            page without personalized recommendations than no page at all — <strong>partial</strong> beats
+            <strong>nothing</strong>.</p>
+            <div class="eg">Recommendations service down → show a generic "popular items" list.</div>
+          </div>
+          <div class="family-card">
+            <h4>Bulkheads &amp; isolation</h4>
+            <p>Named after a ship's watertight compartments: partition resources so a flood in one area can't sink the
+            whole vessel. One overloaded feature shouldn't drain the thread pool every feature shares.</p>
+            <div class="eg">Separate connection pools / thread pools per dependency; one hang ≠ total outage.</div>
+          </div>
+          <div class="family-card">
+            <h4>Timeouts, retries &amp; circuit breakers</h4>
+            <p>Never wait forever on a sick dependency (timeout), retry <em>carefully</em> with backoff and jitter, and
+            when a dependency is clearly down, <strong>stop hammering it</strong> — the Circuit Breaker of Day 23,
+            tomorrow's lesson.</p>
+            <div class="eg">Timeout 500ms → 2 retries w/ jitter → open the breaker if it keeps failing.</div>
+          </div>
+        </div>
+        <p>Notice how these stack: redundancy gives you spare capacity, health checks and failover <em>route to</em> it,
+        failure domains keep the spares independent, and degradation, bulkheads, and breakers keep <em>one</em> sick part
+        from spreading its illness to the whole system. High availability isn't a single feature — it's a
+        <strong>discipline of removing every way the whole can die with a part.</strong></p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts — What Availability Costs You</h2>
+        <p>Reliability is not free, and pretending it is gets teams burned. Every nine you chase charges you in four
+        currencies.</p>
+
+        <h3>1. Each nine costs exponentially more</h3>
+        <p>Going from 99% to 99.9% might mean adding a standby and a load balancer. Going from 99.99% to 99.999% can mean
+        multi-region deployments, follow-the-sun on-call, chaos testing, and eliminating human steps from every recovery
+        path — <em>vastly</em> more expensive for 47 fewer minutes of downtime a year. The right question is never
+        "how do we get 100%?" (you can't) but <strong>"what's the cheapest architecture that meets the nines our
+        business actually needs?"</strong> A hobby blog and a payments core have very different correct answers.</p>
+
+        <h3>2. Failover is a mini-outage, and it can go wrong</h3>
+        <p>The moment of failover is itself risky. There's a detection delay (health checks take time to be sure), a
+        promotion delay (a replica catching up and taking over), and a real chance of getting it <em>wrong</em> — most
+        infamously <strong>split-brain</strong>: a network partition makes a standby believe the primary is dead, so it
+        promotes itself, but the primary is actually alive. Now <strong>two nodes both accept writes</strong> and your
+        data diverges. The fixes — <strong>fencing</strong> (forcibly disabling the old primary), <strong>quorum</strong>
+        (a node may only lead if a majority agrees), and proper <strong>leader election</strong> — are exactly the
+        consensus machinery of Paxos and Raft (Days 31–32). This is why "just add a standby" is harder than it looks.</p>
+
+        <h3>3. Correlated failures break the math</h3>
+        <p>The whole availability calculation assumes copies fail <strong>independently</strong> — that both LBs going
+        down at once is one-in-a-million. But if both live in the same rack, run the same buggy deploy, share the same
+        certificate that expires, or depend on the same overloaded DNS, they fail <em>together</em>, and your "redundant"
+        system has the availability of a single copy. Real outages are overwhelmingly <strong>correlated</strong>: bad
+        configs pushed everywhere at once, a shared dependency, a whole-AZ power event. Genuine redundancy means
+        independent <em>everything</em> — hardware, zone, software version, and deploy timing.</p>
+
+        <h3>4. The CAP tax during a partition</h3>
+        <p>When the network splits (Day 10's <em>P</em>), a highly available system faces a forced choice: keep serving
+        on both sides and risk inconsistency (choose <strong>A</strong>), or refuse writes on the minority side to stay
+        consistent (choose <strong>C</strong>). "High availability" and "strong consistency" pull against each other
+        precisely at failure time — the worst possible moment to discover you never decided which you wanted. Every
+        failover design is implicitly a CAP decision.</p>
+
+        <p style="margin-top:1rem;">The through-line: high availability trades <strong>money and complexity</strong> for
+        <strong>the system's refusal to die.</strong> Spares sit idle, failover logic can misfire, and the last nines
+        cost a fortune — so you buy exactly as much reliability as your users and your revenue actually demand, design
+        every copy to fail <em>independently</em>, and invest in <strong>recovering fast</strong> (MTTR) at least as much
+        as in never breaking.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You leave the ringing Announcement Hall and walk into a windowless wing lined with backup generators, twin
+          staircases, and a wall of green "STANDBY — READY" lights. Nothing here does the day's work; everything here
+          exists so the building never goes dark. This is the Resilience Wing.</h4>
+          <div class="palace-room"><span class="palace-icon">📖</span><div><strong>The Records Room</strong> — <span>Apache Kafka (Day 19). A wall of numbered ledgers where every event is written and never erased.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🔌</span><div><strong>The Open Line Room</strong> — <span>WebSockets &amp; SSE (Day 20). A phone left off the hook and a radio the front desk broadcasts on — the live delivery layer to the guest.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📣</span><div><strong>The Announcement Hall</strong> — <span>Event-Driven Architecture (Day 21). A great bell — ring it once ("OrderPlaced!") and every department reacts on its own.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🛡️</span><div><strong>The Resilience Wing</strong> — <span>Fault Tolerance &amp; High Availability (today). <strong>Twin generators</strong> (redundancy) that flip on the instant the mains fail, a security guard walking the halls checking every door is answering (health checks), and a rule painted on the wall: <em>never just one of anything, and never all of them in the same room</em> (no SPOFs, spread across failure domains). A red warning sign by the generators reads "ONLY ONE MAY LEAD" — the fence against split-brain.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🔩</span><div><strong>The Next Room</strong> — <span>Circuit Breaker Pattern (Day 23). A fuse box by the door: when one appliance keeps shorting out, its fuse trips and cuts it off <em>before</em> it burns the whole house down.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Load Balancing (Day 5)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Replication (Day 12)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Fault Tolerance &amp; HA (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Circuit Breaker (Day 23)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Consequences (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">CAP Theorem (Day 10)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Distributed Failures (Day 25)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Observability (Day 26)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Consensus / Raft (Days 31–32)</span>
+        </div>
+        <p>Today is where a dozen earlier threads come together to answer one question — <em>how do we stay up?</em> The
+        <strong>load balancer</strong> (Day 5) is the device that runs health checks and evicts dead app servers;
+        <strong>database replication</strong> (Day 12) is the mechanism that gives you a standby to fail over to;
+        <strong>CAP</strong> (Day 10) is the choice you're forced to make the instant a partition hits your redundant
+        copies. And it opens Week 4 (Reliability &amp; Security) by handing off directly to its own sequels: the
+        <strong>Circuit Breaker</strong> (Day 23) stops a failing dependency from dragging you down, a deeper look at
+        <strong>distributed system failures</strong> (Day 25) catalogs everything that can break, <strong>observability</strong>
+        (Day 26) is how you even notice a copy has died, and <strong>consensus / leader election</strong> (Days 31–32) is
+        the real cure for the split-brain you met today. We spent Week 3 learning every way services <em>talk</em>; Week
+        4 asks how to keep them talking when the world catches fire.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Fault tolerance and high availability are the same thing."</td><td>They're cause and effect. <strong>Fault tolerance</strong> is the <em>mechanism</em> — masking a component failure with redundancy so the system keeps working correctly. <strong>High availability</strong> is the <em>measured outcome</em> — the fraction of time you're up, in nines. You build the first to achieve the second.</td></tr>
+          <tr><td>"Each of my components is 99.9%, so my system is 99.9%."</td><td>Only if they're wired in parallel. In <strong>series</strong> (a request needs all of them) availabilities <em>multiply</em>: five 99.9% components give 0.999⁵ ≈ 99.5%. Chaining reliable parts produces a <em>less</em> reliable whole. Every serial dependency is a SPOF.</td></tr>
+          <tr><td>"I added a backup, so I'm covered."</td><td>A backup you never fail over to is a paperweight. Redundancy only helps with <strong>health checks</strong> to detect the failure and <strong>automatic failover</strong> to route around it — and only if you've actually tested that the failover works. Untested failover usually fails when you finally need it.</td></tr>
+          <tr><td>"Two copies means we're twice as safe, always."</td><td>Only if they fail <strong>independently</strong>. Copies in the same rack, on the same deploy, sharing the same expiring cert or the same DNS fail <em>together</em> — a <strong>correlated failure</strong> — and your redundancy is an illusion. Spread copies across real failure domains.</td></tr>
+          <tr><td>"We should aim for 100% uptime."</td><td>100% is impossible and chasing it bankrupts you — each extra nine costs exponentially more. Pick the nines your business needs, set an <strong>SLO</strong> below 100%, and spend the resulting <strong>error budget</strong> on shipping features. Reliability is a business trade-off, not a moral absolute.</td></tr>
+          <tr><td>"Automatic failover can't make things worse."</td><td>It absolutely can. A network blip can trigger a needless failover, and a botched one causes <strong>split-brain</strong> — two nodes both acting as primary, accepting conflicting writes and corrupting data. Safe failover needs fencing, quorum, and leader election (Days 31–32).</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ Your system is a load balancer → app server → database, one of each, wired
+          in series, and each machine is up 99.9% of the time. (a) What's the system's real availability, and roughly how
+          much downtime per year is that? (b) The CEO wants "four nines." Describe concretely what you'd change and
+          <em>why</em> it raises the number. (c) You add a standby database with automatic failover — name one new,
+          serious failure mode you've just introduced and how you'd defend against it. (click to reveal)</div>
+          <div class="recall-answer"><strong>(a) Real availability:</strong> the three are in series, so a request
+          succeeds only if all three are up — availabilities <em>multiply</em>: <code>0.999 × 0.999 × 0.999 ≈ 0.997</code>,
+          i.e. ~<strong>99.7%</strong>, which is roughly <strong>26 hours of downtime a year</strong> (about a full day).
+          And each of the three machines is a <strong>single point of failure</strong>: any one dying blacks out
+          everything. Three nines each did <em>not</em> give you three nines overall.
+          <strong>(b) Reaching four nines:</strong> eliminate the SPOFs with <strong>redundancy in parallel</strong> at
+          every tier — 2+ load balancers, 3+ app servers behind them with <strong>health checks</strong> so the LB
+          evicts any dead one instantly, and a primary + standby database with automatic <strong>failover</strong>. A
+          redundant tier is down only when <em>all</em> its copies are down at once, e.g. two 99.9% LBs →
+          <code>1 − 0.001² = 99.9999%</code>. Multiplying those much-higher per-tier numbers gets the whole system to
+          four nines (~52 min/year). Crucially, spread the copies across <strong>separate availability zones</strong> so a
+          single data-center outage can't take a whole tier — otherwise the failures are correlated and the math is a lie.
+          <strong>(c) New failure mode:</strong> <strong>split-brain</strong> — a network partition makes the standby
+          think the primary is dead, so it promotes itself while the primary is still alive; now <em>two</em> databases
+          accept conflicting writes and your data diverges. Defend with <strong>fencing</strong> (forcibly disable the old
+          primary before promoting), and <strong>quorum / leader election</strong> so a node may only become primary if a
+          majority of nodes agree — the consensus machinery of Days 31–32. Mantra: <em>redundancy without safe failover
+          just trades one outage for a worse, quieter kind of corruption.</em></div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">☁️ AWS Availability Zones</div><p>AWS regions are split into multiple <em>availability zones</em> — physically separate data centers with independent power, cooling, and networking, close enough for fast links but far enough that one disaster can't hit two. The entire cloud playbook for HA is "run in ≥2 (ideally 3) AZs" so a whole-AZ failure leaves you serving. It's failure domains, productized.</p></div>
+          <div class="realworld-card"><div class="rw-company">🐒 Netflix &amp; Chaos Monkey</div><p>Netflix built <em>Chaos Monkey</em> to randomly kill production instances during business hours — deliberately causing failures to prove the system survives them. If you can't tolerate a random node dying at 2pm on a Tuesday, you'll find out on your own terms, not during an incident. Fault tolerance you haven't tested is just a hope.</p></div>
+          <div class="realworld-card"><div class="rw-company">🔍 Google SRE &amp; Error Budgets</div><p>Google's Site Reliability Engineering reframes availability as a budget: pick an SLO (say 99.99%), and the 0.01% you're allowed to fail becomes an <em>error budget</em> teams spend on risky launches. Burn it and risky deploys freeze until reliability recovers — turning "never fail" into a shared, quantified trade-off between speed and stability.</p></div>
+          <div class="realworld-card"><div class="rw-company">🏦 Payments &amp; five nines</div><p>Card networks and core banking chase five nines (~5 min/year) because a minute of downtime is millions of failed transactions and broken trust. They run active-active across regions, with automated failover, fencing, and consensus-backed leader election — and treat every human step in recovery as a bug, because humans are slow when the clock is the enemy.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What's the difference between fault tolerance and high availability?</div>
+          <div class="fc-a">A: <strong>Fault tolerance</strong> is the <em>mechanism</em> — the system keeps working correctly while a component is broken, by masking the failure with a redundant spare. <strong>High availability</strong> is the <em>measured result</em> — the fraction of time the system is up and serving, counted in nines. You build the first to achieve the second.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is a system of components in series less available than any single one, and what's the fix?</div>
+          <div class="fc-a">A: In series a request needs <em>all</em> components, so their availabilities <strong>multiply</strong> (five 99% parts → 0.99⁵ ≈ 95%), and each is a single point of failure. The fix is <strong>redundancy in parallel</strong>: N copies per tier, so the tier is down only when all N are down — availability = 1 − (1−a)ᴺ, turning two 99% copies into 99.99%.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What does "three nines" mean, and how much downtime is it?</div>
+          <div class="fc-a">A: 99.9% availability ≈ <strong>8.8 hours of downtime per year</strong> (~1.4 min/day). Each additional nine cuts downtime 10×: four nines (99.99%) ≈ 52 min/year, five nines (99.999%) ≈ 5 min/year — and costs exponentially more to achieve.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Active-passive vs active-active redundancy?</div>
+          <div class="fc-a">A: <strong>Active-passive</strong> = one copy serves, a warm standby waits and is promoted on failure (simpler, no write conflicts, but idle hardware + a failover gap). <strong>Active-active</strong> = every copy serves live traffic (no idle capacity, instant survival), but you must handle concurrent writes/conflicts and size for N+1 so survivors aren't overloaded.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is split-brain and how do you prevent it?</div>
+          <div class="fc-a">A: A network partition makes a standby believe the primary is dead, so it promotes itself while the primary is still alive — now two nodes accept conflicting writes and corrupt data. Prevent it with <strong>fencing</strong> (disable the old primary), <strong>quorum</strong> (a node may only lead with majority agreement), and proper <strong>leader election</strong> (Raft/Paxos, Days 31–32).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Using the twin-engine plane image, explain fault tolerance and what a "single point of failure" is.</li>
+          <li>Three components, each 99.9% available, wired in series — what's the system availability and why is it lower than 99.9%?</li>
+          <li>Explain how adding a second, independent copy of a 99% component makes that tier 99.99%.</li>
+          <li>Define MTBF and MTTR and write the availability formula that connects them. Which is usually cheaper to improve?</li>
+          <li>What are the three things redundancy needs to actually deliver availability (beyond just having spares)?</li>
+          <li>What is split-brain, what causes it, and name two defenses.</li>
+          <li>Why is aiming for 100% availability the wrong goal, and what should you target instead (mention SLO / error budget)?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>everything fails, so design for what happens next.</strong>
+          <strong>Fault tolerance</strong> is masking a broken component with a redundant spare so the system keeps
+          working; <strong>high availability</strong> is the measured payoff, counted in nines (99.9% ≈ 8.8 hrs down/year,
+          each nine 10× better and exponentially costlier). The core math: components in <strong>series</strong> multiply
+          their failures — five 99% parts give only ~95% — and every serial part is a <strong>single point of
+          failure</strong>; <strong>redundancy in parallel</strong> reverses it, because a tier dies only when all its
+          copies die at once. Redundancy pays off only with <strong>health checks</strong> to spot the failure,
+          <strong>failover</strong> to route around it, and copies in <strong>independent failure domains</strong> so
+          they don't die together. And it charges a real bill — idle hardware, the split-brain risk, correlated failures,
+          and a CAP choice at partition time — so you buy exactly the nines your business needs and invest as much in
+          <em>recovering fast</em> (MTTR) as in never breaking. Tomorrow (Day 23) we zoom into the single most important
+          tactic for stopping one sick dependency from taking everything down with it: the <strong>Circuit Breaker
+          Pattern</strong>.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-21.html">← Day 21: Event-Driven Architecture</a>
+        <a href="day-23.html" class="coming-soon-link">Day 23: Circuit Breaker Pattern →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 22 of 90 — Fault Tolerance &amp; High Availability</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── Availability calculator ──────────────────────────────────────────
+  var els = {
+    a:   document.getElementById('a-a'),
+    s:   document.getElementById('a-s'),
+    r:   document.getElementById('a-r'),
+    aV:  document.getElementById('a-a-v'),
+    sV:  document.getElementById('a-s-v'),
+    rV:  document.getElementById('a-r-v'),
+    avail: document.getElementById('m-avail'),
+    nines: document.getElementById('m-nines'),
+    down:  document.getElementById('m-down'),
+    spof:  document.getElementById('m-spof'),
+    status:document.getElementById('a-status')
+  };
+
+  function fmtDowntime(min) {
+    // min = minutes of downtime per year
+    if (min >= 1440) return (min/1440).toFixed(1) + ' days';
+    if (min >= 60)   return (min/60).toFixed(1) + ' hours';
+    if (min >= 1)    return min.toFixed(0) + ' min';
+    return (min*60).toFixed(0) + ' sec';
+  }
+
+  function render() {
+    var a = (+els.a.value) / 100;   // per-component availability, 0..1
+    var S = +els.s.value;           // components in series
+    var R = +els.r.value;           // redundant copies per component
+
+    els.aV.textContent = (a*100).toFixed(1);
+    els.sV.textContent = S;
+    els.rV.textContent = R;
+
+    // A redundant tier is down only when all R copies are down: 1 - (1-a)^R.
+    var tier = 1 - Math.pow(1 - a, R);
+    // S such tiers in series: all must be up.
+    var sys = Math.pow(tier, S);
+
+    var minutesPerYear = 525600;
+    var downMin = (1 - sys) * minutesPerYear;
+
+    // "nines" ≈ number of leading 9s = -log10(1 - availability)
+    var nines = sys >= 1 ? 6 : -Math.log10(1 - sys);
+    var spofCount = (R === 1) ? S : 0;
+
+    els.avail.textContent = (sys*100).toFixed(sys > 0.999 ? 4 : 2) + '%';
+    els.nines.textContent = nines >= 6 ? '6+' : nines.toFixed(1);
+    els.down.textContent  = fmtDowntime(downMin);
+    els.spof.textContent  = spofCount;
+
+    if (spofCount > 0) {
+      els.status.className = 'q-status bad';
+      els.status.textContent = 'No redundancy: ' + spofCount + ' single point' + (spofCount===1?'':'s') +
+        ' of failure — any one of these ' + S + ' component' + (S===1?'':'s') + ' dying takes the whole system down. ' +
+        'Availability is the product of the parts (~' + (sys*100).toFixed(2) + '%).';
+    } else if (nines >= 4) {
+      els.status.className = 'q-status ok';
+      els.status.textContent = 'Highly available: ' + R + ' independent copies per tier mean a tier fails only when all ' +
+        R + ' fail at once — redundancy multiplied your nines back up to ~' + nines.toFixed(1) + ' nines. (Remember: this ' +
+        'assumes the copies fail independently — put them in separate AZs!)';
+    } else {
+      els.status.className = 'q-status warn';
+      els.status.textContent = 'Redundant but modest: ' + R + ' copies per tier removed the SPOFs, but ' + S +
+        ' tiers in series still drag the total to ~' + (sys*100).toFixed(2) + '%. Add copies or reduce serial hops for more nines.';
+    }
+  }
+
+  els.a.addEventListener('input', render);
+  els.s.addEventListener('input', render);
+  els.r.addEventListener('input', render);
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+
+  // Anchor diagram: single serial chain (SPOFs) vs redundant topology.
+  function drawHaDiagram() {
+    var svg = document.getElementById('ha-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    // ---- LEFT: No redundancy (a chain of SPOFs) ----
+    T(205, 26, 'NO REDUNDANCY (chain of SPOFs)', '#fb7185', '12', '700');
+    var chain = [
+      { y: 60,  label: 'Load Balancer' },
+      { y: 150, label: 'App Server' },
+      { y: 240, label: 'Database' }
+    ];
+    chain.forEach(function(c, i){
+      var dead = (i === 1); // mark the app server as the one that died
+      var col = dead ? '#ef4444' : '#fb7185';
+      svg.appendChild(rs.rectangle(130, c.y, 150, 50, { stroke:col, strokeWidth:1.8, roughness:1.1, fill:col+'18', fillStyle:'solid' }));
+      T(205, c.y + 24, c.label, dead ? '#fecaca' : '#fecdd3', '11', '700');
+      T(205, c.y + 40, dead ? '✕ crashed' : 'single — a SPOF', dead ? '#fca5a5' : '#fb7185', '8.5', '600');
+      if (i < chain.length - 1) {
+        svg.appendChild(rs.line(205, c.y + 50, 205, chain[i+1].y, { stroke:'#64748b', strokeWidth:1.4, roughness:0.9 }));
+      }
+    });
+    svg.appendChild(rs.line(205, 40, 205, 60, { stroke:'#64748b', strokeWidth:1.4, roughness:0.9 }));
+    T(205, 48, 'user', '#94a3b8', '8.5', '600');
+    T(205, 340, 'one dies → the whole system is DOWN', '#ef4444', '10.5', '700');
+    T(205, 360, 'availability = a × a × a  (multiplies down)', '#fb7185', '9', '600', true);
+
+    // ---- divider ----
+    svg.appendChild(rs.line(410, 40, 410, 430, { stroke:'#334155', strokeWidth:1.2, roughness:1, strokeLineDash:[6,5] }));
+
+    // ---- RIGHT: Redundant & highly available ----
+    T(615, 26, 'REDUNDANT (no SPOFs)', '#22c55e', '12', '700');
+    T(615, 44, 'user', '#94a3b8', '8.5', '600');
+
+    // two load balancers
+    [500, 660].forEach(function(x, i){
+      var dead = false;
+      svg.appendChild(rs.rectangle(x, 58, 100, 40, { stroke:'#22c55e', strokeWidth:1.6, roughness:1.1, fill:'#22c55e18', fillStyle:'solid' }));
+      T(x + 50, 82, 'LB ' + (i+1), '#dcfce7', '10', '700');
+      svg.appendChild(rs.line(615, 48, x + 50, 58, { stroke:'#22c55e', strokeWidth:1.2, roughness:0.9 }));
+    });
+    T(615, 112, 'health-checked · 1 down = the other serves', '#86efac', '8', '600');
+
+    // three app servers, one dead
+    var apps = [485, 590, 695];
+    apps.forEach(function(x, i){
+      var dead = (i === 1);
+      var col = dead ? '#ef4444' : '#22c55e';
+      svg.appendChild(rs.rectangle(x, 150, 90, 44, { stroke:col, strokeWidth:1.6, roughness:1.1, fill:col+'18', fillStyle:'solid' }));
+      T(x + 45, 170, 'App ' + (i+1), dead ? '#fecaca' : '#dcfce7', '9.5', '700');
+      T(x + 45, 185, dead ? '✕ evicted' : 'serving', dead ? '#fca5a5' : '#86efac', '7.5', '600');
+      // arrows from both LBs into the live apps only
+      if (!dead) {
+        svg.appendChild(rs.line(550, 98, x + 45, 150, { stroke:'#22c55e', strokeWidth:1.1, roughness:0.9, strokeLineDash:[3,3] }));
+        svg.appendChild(rs.line(710, 98, x + 45, 150, { stroke:'#22c55e', strokeWidth:1.1, roughness:0.9, strokeLineDash:[3,3] }));
+      }
+    });
+
+    // primary + standby DB
+    svg.appendChild(rs.rectangle(505, 250, 100, 46, { stroke:'#3b82f6', strokeWidth:1.8, roughness:1.1, fill:'#3b82f622', fillStyle:'solid' }));
+    T(555, 270, 'DB Primary', '#dbeafe', '9.5', '700'); T(555, 286, 'active', '#93c5fd', '7.5', '600');
+    svg.appendChild(rs.rectangle(645, 250, 100, 46, { stroke:'#a78bfa', strokeWidth:1.8, roughness:1.1, fill:'#a78bfa18', fillStyle:'solid' }));
+    T(695, 270, 'DB Standby', '#ede9fe', '9.5', '700'); T(695, 286, 'ready', '#c4b5fd', '7.5', '600');
+    // replication + failover arrows
+    svg.appendChild(rs.line(605, 273, 645, 273, { stroke:'#a78bfa', strokeWidth:1.4, roughness:0.9 }));
+    T(625, 246, 'replicate →', '#c4b5fd', '7.5', '600', true);
+    apps.forEach(function(x, i){ if (i !== 1) svg.appendChild(rs.line(x + 45, 194, 555, 250, { stroke:'#64748b', strokeWidth:1, roughness:0.9 })); });
+
+    T(615, 336, 'every tier has spares → one death is invisible to users', '#22c55e', '10', '700');
+    T(615, 358, 'redundant availability = 1 − (1−a)^N  (multiplies up)', '#86efac', '9', '600', true);
+    T(615, 380, 'spread copies across AZs so they don\'t die together', '#c4b5fd', '9', '600');
+  }
+
+  // Active-passive failover timeline.
+  function drawFailoverDiagram() {
+    var svg = document.getElementById('failover-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 22, 'Active-passive failover: the outage is a GAP, not forever', '#e2e8f0', '12', '700');
+
+    // two lanes: Primary (top), Standby (bottom)
+    T(70, 70, 'PRIMARY', '#3b82f6', '10', '700', false, 'start');
+    T(70, 150, 'STANDBY', '#a78bfa', '10', '700', false, 'start');
+
+    // Primary lane: active until t2, then dead
+    svg.appendChild(rs.rectangle(150, 52, 230, 32, { stroke:'#22c55e', strokeWidth:1.6, roughness:1.1, fill:'#22c55e18', fillStyle:'solid' }));
+    T(265, 72, 'active · serving', '#dcfce7', '9.5', '700');
+    svg.appendChild(rs.rectangle(390, 52, 90, 32, { stroke:'#ef4444', strokeWidth:1.8, roughness:1.1, fill:'#ef444422', fillStyle:'solid' }));
+    T(435, 72, '✕ dies', '#fecaca', '9.5', '700');
+    svg.appendChild(rs.line(480, 68, 740, 68, { stroke:'#64748b', strokeWidth:1.2, roughness:0.9, strokeLineDash:[5,4] }));
+    T(610, 62, '(down / fenced off)', '#94a3b8', '8.5', '600', false);
+
+    // Standby lane: idle, then promoted, then active
+    svg.appendChild(rs.rectangle(150, 132, 330, 32, { stroke:'#a78bfa', strokeWidth:1.4, roughness:1.1, fill:'#a78bfa14', fillStyle:'solid' }));
+    T(315, 152, 'warm standby · replicating, idle', '#c4b5fd', '9.5', '600');
+    svg.appendChild(rs.rectangle(490, 132, 110, 32, { stroke:'#f59e0b', strokeWidth:1.8, roughness:1.1, fill:'#f59e0b22', fillStyle:'solid' }));
+    T(545, 152, 'promoting…', '#fde68a', '9.5', '700');
+    svg.appendChild(rs.rectangle(610, 132, 130, 32, { stroke:'#22c55e', strokeWidth:1.8, roughness:1.1, fill:'#22c55e18', fillStyle:'solid' }));
+    T(675, 152, 'active · serving', '#dcfce7', '9.5', '700');
+
+    // the outage gap window
+    svg.appendChild(rs.rectangle(390, 100, 210, 96, { stroke:'#fb7185', strokeWidth:1.4, roughness:1.1, fill:'#fb718510', fillStyle:'solid', strokeLineDash:[5,4] }));
+    T(495, 214, 'THE OUTAGE GAP = MTTR', '#fb7185', '9.5', '700');
+    T(495, 230, 'detect failure → promote standby → repoint clients', '#fca5a5', '8.5', '600');
+
+    // heartbeat note
+    T(265, 108, '↕ heartbeats (health checks)', '#94a3b8', '8', '600');
+
+    // time axis
+    svg.appendChild(rs.line(150, 258, 740, 258, { stroke:'#475569', strokeWidth:1.2, roughness:0.8 }));
+    T(150, 274, 't →  time', '#94a3b8', '9', '600', false, 'start');
+    T(740, 274, 'availability = MTBF / (MTBF + MTTR) — shrink the gap!', '#c4b5fd', '9', '700', false, 'end');
+  }
+
+  function drawAll() { drawHaDiagram(); drawFailoverDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
