@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 24: Rate Limiting &amp; Throttling | System Design Mastery</title>
+  <meta name="description" content="Yesterday the circuit breaker protected YOU from a dependency that was failing. Today we flip the mirror: a rate limiter protects a SERVICE from the callers hammering it. One buggy client, one aggressive scraper, or one viral spike can bury a server in more requests than it can serve — and when it falls over, it falls over for everyone (the 'noisy neighbor'). A rate limiter is the bouncer at the door with a clicker: it counts requests per client and, past the allowed rate, turns the extras away fast with a 429 Too Many Requests instead of letting them drown the server. Learn the four canonical algorithms (Token Bucket, Leaky Bucket, Fixed Window, Sliding Window), why bursts and window boundaries matter, how to rate-limit across many servers with a shared Redis counter, 429s and Retry-After headers, and where the limiter lives — taught through an API that kept falling over, a live algorithm simulator, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* algorithm cards */
+    .state-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .state-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .state-card.token { border-left-color:#22c55e; }
+    .state-card.leaky { border-left-color:#38bdf8; }
+    .state-card.fixed { border-left-color:#f59e0b; }
+    .state-card.sliding { border-left-color:#a78bfa; }
+    .state-card h4 { margin:0 0 .35rem; font-size:1rem; display:flex; align-items:center; gap:.4rem; }
+    .state-card.token h4 { color:#22c55e; } .state-card.leaky h4 { color:#7dd3fc; }
+    .state-card.fixed h4 { color:#fbbf24; } .state-card.sliding h4 { color:#c4b5fd; }
+    .state-card p { margin:0; font-size:.84rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .toggle-row { display:flex; gap:1.25rem; flex-wrap:wrap; align-items:center; }
+    .toggle-row .tog-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; }
+    .q-controls { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:1rem 1.5rem; margin:1rem 0 1.25rem; }
+    .q-control label { display:block; font-size:.8rem; color:var(--text-muted); font-weight:600; margin-bottom:.35rem; }
+    .q-control input[type=range] { width:100%; accent-color: var(--accent); }
+    .q-control .q-val { color:var(--accent-light); font-weight:700; }
+    .prop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:.75rem; margin:0 0 1rem; }
+    .prop-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.8rem 1rem; text-align:center; }
+    .prop-card .val { font-size:1.2rem; font-weight:800; }
+    .prop-card .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .prop-card .val.resp { color:#7dd3fc; } .prop-card .val.pool { color:#a78bfa; }
+    .prop-card .val.rej { color:#fb7185; } .prop-card .val.ok { color:#22c55e; }
+    .prop-card .val.blast-ok { color:#22c55e; } .prop-card .val.blast-bad { color:#fb7185; }
+    /* server-load meter */
+    .pool-wrap { margin:.4rem 0 1.25rem; }
+    .pool-label { display:flex; justify-content:space-between; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; margin-bottom:.4rem; }
+    .pool-track { height:26px; border-radius:8px; background:#22c55e18; border:1px solid var(--border); overflow:hidden; position:relative; }
+    .pool-fill { height:100%; width:0%; background:linear-gradient(90deg,#22c55e,#4ade80); transition:width .25s, background .25s; }
+    .pool-fill.warn { background:linear-gradient(90deg,#f59e0b,#fbbf24); }
+    .pool-fill.bad { background:linear-gradient(90deg,#e11d48,#fb7185); }
+    .pool-caption { text-align:center; font-size:.78rem; color:var(--text-muted); margin-top:.4rem; }
+    .q-status { text-align:center; font-weight:800; font-size:.92rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; line-height:1.5; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 24</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 24 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 4 — Reliability &amp; Security</span>
+    </div>
+    <h1>Rate Limiting &amp; Throttling<br><span style="color:var(--accent)">The Bouncer That Keeps Your Service Standing</span></h1>
+    <p class="lead">
+      Yesterday's circuit breaker protected <strong>you</strong> from a dependency that was failing. Today we flip the
+      mirror: a <strong>rate limiter</strong> protects a <strong>service</strong> from the callers hammering it. Here's the
+      uncomfortable truth about a public endpoint: you don't control who calls you or how fast. One buggy client stuck in a
+      retry loop, one aggressive scraper, one viral moment — any of them can fire more requests than your server can serve, and
+      when the server falls over, it falls over for <em>everyone</em>, including the well-behaved users (the
+      <strong>"noisy neighbor"</strong> problem). A rate limiter is the <strong>bouncer at the door with a clicker</strong>: it
+      counts requests per client and, once you're over your allowed rate, it turns the extras away <em>instantly</em> with a
+      polite <code>429 Too Many Requests</code> — protecting the server so it can keep serving everyone else. Today you'll learn
+      the four algorithms every interviewer asks about, why bursts and window boundaries are the tricky part, and the real
+      headache: enforcing one limit across a hundred servers at once.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#algos">The Four Algorithms</a>
+        <a href="#where">Where It Lives &amp; the 429</a>
+        <a href="#distributed">The Distributed Problem</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🎫🚪</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Picture a popular nightclub with a strict <strong>fire-code capacity</strong> — say 100 people. Out front stands
+            a <strong>bouncer with a handheld clicker-counter.</strong> As people arrive, he clicks each one in. The club fills,
+            music's great, everyone can move and breathe. Then a bus pulls up and forty more people surge toward the door at
+            once. The bouncer doesn't panic and he doesn't let the club get dangerously packed — he simply holds up a hand:
+            <strong>"We're at capacity. Wait a few minutes, some folks are leaving."</strong> He turns the extras away
+            <em>quickly and politely</em> right at the door. Why is this the <em>kind</em> thing to do? Because the alternative —
+            cramming 140 people into a room built for 100 — doesn't give you a fuller party, it gives you a
+            <strong>crushed, miserable room where nobody can get a drink and someone gets hurt.</strong> By turning some people
+            away at the door, the bouncer keeps the club <em>good for the 100 people already inside.</em> That's a rate limiter
+            exactly: it sits at the entrance to your service, counts who's coming in and how fast, and once a caller is over
+            their allowed rate it bounces the extra requests <em>fast</em> (a <code>429</code>) instead of letting them stampede
+            in and take the whole service down for everybody. Burn in the image: <em>a rate limiter is the bouncer with a
+            clicker — it turns a few requests away at the door so the service stays standing for everyone else.</em></p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="820" height="430" viewBox="0 0 820 430"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Throttle Tara</span> ran the public API for a weather startup. Anyone with a free API
+            key could ask for a forecast. For months it hummed along. Then one morning her dashboards went red: response times
+            climbed from 50&nbsp;ms to 8 seconds, the database was pinned at 100% CPU, and paying customers were getting errors.
+            She hadn't shipped anything. What happened?
+          </p>
+          <p>
+            She dug into the logs and found it: <strong>one single API key</strong> was sending <strong>9,000 requests a
+            second.</strong> A customer had written a script with a bug — an infinite loop that hammered her forecast endpoint
+            as fast as the network allowed. That one misbehaving client was consuming almost all of her server's capacity, so
+            every <em>other</em> customer's request had to fight for the scraps. This is the <strong>noisy neighbor</strong>: in
+            a shared system, one greedy tenant degrades the service for everyone. And the cruel part is that Tara's server was
+            <em>trying its hardest</em> — accepting every request, opening a database connection for each — which is exactly what
+            was killing it. It was politely working itself to death.
+          </p>
+          <p>
+            Her first instinct was to just buy bigger servers. It bought her a few hours, then the same script — or the next
+            scraper, or the next viral news event — buried the bigger servers too. <strong>You cannot out-scale abuse;</strong>
+            there is always a client that can send more than you can afford to serve. What she needed wasn't more capacity, it
+            was a <strong>doorman</strong> — something that says "this key gets 100 requests per second, and not one more."
+          </p>
+          <p>
+            So she added a <strong>rate limiter</strong> in front of the API. For each API key it kept a small
+            <strong>token bucket</strong>: 100 tokens that refill at 100 per second. Every request spends one token; if the
+            bucket is empty, the request is turned away <em>instantly</em> with <code>429 Too Many Requests</code> and a
+            <code>Retry-After: 1</code> header telling the client when to come back. The buggy client's flood now hit a wall
+            after its first 100 requests — those got fast, cheap rejections that never touched the database — while every
+            <em>other</em> customer, comfortably under their own limit, was completely unaffected. The database CPU dropped back
+            to 20%. One noisy neighbor could no longer ruin the building.
+          </p>
+          <p>
+            Then Tara hit the twist that catches everyone. She ran the API on <strong>ten servers</strong> behind a load
+            balancer, and she'd put the token bucket <em>in each server's memory.</em> So a client's "100/second" limit was
+            actually being enforced ten separate times — the real limit had quietly become <strong>1,000 per second.</strong>
+            To enforce <em>one</em> shared limit across ten servers, the count had to live somewhere all of them could see. She
+            moved the counters into <strong>Redis</strong>, shared by every server. Now the limit was real, global, and exact —
+            at the cost of a tiny Redis round-trip on every request. That trade — a little latency for a correct, shared limit —
+            is the heart of distributed rate limiting.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">A <strong>rate limiter</strong> caps how many requests a given caller (an API key, a
+          user, an IP, or everyone globally) may make in a given amount of time, and <strong>rejects the excess</strong> — fast
+          and cheaply — instead of letting it through. It exists to solve one core problem: <strong>you don't control your
+          callers,</strong> so any of them (a bug, a scraper, an attack, a viral spike) can send more load than you can serve,
+          and an overloaded service fails for <em>everyone</em>, not just the abuser. The limiter is the counter at the door that
+          keeps one <strong>noisy neighbor</strong> from starving all the others. The standard, polite way to say "you're over
+          your limit" is HTTP <strong><code>429 Too Many Requests</code></strong>, usually with a <code>Retry-After</code> header
+          so a good client knows exactly when to try again. There are four classic algorithms — <strong>Token Bucket</strong>
+          (allow bursts, refill steadily; the most popular), <strong>Leaky Bucket</strong> (force a perfectly smooth output),
+          <strong>Fixed Window</strong> (simple counter per clock-minute; suffers a burst at the boundary), and
+          <strong>Sliding Window</strong> (a rolling window that fixes the boundary burst) — and they mostly differ in one thing:
+          <em>how they handle bursts.</em> The subtle, senior-level part isn't the algorithm; it's making <em>one</em> limit hold
+          across <em>many</em> servers, which means the count has to live in a shared store (usually Redis). Keep two words in
+          mind: <strong>reject cheaply.</strong> A rejection must cost far less than serving the request, or the limiter becomes
+          the very overload it was meant to prevent.</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Pick an Algorithm, Watch the Door</h2>
+        <div class="sim-box">
+          <p>Your API server can comfortably handle about <strong>120 requests/second</strong> before it starts falling over.
+          Set how much traffic is coming in, the <strong>limit</strong> you want to enforce per second, and how big a
+          <strong>burst</strong> you're willing to tolerate. Then switch the limiting algorithm — starting with
+          <strong>None</strong> — and watch what reaches the server, what gets bounced with a <code>429</code>, and whether the
+          server survives.</p>
+
+          <div class="toggle-row" style="margin-bottom:1rem;">
+            <span class="tog-label">Algorithm:</span>
+            <div class="mode-toggle" id="algo-toggle" style="margin:0;">
+              <button data-algo="none" class="active">None</button>
+              <button data-algo="token">Token Bucket</button>
+              <button data-algo="leaky">Leaky Bucket</button>
+              <button data-algo="fixed">Fixed Window</button>
+              <button data-algo="sliding">Sliding Window</button>
+            </div>
+          </div>
+
+          <div class="q-controls">
+            <div class="q-control">
+              <label>Incoming traffic: <span class="q-val" id="e-r-v">250</span> req/s</label>
+              <input type="range" id="e-r" min="10" max="400" step="10" value="250" />
+            </div>
+            <div class="q-control">
+              <label>Limit (allowed rate): <span class="q-val" id="e-l-v">100</span> req/s</label>
+              <input type="range" id="e-l" min="10" max="200" step="10" value="100" />
+            </div>
+            <div class="q-control">
+              <label>Burst tolerated: <span class="q-val" id="e-b-v">50</span> reqs</label>
+              <input type="range" id="e-b" min="0" max="200" step="10" value="50" />
+            </div>
+          </div>
+
+          <div class="pool-wrap">
+            <div class="pool-label"><span>Server load (capacity ≈ 120 req/s)</span><span id="pool-num">—</span></div>
+            <div class="pool-track"><div class="pool-fill" id="pool-fill"></div></div>
+            <div class="pool-caption" id="pool-cap">—</div>
+          </div>
+
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val resp" id="m-allow">—</div><div class="lbl">Reaching server</div></div>
+            <div class="prop-card"><div class="val rej" id="m-rej">—</div><div class="lbl">Rejected (429)</div></div>
+            <div class="prop-card"><div class="val pool" id="m-burst">—</div><div class="lbl">Burst it allows</div></div>
+            <div class="prop-card"><div class="val blast-ok" id="m-status">—</div><div class="lbl">Server status</div></div>
+          </div>
+
+          <div class="q-status warn" id="e-status">—</div>
+
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: leave traffic at
+          <strong>250/s</strong> on <strong>None</strong> — the server-load bar slams past 120 and turns red: with no doorman,
+          all 250 req/s pile onto a box that can serve 120, and it <em>collapses for everyone.</em> Now switch to
+          <strong>Token Bucket</strong>: only 100/s reach the server (safely under 120), 150/s get a cheap <code>429</code>, and
+          the server goes green — <em>protected</em>. Bump the <strong>burst</strong> up and notice Token Bucket will happily
+          absorb a short spike, while <strong>Leaky Bucket</strong> refuses to (burst = 0, output dead smooth). Now the sneaky
+          one: switch to <strong>Fixed Window</strong>. Same limit of 100 — but its "burst it allows" jumps to ~200, and the
+          server can tip <em>back into the red</em> even though your limit is under capacity. That's the window-boundary bug, and
+          <strong>Sliding Window</strong> is what fixes it. Playing with that contrast <em>is</em> today's lesson.</p>
+        </div>
+      </section>
+
+      <section id="algos">
+        <h2>The Four Algorithms — They All Count, They Differ on Bursts</h2>
+        <p>Every rate limiter answers the same question — "has this caller had too many requests recently?" — but the
+        <em>recently</em> and the <em>too many</em> are defined differently, and that changes how they treat a sudden spike.
+        These four come up in almost every system design interview; learn what each optimizes for.</p>
+
+        <div class="state-grid">
+          <div class="state-card token">
+            <h4>🪙 Token Bucket</h4>
+            <p><strong>The default choice.</strong> A bucket holds up to <em>capacity</em> tokens and refills at a steady rate
+            (e.g. 100/sec). Each request spends one token; no token → reject. It <strong>allows bursts</strong> up to the bucket
+            size (a client that's been quiet banks tokens), but the long-run average is capped at the refill rate. Simple,
+            memory-cheap, burst-friendly — why Stripe, AWS, and most APIs use it.</p>
+          </div>
+          <div class="state-card leaky">
+            <h4>💧 Leaky Bucket</h4>
+            <p><strong>The smoother.</strong> Requests pour into a bucket and <em>leak out at a fixed rate</em> (like water
+            through a hole). The output is <strong>perfectly constant</strong> no matter how bursty the input; if the bucket
+            fills up, new requests overflow and are dropped. Use it when a <em>downstream</em> system needs a steady, even flow
+            (e.g. protecting a fragile legacy service or a payment processor) rather than tolerating spikes.</p>
+          </div>
+          <div class="state-card fixed">
+            <h4>🪟 Fixed Window</h4>
+            <p><strong>The simple one.</strong> Count requests in each clock-aligned window ("max 100 per minute"). At the top of
+            the minute the counter resets to zero. Dead easy — one integer per key — but it has a nasty flaw: a client can send
+            100 at 11:59:59 and another 100 at 12:00:00, so <strong>200 requests land in one second</strong> right at the
+            boundary. Twice your intended rate, exactly when you least want it.</p>
+          </div>
+          <div class="state-card sliding">
+            <h4>🎞️ Sliding Window</h4>
+            <p><strong>The accurate one.</strong> Instead of a counter that resets on a clock tick, it counts requests in the
+            <em>last</em> 60 seconds continuously — the window slides with time, so the boundary burst disappears. The exact form
+            (<em>sliding log</em>) stores a timestamp per request (accurate but memory-heavy); the practical form (<em>sliding
+            window counter</em>) blends the current and previous windows for near-perfect accuracy at tiny cost.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="bucket-diagram" width="820" height="340" viewBox="0 0 820 340"></svg>
+        </div>
+
+        <p>The token bucket is worth understanding cold, because it's the one you'll reach for by default. Two numbers define
+        it: <strong>refill rate</strong> (the sustained requests/second you allow) and <strong>capacity</strong> (the biggest
+        burst you'll tolerate). The whole algorithm is a handful of lines:</p>
+
+        <div class="code-label">Token bucket, sketched</div>
+        <div class="code-panel"><span class="k">class</span> <span class="f">TokenBucket</span> {
+  <span class="k">constructor</span>(rate, capacity) {
+    this.rate = rate;            <span class="muted">// tokens added per second (the sustained limit)</span>
+    this.capacity = capacity;    <span class="muted">// max tokens = biggest burst allowed</span>
+    this.tokens = capacity;      <span class="muted">// start full</span>
+    this.last = now();
+  }
+  <span class="f">allow</span>() {
+    <span class="k">const</span> elapsed = (now() - this.last) / <span class="n">1000</span>;
+    this.tokens = Math.min(this.capacity, this.tokens + elapsed * this.rate);  <span class="muted">// refill</span>
+    this.last = now();
+    <span class="k">if</span> (this.tokens &gt;= <span class="n">1</span>) {
+      this.tokens -= <span class="n">1</span>;
+      <span class="k">return</span> <span class="s">true</span>;                 <span class="muted">// have a token → serve it</span>
+    }
+    <span class="k">return</span> <span class="s">false</span>;                  <span class="b">// empty → reject with 429</span>
+  }
+}</div>
+        <p style="font-size:.82rem;color:var(--text-muted);margin-top:.4rem;">Notice the beauty: no background timer refilling
+        the bucket. It just records <em>when</em> it was last touched and computes how many tokens should have accrued since,
+        <em>lazily</em>, on the next request. That's what makes it cheap enough to run per-key for millions of keys.</p>
+
+        <table class="algo-table">
+          <tr><th>Algorithm</th><th>Handles bursts?</th><th>Memory / cost</th><th>Boundary bug?</th><th>Best for</th></tr>
+          <tr><td><strong>Token Bucket</strong></td><td>Yes — up to bucket size</td><td>Tiny (2 numbers/key)</td><td>No</td><td>General-purpose API limiting (the default)</td></tr>
+          <tr><td><strong>Leaky Bucket</strong></td><td>No — smooths them out</td><td>Small (a queue)</td><td>No</td><td>Forcing a steady rate into a fragile downstream</td></tr>
+          <tr><td><strong>Fixed Window</strong></td><td>Poorly — 2× at edges</td><td>Tiniest (1 counter/key)</td><td><strong>Yes</strong></td><td>Rough limits where simplicity wins</td></tr>
+          <tr><td><strong>Sliding Window</strong></td><td>Yes — evenly</td><td>Higher (log) / small (counter)</td><td>No</td><td>Accurate limits without the edge burst</td></tr>
+        </table>
+      </section>
+
+      <section id="where">
+        <h2>Where It Lives, What Key It Counts, and the 429</h2>
+        <p>A rate limiter is only useful if it sits <em>in front of</em> the expensive work — the earlier you reject, the cheaper
+        the rejection. There's a natural chain of places it can live, and mature systems use several at once.</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>The client (self-throttling).</strong><span>A polite SDK paces its own requests and
+          backs off on a 429. Cheapest of all, but you can't trust it — a buggy or hostile client won't cooperate. Defense in
+          depth, never your only line.</span></div>
+          <div class="flow-step"><strong>The edge / load balancer / CDN.</strong><span>Cloudflare, an API gateway, or NGINX
+          rejects floods <em>before</em> they even reach your app servers. This is where you stop volumetric abuse and DDoS —
+          the earlier the wall, the less it costs you.</span></div>
+          <div class="flow-step"><strong>The API gateway.</strong><span>The most common home for
+          <em>business</em> rate limits ("free tier: 100/min, pro: 10k/min"). One central place enforces per-key policy for every
+          service behind it (Day 27). Kong, AWS API Gateway, and Envoy all do this.</span></div>
+          <div class="flow-step"><strong>The service itself.</strong><span>Fine-grained, per-endpoint limits close to the code
+          — "this one expensive report endpoint gets 5/min even for pro users." The last, most specific line of defense.</span></div>
+        </div>
+
+        <h3>What are you counting <em>per</em>? The limiter key</h3>
+        <p>A limit is always <em>per something</em>, and choosing that key is half the design. <strong>Per API key or
+        user</strong> is fairest for a paid API (each customer gets their own budget). <strong>Per IP address</strong> is your
+        only option for anonymous traffic (login pages, signups) — but beware, a whole office or mobile carrier can share one
+        IP, so a legitimate crowd looks like one abuser. <strong>Global</strong> limits protect a specific fragile backend
+        ("no more than 500/s total hit the payments processor"). <strong>Per endpoint</strong> lets you guard your most
+        expensive routes tightly while leaving cheap ones generous. Real systems combine these — e.g. per-IP at the edge
+        <em>and</em> per-key at the gateway.</p>
+
+        <h3>How to say "no" well: the 429 and its headers</h3>
+        <p>Rejecting is a conversation, not a door slammed in silence. The HTTP standard for "you've hit your limit" is
+        <strong><code>429 Too Many Requests</code></strong>, and a good limiter includes headers so a well-behaved client can
+        adapt instead of blindly retrying (which would be a retry storm — remember Day 23):</p>
+        <table class="algo-table">
+          <tr><th>Header</th><th>What it tells the client</th></tr>
+          <tr><td><code>Retry-After: 5</code></td><td>"Come back in 5 seconds." The single most important one — it turns a blind retry loop into a patient wait.</td></tr>
+          <tr><td><code>X-RateLimit-Limit</code></td><td>Your total allowance for the window (e.g. 100).</td></tr>
+          <tr><td><code>X-RateLimit-Remaining</code></td><td>How many requests you have left right now (e.g. 0).</td></tr>
+          <tr><td><code>X-RateLimit-Reset</code></td><td>When your allowance refills (a timestamp or seconds).</td></tr>
+        </table>
+        <p style="margin-top:.75rem;"><strong>Rate limiting vs. throttling</strong> — a distinction worth having straight:
+        <em>rate limiting</em> usually means <strong>rejecting</strong> the excess outright (429). <em>Throttling</em> often
+        means <strong>slowing it down</strong> instead — queuing or deliberately delaying requests to a steady pace (a leaky
+        bucket in spirit) rather than dropping them. Reject when the work is cheap to refuse and the client can retry; throttle
+        when every request matters and you'd rather serve it late than not at all.</p>
+      </section>
+
+      <section id="distributed">
+        <h2>The Distributed Problem — One Limit, Many Servers</h2>
+        <p>Here's the part that separates a textbook answer from a real one, and it's exactly the wall Tara hit. Running the
+        limiter in each server's local memory is fast and simple — and <strong>wrong</strong> the moment you have more than one
+        server. If a client's limit is 100/s but you have 10 servers behind a load balancer, each keeping its own bucket, the
+        client can do 100/s <em>on every server</em> — an effective limit of <strong>1,000/s.</strong> The count has to be
+        <em>shared.</em></p>
+
+        <div class="flow-box">
+          <div class="flow-step"><strong>Centralized counter (Redis).</strong><span>Every server reads and updates the same
+          counter in a shared, fast store — almost always <strong>Redis</strong> (in-memory, single-digit-millisecond, atomic
+          operations). This gives an <em>exact</em> global limit. The cost: a network round-trip on every request, and Redis
+          becomes a critical dependency you must make highly available.</span></div>
+          <div class="flow-step"><strong>Make the update atomic.</strong><span>"Read count, check it, increment" across many
+          servers is a classic race condition — two servers both read 99 and both allow the request, blowing the limit. The fix
+          is an <strong>atomic</strong> operation: Redis <code>INCR</code> (with <code>EXPIRE</code>) for fixed windows, or a
+          small <strong>Lua script</strong> that does the whole token-bucket check-and-decrement in one indivisible step on the
+          Redis server.</span></div>
+          <div class="flow-step"><strong>Or go approximate for speed.</strong><span>If a perfectly exact limit isn't worth the
+          latency, each server can rate-limit <em>locally</em> against its share (limit ÷ N) and periodically sync counts. Faster
+          and more resilient (no hard Redis dependency), but the global limit is fuzzy at the edges. A very common
+          senior-level trade: exactness vs. latency vs. resilience.</span></div>
+        </div>
+
+        <div class="code-label">Distributed fixed-window with an atomic Redis INCR</div>
+        <div class="code-panel"><span class="muted"># key is unique per client + time window, e.g. "rl:key123:min:29384710"</span>
+count = redis.<span class="f">INCR</span>(key)                 <span class="muted"># atomic: no two servers race</span>
+<span class="k">if</span> count == <span class="n">1</span>:
+    redis.<span class="f">EXPIRE</span>(key, <span class="n">60</span>)          <span class="muted"># first hit sets the window's 60s TTL</span>
+<span class="k">if</span> count &gt; <span class="n">LIMIT</span>:
+    <span class="k">return</span> <span class="b">429</span>                       <span class="b"># over the shared limit → reject</span>
+<span class="k">return</span> <span class="s">200</span>                           <span class="muted"># under → serve it</span></div>
+        <p style="font-size:.82rem;color:var(--text-muted);margin-top:.4rem;">Because <code>INCR</code> is atomic and the count
+        lives in one place, all ten servers now enforce a single, true limit. Swap the fixed window for a token bucket and the
+        idea is identical — you just move the "refill and decrement" logic into a Lua script so it stays atomic. This is why
+        <strong>Redis is the near-universal answer to "how do you rate-limit across a fleet?"</strong> in an interview.</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts — What Rate Limiting Costs You</h2>
+        <p>A rate limiter is one of the highest-leverage things you can put in front of a service, but it is a real system with
+        real failure modes. Here's the honest ledger.</p>
+
+        <h3>1. The limiter can become the bottleneck</h3>
+        <p>If checking the limit is expensive — a slow database query, a chatty Redis call, a lock — then under a flood you're
+        doing <em>expensive work to reject requests</em>, which is the exact overload you were trying to prevent. The golden
+        rule is <strong>rejection must be far cheaper than serving.</strong> And the shared Redis is now a critical dependency:
+        if it goes down, do you <em>fail open</em> (allow everything, risking overload) or <em>fail closed</em> (reject
+        everything, causing an outage)? Neither is free, and you must choose deliberately.</p>
+
+        <h3>2. Picking the limit is genuinely hard</h3>
+        <p>Set it too low and you throttle legitimate power users and hurt real customers. Set it too high and it doesn't
+        protect anything. The "right" number depends on your actual capacity, your traffic shape, and your business tiers — and
+        it drifts as the system changes. Good limits come from measuring real usage (what does the 99th-percentile
+        <em>legitimate</em> user actually do?) and leaving headroom, not from a guess.</p>
+
+        <h3>3. Bursts, fairness, and the shared-IP trap</h3>
+        <p>Real traffic is spiky, so a limit with <em>zero</em> burst tolerance rejects normal usage and frustrates users; that's
+        why token bucket's burst allowance exists. And keying by IP quietly punishes the innocent: an entire company office, a
+        university, or a mobile carrier's NAT can share one public IP, so thousands of legitimate users look like a single
+        abuser and all get throttled together. Choosing the key is a fairness decision, not just a technical one.</p>
+
+        <h3>4. It shapes behavior, so it needs monitoring</h3>
+        <p>A wave of 429s might mean an attack — or it might mean you set a limit too low and are silently breaking a paying
+        customer's integration. You can't tell without <strong>observability</strong> (Day 26): track your 429 rate per key, and
+        alert when it spikes. A rate limiter you don't watch is one that will eventually reject the wrong people quietly for a
+        very long time.</p>
+
+        <p style="margin-top:1rem;">The through-line: a rate limiter trades a small amount of <strong>added latency, a shared
+        dependency to run, and the ongoing work of tuning limits and watching 429s</strong> for something essential — <strong>the
+        guarantee that no single caller, bug, or spike can take your service down for everyone else.</strong> For any endpoint
+        exposed to callers you don't control, that's not optional; it's table stakes.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You climb up out of the basement's Fuse-Box Room and walk to the very <strong>front door</strong> of the house.
+          There stands a broad-shouldered <strong>doorman with a clicker-counter,</strong> letting guests in only as fast as the
+          rooms can hold them — when a crowd surges, he holds up a hand and turns the extras away with a polite "not right now,
+          try again in a minute." This is the Doorman's Door.</h4>
+          <div class="palace-room"><span class="palace-icon">📣</span><div><strong>The Announcement Hall</strong> — <span>Event-Driven Architecture (Day 21). A great bell; ring it once and every department reacts on its own.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🏰</span><div><strong>The Fortress of the Three Towers</strong> — <span>Fault Tolerance &amp; High Availability (Day 22). Three watchtowers on separate corners, separate power — they can't fall together.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">⚡</span><div><strong>The Fuse-Box Room</strong> — <span>The Circuit Breaker (Day 23). A steel panel of switches in the basement; a shorting hairdryer trips its switch open so the rest of the house stays lit.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🎫</span><div><strong>The Doorman's Door</strong> — <span>Rate Limiting &amp; Throttling (today). A bouncer at the front door with a clicker holds a bucket of 🪙 entry tokens that refills at a steady drip. Each guest spends a token to enter; when the bucket's empty he turns them away fast with a "429 — come back in a minute" (Retry-After). One clicker shared by <em>every</em> door (Redis) keeps the count honest across the whole building. Carved over the door: <em>"Turn a few away so the rest can breathe."</em></span></div></div>
+          <div class="palace-room"><span class="palace-icon">🌩️</span><div><strong>The Next Room</strong> — <span>Distributed System Failures (Day 25). A gallery of famous ways big systems break — cascades, gray failures, thundering herds — and the hard-won lessons from each.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Circuit Breaker (Day 23)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Rate Limiting (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Distributed Failures (Day 25)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Depends on / leads to (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Load Balancers (Day 6)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Redis / Caching (Day 8)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">API Gateway &amp; Mesh (Day 27)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Observability (Day 26)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Security &amp; Auth (Days 28–29)</span>
+        </div>
+        <p>Today is the perfect <strong>mirror image of yesterday.</strong> The circuit breaker (Day 23) protects <em>you</em>
+        from a dependency you call that's failing; a rate limiter protects a service from the <em>callers</em> hammering it —
+        the two guard the two ends of every request. It builds directly on <strong>load balancers</strong> (Day 6): the moment
+        you have more than one server, the limiter can't live in local memory, which is why it reaches for a shared
+        <strong>Redis</strong> (the in-memory store from our caching work on Day 8) with atomic operations. Its most common home
+        is the <strong>API gateway</strong> (Day 27), which is where per-tier business limits are enforced for every service at
+        once. You can only tune it and catch it misfiring with <strong>observability</strong> (Day 26, watch the 429 rate), and
+        it's a foundational tool of <strong>security</strong> (Days 28–29) — throttling brute-force logins and blunting DDoS at
+        the edge. This is Week 4 (Reliability &amp; Security) assembling its toolkit one pattern at a time, and Day 25 will zoom
+        out to the famous ways distributed systems fail — many of which a good limiter helps prevent.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"I'll just buy bigger servers instead of rate limiting."</td><td>You <strong>cannot out-scale abuse.</strong> There's always a client (or a spike) that can send more than you can afford to serve, and scaling up just raises the bill for absorbing the flood. A limiter caps the load itself; capacity only raises the ceiling it slams into.</td></tr>
+          <tr><td>"I put the token bucket in each server's memory — done."</td><td>With N servers behind a load balancer, a per-server limit means the real limit is <strong>N× what you intended.</strong> One shared limit needs a shared count — a centralized store (Redis) with atomic updates. Local-memory limiting is only correct on a single instance.</td></tr>
+          <tr><td>"Fixed window is simplest, so it's fine."</td><td>Its clock-aligned reset lets a client send the full limit at the end of one window and again at the start of the next — <strong>up to 2× the rate in a moment</strong> right at the boundary. Fine for rough limits; use sliding window (or token bucket) when the burst matters.</td></tr>
+          <tr><td>"Rate limiting and throttling are the same thing."</td><td>Related but distinct: rate limiting typically <strong>rejects</strong> the excess (429); throttling typically <strong>delays/smooths</strong> it (queue or pace it). Reject when refusing is cheap and retriable; throttle when every request matters and late beats never.</td></tr>
+          <tr><td>"Just return a 429 and you're done."</td><td>A bare 429 makes clients retry blindly — a retry storm (Day 23). Send <code>Retry-After</code> and <code>X-RateLimit-*</code> headers so good clients wait the right amount. And make sure the rejection is <em>cheap</em> — a 429 that runs a DB query is a self-inflicted overload.</td></tr>
+          <tr><td>"Key everything by IP address."</td><td>IPs are shared — an office, campus, or mobile carrier NAT puts thousands of real users behind one IP, so they get throttled as a single abuser. Prefer per-API-key/per-user where you can authenticate; reserve per-IP for anonymous traffic and set it generously.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ Your public API runs on <strong>10 servers</strong> behind a load balancer.
+          You want each API key limited to <strong>100 requests/second.</strong> A junior engineer implements it with a token
+          bucket stored in each server's local memory and ships it. In testing on one server it works perfectly, but in
+          production a single key is clearly doing far more than 100/s and one buggy key is still degrading everyone. Explain
+          (1) the exact bug with the local-memory approach and what the real limit became, (2) how you'd fix it so the limit is
+          truly 100/s globally, including the race condition you must avoid, and (3) what you'd return to the throttled client
+          and why a bare 429 isn't enough. (click to reveal)</div>
+          <div class="recall-answer"><strong>(1) The bug — per-server buckets multiply the limit:</strong> the load balancer
+          spreads a key's requests across all 10 servers, and each server keeps its <em>own</em> bucket that only sees the
+          ~10% of traffic it happens to receive. So the key can do 100/s on <em>each</em> of the 10 servers — the effective
+          global limit is <strong>10 × 100 = 1,000/s,</strong> ten times what you intended. Local-memory rate limiting is only
+          correct on a single instance; the instant you have a fleet, the count has to be shared.
+          <strong>(2) The fix — a shared, atomic counter:</strong> move the counters into a centralized store all 10 servers
+          read and write — almost always <strong>Redis</strong> (in-memory, fast, atomic). Now there's one true count per key.
+          The race condition to avoid is the classic "read-check-increment": two servers both read 99, both decide "under
+          limit," and both allow — blowing the limit. Make the whole check-and-decrement <strong>atomic</strong>: a Redis
+          <code>INCR</code>+<code>EXPIRE</code> for a fixed window, or a small <strong>Lua script</strong> that refills and
+          decrements the token bucket in one indivisible step on the Redis server. Trade-off: a Redis round-trip per request
+          (a little latency, and a dependency you must keep highly available); if that's too costly you can rate-limit locally
+          against limit ÷ N and sync periodically, accepting a fuzzier global limit for lower latency.
+          <strong>(3) What to return:</strong> HTTP <strong><code>429 Too Many Requests</code></strong> — but a bare 429 makes
+          clients retry immediately and blindly, a retry storm that piles more load on you. Include
+          <strong><code>Retry-After</code></strong> (when to come back) plus <code>X-RateLimit-Limit/Remaining/Reset</code> so a
+          well-behaved client backs off exactly the right amount. And the rejection must be <em>cheap</em> — reject before any
+          database work, or your "protection" becomes the overload.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">💳 Stripe</div><p>Stripe rate-limits its API with a <strong>token bucket</strong> per account and publishes it as a first-class part of the developer experience — clear <code>429</code>s and guidance to back off with exponential retry. It even separates limiters by concern (a request-rate limiter plus a concurrency limiter), a great example of layering more than one limit for different failure modes.</p></div>
+          <div class="realworld-card"><div class="rw-company">🐙 GitHub API</div><p>GitHub's REST API gives authenticated users <strong>5,000 requests/hour</strong> and returns the state on <em>every</em> response via <code>X-RateLimit-Limit</code>, <code>-Remaining</code>, and <code>-Reset</code> headers — the textbook pattern for telling clients exactly where they stand so good citizens self-throttle instead of hammering blindly.</p></div>
+          <div class="realworld-card"><div class="rw-company">🌩️ Cloudflare</div><p>At the <strong>edge</strong>, Cloudflare rate-limits across a massive distributed network to blunt DDoS and abuse <em>before</em> traffic ever reaches origin servers. Doing this globally is a hard distributed-counting problem — they lean on fast shared state and clever approximation so a rule like "no more than N/min from one source" holds across hundreds of data centers.</p></div>
+          <div class="realworld-card"><div class="rw-company">☁️ AWS &amp; Redis</div><p><strong>AWS API Gateway</strong> exposes token-bucket throttling (a steady <em>rate</em> plus a <em>burst</em>) as a config knob on every API. And across the industry, <strong>Redis</strong> is the near-default engine for distributed limiting — its atomic <code>INCR</code> and Lua scripting make an exact, shared, fleet-wide counter genuinely easy to build.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What problem does rate limiting solve, in one sentence?</div>
+          <div class="fc-a">A: You don't control your callers, so any of them (a bug, a scraper, an attack, a viral spike) can send more load than you can serve — and an overloaded service fails for <strong>everyone</strong>. A rate limiter caps how fast each caller may hit you and <strong>rejects the excess cheaply</strong> (a 429), keeping one noisy neighbor from starving the rest.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Name the four classic algorithms and their one-line difference.</div>
+          <div class="fc-a">A: <strong>Token Bucket</strong> — refills tokens steadily, allows bursts up to capacity (the default). <strong>Leaky Bucket</strong> — leaks at a fixed rate, output perfectly smooth (no bursts). <strong>Fixed Window</strong> — one counter per clock-window, simple but allows a 2× burst at the boundary. <strong>Sliding Window</strong> — a rolling window that removes the boundary burst.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why can't you keep the rate-limit counter in each server's local memory?</div>
+          <div class="fc-a">A: With N servers behind a load balancer, each enforces the limit on only its slice of traffic, so the effective limit becomes <strong>N× the intended value.</strong> One true global limit needs a <strong>shared</strong> count in a centralized store (usually Redis) updated <strong>atomically</strong> (INCR or a Lua script) to avoid the read-check-increment race.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What's the fixed-window boundary problem?</div>
+          <div class="fc-a">A: Because the counter resets on clock ticks, a client can send the full limit at the very end of one window (e.g. 11:59:59) and the full limit again at the start of the next (12:00:00) — <strong>up to 2× the intended rate</strong> packed into one moment right at the boundary. Sliding window fixes it by counting the last N seconds continuously.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What should a good rejection include beyond the 429, and why?</div>
+          <div class="fc-a">A: A <strong><code>Retry-After</code></strong> header (and ideally <code>X-RateLimit-Limit/Remaining/Reset</code>) so a well-behaved client waits the right amount instead of retrying blindly — a bare 429 invites a retry storm (Day 23). And the rejection itself must be <strong>cheap</strong> (reject before any DB work), or the limiter becomes the overload it was meant to prevent.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Using the bouncer-with-a-clicker image, explain what a rate limiter does and why turning requests away is the <em>kind</em> thing to do.</li>
+          <li>Describe how a token bucket works using just its two numbers (refill rate and capacity), and what each controls.</li>
+          <li>Why does fixed window allow up to 2× the rate, and how does sliding window fix it?</li>
+          <li>When would you choose leaky bucket over token bucket?</li>
+          <li>You have 10 servers and want a true 100/s per key — where does the counter live, and what race must you prevent?</li>
+          <li>Name three different keys you could rate-limit by, and a downside of keying by IP.</li>
+          <li>What HTTP status and header should you return when limiting, and why isn't a bare 429 enough?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>you don't control your callers, so you must control what they can do to
+          you.</strong> A rate limiter is the bouncer at your door — it counts requests per caller and, past the allowed rate,
+          <strong>rejects the excess cheaply</strong> with a <code>429</code> so one bug, scraper, or spike can't take the
+          service down for everyone (the noisy-neighbor problem). Four algorithms, differing mainly on bursts:
+          <strong>Token Bucket</strong> (the default — steady refill, bursts up to capacity), <strong>Leaky Bucket</strong>
+          (perfectly smooth output), <strong>Fixed Window</strong> (simplest, but a 2× burst at the boundary), and
+          <strong>Sliding Window</strong> (rolling, no boundary burst). The senior-level move is making <em>one</em> limit hold
+          across <em>many</em> servers — which means a shared, atomic counter, almost always in <strong>Redis</strong> — and
+          rejecting <em>well</em>: a 429 with <code>Retry-After</code>, cheap enough that refusing never becomes the overload.
+          Choose your limit from real usage, choose your key as a fairness decision, and watch your 429 rate so you catch a
+          limit that's silently breaking real users. Tomorrow (Day 25) we zoom out to the famous ways distributed systems
+          actually fail — and how the tools from this week keep those failures small.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-23.html">← Day 23: The Circuit Breaker Pattern</a>
+        <a href="day-25.html" class="coming-soon-link">Day 25: Distributed System Failures →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 24 of 90 — Rate Limiting &amp; Throttling</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── Rate-limiting algorithm simulator ────────────────────────────────
+  var algo = 'none';   // 'none' | 'token' | 'leaky' | 'fixed' | 'sliding'
+  var CAP = 120;       // req/s the server can serve before it falls over
+
+  var els = {
+    algoT: document.getElementById('algo-toggle'),
+    r: document.getElementById('e-r'),
+    l: document.getElementById('e-l'),
+    b: document.getElementById('e-b'),
+    rV: document.getElementById('e-r-v'),
+    lV: document.getElementById('e-l-v'),
+    bV: document.getElementById('e-b-v'),
+    poolFill: document.getElementById('pool-fill'),
+    poolNum: document.getElementById('pool-num'),
+    poolCap: document.getElementById('pool-cap'),
+    allow: document.getElementById('m-allow'),
+    rej:   document.getElementById('m-rej'),
+    burst: document.getElementById('m-burst'),
+    status:document.getElementById('m-status'),
+    statusLine: document.getElementById('e-status')
+  };
+
+  function render() {
+    var R = +els.r.value;   // incoming req/s
+    var L = +els.l.value;   // configured limit req/s
+    var B = +els.b.value;   // burst tolerated (reqs)
+    els.rV.textContent = R;
+    els.lV.textContent = L;
+    els.bV.textContent = B;
+
+    // allowed = steady-state requests that reach the server
+    // load    = sustained load the server actually sees (worst-case for fixed)
+    // burstTol = how big a momentary spike the algorithm lets through
+    var allowed, load, burstTol, burstLabel;
+
+    if (algo === 'none') {
+      allowed = R; load = R; burstTol = Infinity; burstLabel = '∞ (unprotected)';
+    } else if (algo === 'token') {
+      allowed = Math.min(R, L); load = Math.min(R, L); burstTol = B; burstLabel = B + ' reqs';
+    } else if (algo === 'leaky') {
+      allowed = Math.min(R, L); load = Math.min(R, L); burstTol = 0; burstLabel = '0 (smoothed)';
+    } else if (algo === 'fixed') {
+      // fixed window: sustained rate is L, but at the boundary up to 2L can land
+      allowed = Math.min(R, L);
+      load = Math.min(R, 2 * L);          // worst-case boundary spike
+      burstTol = Math.min(R, 2 * L) - Math.min(R, L);
+      burstLabel = '~2×L at edges';
+    } else { // sliding
+      allowed = Math.min(R, L); load = Math.min(R, L); burstTol = 0; burstLabel = 'even, no spike';
+    }
+
+    var rejected = Math.max(0, R - allowed);
+    var saturated = load > CAP;
+    var warn = !saturated && load >= CAP * 0.85;
+
+    // ── server-load meter ──
+    var fillPct = Math.min(100, (load / CAP) * 100);
+    els.poolFill.style.width = fillPct.toFixed(0) + '%';
+    els.poolFill.className = 'pool-fill' + (saturated ? ' bad' : (warn ? ' warn' : ''));
+    els.poolNum.textContent = Math.round(load) + ' / ' + CAP + ' req/s';
+    if (saturated) {
+      els.poolCap.textContent = 'OVERLOADED — ' + Math.round(load) + ' req/s hitting a box that can serve ' + CAP +
+        '. Response times explode and it falls over for everyone.';
+    } else {
+      els.poolCap.textContent = Math.round(load) + ' of ' + CAP + ' req/s — ' +
+        Math.max(0, CAP - Math.round(load)) + ' req/s of headroom. Server is healthy.';
+    }
+
+    // ── metric: reaching server ──
+    els.allow.textContent = Math.round(allowed) + '/s';
+
+    // ── metric: rejected ──
+    els.rej.className = 'val ' + (rejected > 0 ? 'rej' : 'ok');
+    els.rej.textContent = Math.round(rejected) + '/s';
+
+    // ── metric: burst it allows ──
+    els.burst.textContent = burstLabel;
+
+    // ── metric: server status ──
+    if (saturated) {
+      els.status.className = 'val blast-bad'; els.status.textContent = 'Overloaded';
+    } else {
+      els.status.className = 'val blast-ok';
+      els.status.textContent = (algo === 'none') ? 'OK (for now)' : 'Protected';
+    }
+
+    // ── status line ──
+    var sClass, sText;
+    if (algo === 'none') {
+      if (saturated) {
+        sClass = 'q-status bad';
+        sText = 'NO LIMITER: all ' + R + ' req/s pour straight onto a server that can only serve ' + CAP +
+          '. It overloads and slows to a crawl for EVERY caller — one flood took the whole service down.';
+      } else {
+        sClass = 'q-status ok';
+        sText = 'Traffic (' + R + '/s) is under the server’s ' + CAP + '/s capacity, so it copes without a limiter — ' +
+          'for now. Push traffic higher and watch it tip over, because you don’t control how much a caller sends.';
+      }
+    } else if (saturated) {
+      sClass = 'q-status bad';
+      sText = 'Even with ' + algoName() + ', the server is OVERLOADED. ' +
+        (algo === 'fixed'
+          ? 'Fixed window lets up to ~2×L land at the window boundary, so a limit of ' + L + ' can spike to ' +
+            Math.round(load) + '/s — over the ' + CAP + '/s capacity. Lower the limit or switch to sliding window.'
+          : 'Your limit (' + L + '/s) is set ABOVE what the server can handle (' + CAP + '/s). A limiter only protects you if the limit is below capacity — drop it.');
+    } else {
+      sClass = 'q-status ok';
+      sText = algoName() + ' is holding the line: ' + Math.round(allowed) + ' req/s reach the server (safely under ' + CAP +
+        '/s) and ' + Math.round(rejected) + ' req/s get a cheap 429. ' +
+        (algo === 'token' ? 'Token bucket also absorbs a short burst of up to ' + B + ' requests.'
+         : algo === 'leaky' ? 'Leaky bucket makes the output perfectly smooth — no bursts pass through at all.'
+         : algo === 'fixed' ? 'Watch out: at a window boundary this can briefly hit ~2× the limit.'
+         : 'Sliding window keeps it even, with no boundary spike.');
+    }
+    els.statusLine.className = sClass;
+    els.statusLine.textContent = sText;
+  }
+
+  function algoName() {
+    return { token:'Token Bucket', leaky:'Leaky Bucket', fixed:'Fixed Window', sliding:'Sliding Window' }[algo] || 'the limiter';
+  }
+
+  Array.prototype.forEach.call(els.algoT.querySelectorAll('button'), function(btn){
+    btn.addEventListener('click', function(){
+      algo = btn.getAttribute('data-algo');
+      Array.prototype.forEach.call(els.algoT.querySelectorAll('button'), function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      render();
+    });
+  });
+  els.r.addEventListener('input', render);
+  els.l.addEventListener('input', render);
+  els.b.addEventListener('input', render);
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+
+  // Anchor diagram: no limiter (flood → overloaded, everyone down) vs
+  // rate limiter (gate → some 200, excess 429 → server healthy).
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    // ---- LEFT: no limiter ----
+    T(205, 26, 'NO LIMITER — the stampede', '#fb7185', '12', '700');
+    // clients (a big greedy one + a couple normal)
+    svg.appendChild(rs.rectangle(40, 60, 120, 30, { stroke:'#ef4444', strokeWidth:1.8, roughness:1.1, fill:'#ef444422', fillStyle:'solid' }));
+    T(100, 79, '🤖 buggy client', '#fecaca', '9.5', '700');
+    svg.appendChild(rs.rectangle(52, 100, 96, 24, { stroke:'#3b82f6', strokeWidth:1.5, roughness:1.1, fill:'#3b82f622', fillStyle:'solid' }));
+    T(100, 116, 'normal users', '#dbeafe', '8.5', '600');
+    // flood arrows
+    var i;
+    for (i = 0; i < 6; i++) {
+      svg.appendChild(rs.line(160, 66 + i * 9, 250, 150, { stroke:'#ef4444', strokeWidth:1.3, roughness:0.9 }));
+    }
+    T(210, 200, '9000 req/s', '#fca5a5', '9', '700');
+    // server (overloaded)
+    svg.appendChild(rs.rectangle(250, 150, 130, 70, { stroke:'#fb7185', strokeWidth:2, roughness:1.1, fill:'#fb718514', fillStyle:'solid' }));
+    T(315, 178, 'API server', '#fecdd3', '10.5', '700');
+    T(315, 196, 'capacity 120/s', '#fca5a5', '8', '600');
+    T(315, 210, '🔥 melting', '#fb7185', '9', '700');
+    T(205, 260, '💥 server overloaded → falls over', '#fb7185', '10.5', '700');
+    T(205, 284, 'EVERY user gets errors — even', '#94a3b8', '8.5', '600');
+    T(205, 300, 'the well-behaved ones (noisy neighbor)', '#94a3b8', '8.5', '600');
+
+    // ---- divider ----
+    svg.appendChild(rs.line(410, 40, 410, 400, { stroke:'#334155', strokeWidth:1.2, roughness:1, strokeLineDash:[6,5] }));
+
+    // ---- RIGHT: rate limiter ----
+    T(615, 26, 'RATE LIMITER — the doorman', '#22c55e', '12', '700');
+    // clients
+    svg.appendChild(rs.rectangle(452, 60, 120, 30, { stroke:'#ef4444', strokeWidth:1.8, roughness:1.1, fill:'#ef444422', fillStyle:'solid' }));
+    T(512, 79, '🤖 buggy client', '#fecaca', '9.5', '700');
+    svg.appendChild(rs.rectangle(464, 100, 96, 24, { stroke:'#3b82f6', strokeWidth:1.5, roughness:1.1, fill:'#3b82f622', fillStyle:'solid' }));
+    T(512, 116, 'normal users', '#dbeafe', '8.5', '600');
+    // the limiter gate
+    svg.appendChild(rs.rectangle(556, 150, 118, 34, { stroke:'#fbbf24', strokeWidth:2, roughness:1.1, fill:'#f59e0b18', fillStyle:'solid' }));
+    T(615, 166, '🎫 rate limiter', '#fde68a', '9.5', '700');
+    T(615, 178, 'token bucket / key', '#fbbf24', '7.5', '600');
+    for (i = 0; i < 6; i++) {
+      svg.appendChild(rs.line(572, 66 + i * 9, 585, 150, { stroke:'#94a3b8', strokeWidth:1.1, roughness:0.9 }));
+    }
+    // 429 bounce (excess back out)
+    svg.appendChild(rs.line(615, 150, 700, 120, { stroke:'#fb7185', strokeWidth:1.8, roughness:0.9, strokeLineDash:[4,3] }));
+    T(720, 112, '429', '#fb7185', '10', '700');
+    T(720, 126, 'bounced', '#fca5a5', '7.5', '600');
+    // allowed through to server
+    svg.appendChild(rs.line(615, 184, 615, 214, { stroke:'#22c55e', strokeWidth:1.8, roughness:0.9 }));
+    T(662, 202, '100/s ✓', '#86efac', '8.5', '700');
+    // server (healthy)
+    svg.appendChild(rs.rectangle(550, 214, 130, 66, { stroke:'#22c55e', strokeWidth:2, roughness:1.1, fill:'#22c55e12', fillStyle:'solid' }));
+    T(615, 242, 'API server', '#dcfce7', '10.5', '700');
+    T(615, 260, '100/s ≤ 120 cap', '#86efac', '8', '600');
+    T(615, 274, '✅ healthy', '#22c55e', '9', '700');
+    T(615, 320, 'excess bounced cheaply at the door', '#94a3b8', '8.5', '600');
+    T(615, 338, 'every good user stays served', '#94a3b8', '8.5', '600');
+  }
+
+  // Token-bucket mechanism diagram.
+  function drawBucketDiagram() {
+    var svg = document.getElementById('bucket-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 26, 'The Token Bucket', '#e2e8f0', '13', '700');
+
+    // refill drip from the top
+    T(230, 60, 'refill: +100 tokens/sec', '#7dd3fc', '9.5', '700');
+    var d;
+    for (d = 0; d < 3; d++) {
+      svg.appendChild(rs.circle(230, 78 + d * 16, 7, { stroke:'#38bdf8', strokeWidth:1.4, roughness:1.1, fill:'#38bdf8', fillStyle:'solid' }));
+    }
+
+    // the bucket
+    svg.appendChild(rs.line(170, 130, 185, 250, { stroke:'#fbbf24', strokeWidth:2, roughness:1.1 }));
+    svg.appendChild(rs.line(290, 130, 275, 250, { stroke:'#fbbf24', strokeWidth:2, roughness:1.1 }));
+    svg.appendChild(rs.line(185, 250, 275, 250, { stroke:'#fbbf24', strokeWidth:2, roughness:1.1 }));
+    T(230, 122, 'capacity = burst size', '#fde68a', '9', '700');
+    // tokens inside
+    var tx = [200, 225, 250, 205, 235, 218];
+    var ty = [230, 232, 228, 210, 208, 190];
+    for (d = 0; d < tx.length; d++) {
+      svg.appendChild(rs.circle(tx[d], ty[d], 13, { stroke:'#f59e0b', strokeWidth:1.3, roughness:1.2, fill:'#f59e0b55', fillStyle:'solid' }));
+    }
+    T(230, 270, '🪙 tokens', '#fbbf24', '9', '700');
+
+    // arrow bucket → decision
+    svg.appendChild(rs.line(290, 200, 380, 200, { stroke:'#64748b', strokeWidth:1.6, roughness:0.9 }));
+    svg.appendChild(rs.line(380, 200, 368, 195, { stroke:'#64748b', strokeWidth:1.6, roughness:0.9 }));
+    svg.appendChild(rs.line(380, 200, 368, 205, { stroke:'#64748b', strokeWidth:1.6, roughness:0.9 }));
+
+    // request arriving
+    svg.appendChild(rs.rectangle(360, 90, 120, 30, { stroke:'#3b82f6', strokeWidth:1.8, roughness:1.1, fill:'#3b82f622', fillStyle:'solid' }));
+    T(420, 109, 'request arrives', '#dbeafe', '9.5', '700');
+    svg.appendChild(rs.line(420, 120, 420, 175, { stroke:'#64748b', strokeWidth:1.5, roughness:0.9 }));
+    T(500, 150, 'spend 1 token?', '#cbd5e1', '9', '700');
+
+    // decision diamond-ish box
+    svg.appendChild(rs.rectangle(380, 178, 120, 44, { stroke:'#a78bfa', strokeWidth:1.8, roughness:1.1, fill:'#a78bfa18', fillStyle:'solid' }));
+    T(440, 197, 'token left?', '#ddd6fe', '9.5', '700');
+    T(440, 212, '(check & decrement)', '#c4b5fd', '7.5', '600');
+
+    // YES → serve
+    svg.appendChild(rs.line(500, 190, 600, 165, { stroke:'#22c55e', strokeWidth:1.8, roughness:0.9 }));
+    T(545, 168, 'yes', '#86efac', '9', '700');
+    svg.appendChild(rs.rectangle(600, 145, 150, 40, { stroke:'#22c55e', strokeWidth:2, roughness:1.1, fill:'#22c55e12', fillStyle:'solid' }));
+    T(675, 163, '✅ 200 OK', '#86efac', '10', '700');
+    T(675, 177, 'request served', '#dcfce7', '7.5', '600');
+
+    // NO → 429
+    svg.appendChild(rs.line(500, 210, 600, 240, { stroke:'#fb7185', strokeWidth:1.8, roughness:0.9, strokeLineDash:[4,3] }));
+    T(545, 240, 'no (empty)', '#fca5a5', '9', '700');
+    svg.appendChild(rs.rectangle(600, 224, 150, 46, { stroke:'#fb7185', strokeWidth:2, roughness:1.1, fill:'#fb718514', fillStyle:'solid' }));
+    T(675, 244, '⛔ 429', '#fecdd3', '10', '700');
+    T(675, 259, 'Too Many Requests', '#fca5a5', '7.5', '600');
+
+    T(410, 312, 'Sustained rate = refill rate · Max burst = capacity · Empty bucket = fast, cheap 429', '#94a3b8', '9', '600');
+  }
+
+  function drawAll() { drawAnchorDiagram(); drawBucketDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
