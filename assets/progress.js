@@ -129,6 +129,12 @@ function updateProgressRing(pct) {
 
 /* ─── INITIALIZE DAY PAGE ─────────────────────────────────── */
 function initDayPage(dayNum) {
+  // Idempotency guard: some pages call this explicitly and the auto-init
+  // below also fires — run the wiring only once so the button isn't
+  // double-bound (which would toggle completion twice = no-op).
+  if (window.__sdcDayInited) return;
+  window.__sdcDayInited = true;
+
   const done = isCompleted(dayNum);
   const btn = document.getElementById('mark-complete-btn');
   if (!btn) return;
@@ -188,3 +194,17 @@ function updateMarkBtn(btn, done) {
     btn.style.color = '';
   }
 }
+
+/* ─── AUTO-INIT DAY PAGES ─────────────────────────────────────
+   Lesson pages include this script but historically only Days 1–4
+   called initDayPage() explicitly, so the "Mark as Complete" button,
+   TOC scroll-spy, and nav progress bar were dead on every framework-era
+   lesson. Auto-detect the day number from the URL (days/day-NN.html) and
+   wire it up. The guard inside initDayPage() prevents double-init on the
+   pages that still call it themselves. */
+document.addEventListener('DOMContentLoaded', () => {
+  if (window.__sdcDayInited) return;
+  if (!document.getElementById('mark-complete-btn')) return;
+  const m = (location.pathname || '').match(/day-0*(\d+)\.html/);
+  if (m) initDayPage(Number(m[1]));
+});
