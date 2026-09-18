@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 25: Distributed System Failures | System Design Mastery</title>
+  <meta name="description" content="On one computer, a call either returns or it throws — you always find out. Across a network, there is a third answer: silence. A request times out and you cannot tell whether the server never got it, did the work but the reply was lost, or is simply slow. This ambiguity — partial failure — is the defining reality of distributed systems, and it's why naive code that works on a laptop falls apart across servers. Learn the eight fallacies of distributed computing, the taxonomy of failures (crash, omission, timing, gray, Byzantine, partition), why 'is it slow or dead?' is unanswerable, split-brain, and the toolkit that lets you build reliable systems out of unreliable parts — taught through the Two Generals, a live ambiguous-timeout simulator, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* fallacy cards — numbered, accent bar */
+    .fallacy-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .fallacy-card { background: var(--bg-card); border:1px solid var(--border); border-left:4px solid #fb7185; border-radius: var(--radius); padding:1rem 1.2rem; position:relative; }
+    .fallacy-card .fnum { font-size:.7rem; font-weight:800; color:#fb7185; letter-spacing:.05em; }
+    .fallacy-card h4 { margin:.15rem 0 .35rem; font-size:.95rem; color:#fecaca; }
+    .fallacy-card p { margin:0; font-size:.82rem; }
+    .fallacy-card .reality { font-size:.8rem; color:var(--text-muted); margin-top:.5rem; }
+    .fallacy-card .reality strong { color:#86efac; }
+    /* failure taxonomy cards */
+    .tax-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .tax-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .tax-card.crash { border-left-color:#fb7185; } .tax-card.omit { border-left-color:#f59e0b; }
+    .tax-card.timing { border-left-color:#a78bfa; } .tax-card.gray { border-left-color:#38bdf8; }
+    .tax-card.part { border-left-color:#22c55e; } .tax-card.byz { border-left-color:#ec4899; }
+    .tax-card h4 { margin:0 0 .35rem; font-size:1rem; display:flex; align-items:center; gap:.4rem; }
+    .tax-card.crash h4 { color:#fb7185; } .tax-card.omit h4 { color:#fbbf24; } .tax-card.timing h4 { color:#c4b5fd; }
+    .tax-card.gray h4 { color:#7dd3fc; } .tax-card.part h4 { color:#22c55e; } .tax-card.byz h4 { color:#f9a8d4; }
+    .tax-card p { margin:0; font-size:.83rem; }
+    .tax-card .eg { font-size:.75rem; color:var(--text-muted); margin-top:.45rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .toggle-row { display:flex; gap:1.25rem; flex-wrap:wrap; align-items:center; margin-bottom:.4rem; }
+    .toggle-row .tog-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; }
+    /* client-view vs server-truth compare panel */
+    .compare-row { display:grid; grid-template-columns:1fr auto 1fr; gap:.75rem; align-items:stretch; margin:1rem 0 1.1rem; }
+    @media (max-width:560px){ .compare-row { grid-template-columns:1fr; } .compare-mid { transform:rotate(90deg); } }
+    .compare-cell { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1rem; text-align:center; }
+    .compare-cell .cc-lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); font-weight:700; margin-bottom:.4rem; }
+    .compare-cell .cc-val { font-size:1.05rem; font-weight:800; line-height:1.35; }
+    .compare-cell .cc-sub { font-size:.75rem; color:var(--text-muted); margin-top:.35rem; }
+    .compare-mid { display:flex; align-items:center; justify-content:center; font-size:1.4rem; color:var(--text-muted); font-weight:800; }
+    .cc-val.ok { color:#22c55e; } .cc-val.unknown { color:#fbbf24; } .cc-val.bad { color:#fb7185; } .cc-val.muted2 { color:#94a3b8; }
+    .prop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:.75rem; margin:0 0 1rem; }
+    .prop-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.8rem 1rem; text-align:center; }
+    .prop-card .val { font-size:1.2rem; font-weight:800; }
+    .prop-card .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .prop-card .val.good { color:#22c55e; } .prop-card .val.bad { color:#fb7185; } .prop-card .val.warn { color:#fbbf24; } .prop-card .val.muted2 { color:#94a3b8; } .prop-card .val.blue { color:#7dd3fc; }
+    .q-status { text-align:center; font-weight:800; font-size:.92rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; line-height:1.5; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 25</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 25 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 4 — Reliability &amp; Security</span>
+    </div>
+    <h1>Distributed System Failures<br><span style="color:var(--accent)">When Silence Is the Scariest Answer</span></h1>
+    <p class="lead">
+      For three days we've been adding armor — redundancy, circuit breakers, rate limiters. Today we step back and stare at
+      the thing all that armor is defending against: the strange, humbling ways big systems actually break. On a single
+      computer, a function call has two endings — it <strong>returns</strong> or it <strong>throws</strong>, and you always
+      find out which. Stretch that same call across a network and a <em>third</em> ending appears: <strong>silence.</strong>
+      Your request times out, and you cannot tell whether the server never received it, did the work but the reply got lost,
+      or is simply slow and will finish in a moment. That ambiguity — <strong>partial failure</strong> — is the defining
+      reality of distributed systems, and it's why code that runs flawlessly on your laptop falls to pieces across servers.
+      Today you'll meet the <strong>eight fallacies</strong> that fool every beginner, the full taxonomy of failures (crash,
+      omission, timing, <strong>gray</strong>, Byzantine, <strong>partition</strong>), why "is it slow or dead?" is literally
+      unanswerable, the horror of <strong>split-brain</strong>, and the mindset that lets you build reliable systems out of
+      thoroughly unreliable parts.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#fallacies">The Eight Fallacies</a>
+        <a href="#taxonomy">A Taxonomy of Failure</a>
+        <a href="#gray">Gray Failure</a>
+        <a href="#partition">Partitions &amp; Split-Brain</a>
+        <a href="#toolkit">The Survival Toolkit</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🏔️🌫️🏔️</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Two generals sit on <strong>two hilltops</strong>, separated by a wide valley filled with fog — and with the
+            enemy army camped in it. To win, they must attack at exactly the same moment; if only one charges, he's
+            slaughtered. The only way to coordinate is to send a <strong>messenger</strong> running down through the fog and up
+            the other side. So General A writes <em>"Attack at dawn"</em> and sends a runner. Now A waits… and hears nothing.
+            Here's the agony: <strong>A cannot tell what the silence means.</strong> Maybe the runner was captured and B never
+            got the order. Maybe B got it, agreed, sent a runner back with <em>"Confirmed!"</em> — and <em>that</em> runner
+            was captured. Maybe both messages got through and B is already sharpening his sword. From A's hilltop, all three
+            of these look <strong>identical</strong>: a quiet valley. He could send a second runner to be sure — but then he
+            needs a confirmation of the confirmation, and a confirmation of <em>that</em>, forever. There is no number of
+            messengers that produces certainty. This is the <strong>Two Generals' Problem</strong>, and it is not a puzzle
+            with a clever answer — it's a proof that <em>guaranteed</em> agreement over an unreliable channel is impossible.
+            Burn in the image: <em>every network request is a messenger sent into the fog. When you get silence back, you can
+            never be sure whether your message was lost, the reply was lost, or it's all just slow. In a distributed system,
+            silence is ambiguous — and learning to build anyway, despite never being sure, is the entire discipline.</em></p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="generals-diagram" width="820" height="440" viewBox="0 0 820 440"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Single-Box Sam</span> had shipped software for a decade, and it always worked the
+            same way: a function either returned a value or threw an exception. If the database was down, you got an error and
+            handled it. If the code was fine, it ran. Two outcomes, always knowable. Then Sam's little app got popular, the team
+            split it into services across many machines, and reality quietly changed the rules underneath him.
+          </p>
+          <p>
+            The first ghost appeared in billing. A customer was charged <strong>twice</strong> for one order. Sam dug in: the
+            payment service had received the charge request, <em>successfully</em> captured the money — and then the network
+            hiccuped and the <code>200 OK</code> never made it back. Sam's order service, seeing nothing, assumed the call had
+            failed and <strong>retried</strong>. The payment service happily charged the card again. The work had been done;
+            only the <em>acknowledgment</em> was lost. On one machine this is impossible — the function returns or it doesn't.
+            Across a network, "I did the work" and "you found out I did the work" are two separate events, and the second one
+            can fail on its own.
+          </p>
+          <p>
+            The second ghost was worse because nothing was "down." The recommendations service passed every health check —
+            <code>GET /health</code> returned <code>200</code> in 2&nbsp;ms all day long. Yet real user requests to it were
+            timing out. It wasn't dead; it was <strong>sick</strong>: a slow memory leak had it garbage-collecting for seconds
+            at a time, so trivial health pings sailed through while real work stalled. Sam's monitoring said green; his users
+            said broken. This is a <strong>gray failure</strong> — the system is neither up nor down, and the part doing the
+            observing sees something different from the part doing the work.
+          </p>
+          <p>
+            The third ghost nearly ended him. A switch failure split his cluster in two: three servers on each side, each half
+            able to talk to itself but not the other. Neither half had died — so <em>each</em> half concluded the <em>other</em>
+            half had, and each promoted its own new leader and kept accepting writes. For four minutes he had <strong>two</strong>
+            primary databases, both taking orders, silently diverging. When the network healed, the two histories collided and
+            someone had to hand-merge conflicting records. This is a <strong>network partition</strong> and its evil twin,
+            <strong>split-brain</strong> — and it taught Sam the humbling truth every distributed engineer eventually accepts:
+            <em>you cannot prevent failure; you can only decide, in advance, how your system will behave when — not if — it
+            happens.</em>
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">The defining feature of a distributed system is <strong>partial failure</strong>: some
+          components fail while others keep running, and — the part that breaks everyone's intuition — you frequently
+          <strong>cannot tell</strong> which failed, or even <em>whether</em> a failure happened at all. A local function call
+          has <strong>two</strong> outcomes: it returns, or it throws. A remote call has <strong>three</strong>: success,
+          explicit failure, and <strong>timeout</strong> — the answer that means "I don't know." That "I don't know" is the
+          whole game, because a timeout is the superposition of three different realities that look identical from the outside:
+          the request never arrived, the request was processed but the response was lost, or it's still being processed and
+          hasn't answered yet. You can never distinguish <strong>slow</strong> from <strong>dead</strong> — that's not a tooling
+          gap, it's a mathematical fact (the Two Generals). Because certainty is impossible, real systems don't chase it; they
+          make failure <strong>survivable</strong>: assume every call can time out, make retries <strong>idempotent</strong> so
+          repeating a "maybe it happened" is harmless, detect failures with timeouts and health checks (accepting you'll
+          sometimes be wrong), contain the blast radius, and <strong>design for failure as the normal case</strong>, because at
+          scale something is always broken. As Amazon's Werner Vogels put it: <em>"Everything fails, all the time."</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — The Ambiguous Timeout</h2>
+        <div class="sim-box">
+          <p>A client sends one request ("charge this card") to a server. Choose <strong>what actually happens on the
+          server</strong> (the ground truth — which in real life you never get to see), then choose the client's
+          <strong>retry policy</strong> for when it gets no clear answer. Watch the crucial gap: three different server truths
+          all look <em>identical</em> to the client — a timeout — and see which retry strategy stays correct across all of them.</p>
+
+          <div class="toggle-row">
+            <span class="tog-label">What actually happened on the server:</span>
+          </div>
+          <div class="mode-toggle" id="truth-toggle">
+            <button data-truth="acked" class="active">✅ Done + reply delivered</button>
+            <button data-truth="lost">📨 Done, but reply lost</button>
+            <button data-truth="crash">💥 Crashed before doing it</button>
+            <button data-truth="slow">🐌 Still working (too slow)</button>
+          </div>
+
+          <div class="toggle-row" style="margin-top:.4rem;">
+            <span class="tog-label">Client's retry policy on a timeout:</span>
+          </div>
+          <div class="mode-toggle" id="retry-toggle">
+            <button data-retry="none" class="active">Give up (no retry)</button>
+            <button data-retry="blind">Blind retry (resend)</button>
+            <button data-retry="idem">Idempotent retry (with key)</button>
+          </div>
+
+          <div class="compare-row">
+            <div class="compare-cell">
+              <div class="cc-lbl">Server truth (hidden in real life)</div>
+              <div class="cc-val" id="cc-truth">—</div>
+              <div class="cc-sub" id="cc-truth-sub">—</div>
+            </div>
+            <div class="compare-mid">→</div>
+            <div class="compare-cell">
+              <div class="cc-lbl">All the client sees</div>
+              <div class="cc-val" id="cc-client">—</div>
+              <div class="cc-sub" id="cc-client-sub">—</div>
+            </div>
+          </div>
+
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val blue" id="m-runs">—</div><div class="lbl">Times the work ran</div></div>
+            <div class="prop-card"><div class="val" id="m-final">—</div><div class="lbl">Final state</div></div>
+            <div class="prop-card"><div class="val muted2" id="m-agree">—</div><div class="lbl">Client &amp; server agree?</div></div>
+            <div class="prop-card"><div class="val muted2" id="m-safe">—</div><div class="lbl">Safe to repeat?</div></div>
+          </div>
+
+          <div class="q-status warn" id="sim-status">—</div>
+
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: keep the retry on <strong>Blind
+          retry</strong> and click through the four server truths. Notice that "Done, but reply lost," "Crashed," and "Still
+          working" produce the <em>exact same</em> client view — a timeout — yet blind retry does the right thing for the crash
+          (safely re-runs work that never happened) and the <strong>wrong</strong> thing for "reply lost" (a second charge — a
+          duplicate). Now switch to <strong>Idempotent retry (with key)</strong> and click through all four again: every single
+          case comes out <strong>correct</strong>, because the server recognizes the retry's key and refuses to do the work
+          twice. That's the punchline of the whole lesson: <em>you can't stop timeouts, and you can't tell what they mean — so
+          the only safe reaction is a retry that's harmless to repeat.</em></p>
+        </div>
+      </section>
+
+      <section id="fallacies">
+        <h2>The Eight Fallacies of Distributed Computing</h2>
+        <p>In the 1990s, engineers at Sun Microsystems noticed that newcomers to distributed systems kept making the same
+        wrong assumptions — treating a call across the network as if it were a call within one program. They wrote them down.
+        Every one of these is <strong>false</strong>, and every one has caused real outages. Read them as a checklist of
+        comfortable lies your code is probably still telling itself:</p>
+
+        <div class="fallacy-grid">
+          <div class="fallacy-card">
+            <div class="fnum">FALLACY 1</div>
+            <h4>The network is reliable</h4>
+            <p>"My request will arrive." Packets are dropped, connections reset, cables get unplugged, switches fail.</p>
+            <div class="reality"><strong>Reality:</strong> assume every message can be lost. Use timeouts, retries, and acknowledgments.</div>
+          </div>
+          <div class="fallacy-card">
+            <div class="fnum">FALLACY 2</div>
+            <h4>Latency is zero</h4>
+            <p>"A remote call is as fast as a local one." A function call is nanoseconds; a cross-datacenter call is tens of milliseconds — millions of times slower.</p>
+            <div class="reality"><strong>Reality:</strong> batch and coalesce calls; a chatty design that makes 100 tiny remote calls will crawl.</div>
+          </div>
+          <div class="fallacy-card">
+            <div class="fnum">FALLACY 3</div>
+            <h4>Bandwidth is infinite</h4>
+            <p>"I can send as much data as I want." Pipes have a ceiling; large payloads queue, congest, and time out.</p>
+            <div class="reality"><strong>Reality:</strong> paginate, compress, and send only what's needed. Watch payload sizes.</div>
+          </div>
+          <div class="fallacy-card">
+            <div class="fnum">FALLACY 4</div>
+            <h4>The network is secure</h4>
+            <p>"No one's listening." Traffic can be sniffed, spoofed, and tampered with in transit.</p>
+            <div class="reality"><strong>Reality:</strong> encrypt everything (TLS), authenticate callers, never trust the wire (Days 28–29).</div>
+          </div>
+          <div class="fallacy-card">
+            <div class="fnum">FALLACY 5</div>
+            <h4>Topology doesn't change</h4>
+            <p>"The servers stay where they are." Machines are added, removed, autoscaled, and relocated constantly.</p>
+            <div class="reality"><strong>Reality:</strong> never hard-code addresses; use service discovery and DNS (Day 27).</div>
+          </div>
+          <div class="fallacy-card">
+            <div class="fnum">FALLACY 6</div>
+            <h4>There is one administrator</h4>
+            <p>"One person understands the whole system." Different teams own different services with different rules and release schedules.</p>
+            <div class="reality"><strong>Reality:</strong> design for independent deploys, versioned APIs, and graceful cross-team failure.</div>
+          </div>
+          <div class="fallacy-card">
+            <div class="fnum">FALLACY 7</div>
+            <h4>Transport cost is zero</h4>
+            <p>"Moving data over the network is free." Serialization, bandwidth, and cross-region egress all cost CPU and real money.</p>
+            <div class="reality"><strong>Reality:</strong> serialization and cross-AZ/region transfer are a real line item — measure it.</div>
+          </div>
+          <div class="fallacy-card">
+            <div class="fnum">FALLACY 8</div>
+            <h4>The network is homogeneous</h4>
+            <p>"Everything speaks the same protocols and formats." Different services, languages, and versions coexist and disagree.</p>
+            <div class="reality"><strong>Reality:</strong> use explicit, versioned contracts (Days 15–17) and be liberal in what you accept.</div>
+          </div>
+        </div>
+        <p>The first two — <strong>the network is reliable</strong> and <strong>latency is zero</strong> — are the ones that
+        bite hardest and most often. Nearly every distributed-systems bug is, at root, code that quietly assumed one of these
+        eight lies was true.</p>
+      </section>
+
+      <section id="taxonomy">
+        <h2>A Taxonomy of Failure — The Many Ways a Node Can Betray You</h2>
+        <p>"It failed" isn't precise enough to design against. Distributed-systems research classifies failures by
+        <em>how</em> a component misbehaves, and each kind demands a different defense. Here are the ones you must know, ordered
+        roughly from easy-to-handle to nightmare:</p>
+
+        <div class="diagram-box">
+          <svg id="outcomes-diagram" width="820" height="380" viewBox="0 0 820 380"></svg>
+        </div>
+
+        <div class="tax-grid">
+          <div class="tax-card crash">
+            <h4>💥 Crash-Stop</h4>
+            <p>A node halts and stays halted — the "clean" failure. It simply stops responding and never comes back (until
+            replaced). The easiest kind to reason about.</p>
+            <div class="eg">A server's power supply dies. Detected by missed heartbeats → failover.</div>
+          </div>
+          <div class="tax-card crash">
+            <h4>🔁 Crash-Recovery</h4>
+            <p>A node crashes but later restarts — possibly having lost in-memory state, possibly rejoining mid-operation.
+            You must handle a node that "comes back from the dead."</p>
+            <div class="eg">A process OOMs and is restarted by the orchestrator; it must recover cleanly.</div>
+          </div>
+          <div class="tax-card omit">
+            <h4>📭 Omission</h4>
+            <p>A message is silently dropped — a request never arrives, or a reply never returns. The node is fine; the
+            <em>message</em> vanished. This is what makes timeouts ambiguous.</p>
+            <div class="eg">A dropped packet: the double-charge from the story. Fix: idempotency + acks.</div>
+          </div>
+          <div class="tax-card timing">
+            <h4>⏱ Timing (Performance)</h4>
+            <p>A node responds — but too late, past the deadline. Not down, just slow. Often <em>worse</em> than a crash,
+            because a slow node holds resources and looks alive.</p>
+            <div class="eg">A GC pause or overloaded disk. Fix: timeouts, circuit breakers (Day 23).</div>
+          </div>
+          <div class="tax-card gray">
+            <h4>🌫️ Gray / Partial</h4>
+            <p>The node is "up" by some measures and "down" by others — healthy pings but failing real requests. The observer
+            and the user disagree. The hardest to detect.</p>
+            <div class="eg">Health check green, users timing out. Covered in depth below.</div>
+          </div>
+          <div class="tax-card part">
+            <h4>🔌 Network Partition</h4>
+            <p>The network splits into groups that can't talk to each other, though each group is internally healthy. Nobody
+            crashed — the <em>connection</em> did. Breeds split-brain.</p>
+            <div class="eg">A switch fails between racks. Fix: quorum, fencing (below + Day 32).</div>
+          </div>
+          <div class="tax-card byz">
+            <h4>😈 Byzantine</h4>
+            <p>A node behaves <em>arbitrarily</em> — sends wrong, inconsistent, or malicious answers, telling different things
+            to different peers. Corruption or a compromised node. The worst case.</p>
+            <div class="eg">Rare inside a trusted datacenter; central to blockchains &amp; aerospace.</div>
+          </div>
+          <div class="tax-card crash">
+            <h4>🌊 Cascading</h4>
+            <p>One failure overloads its neighbors, which fail and overload <em>their</em> neighbors — a chain reaction that
+            takes down far more than the original fault. A failure <em>amplifier</em>.</p>
+            <div class="eg">A slow dependency exhausts thread pools everywhere (Days 22–23).</div>
+          </div>
+        </div>
+        <p>Most everyday engineering assumes the friendly <strong>crash-stop / crash-recovery</strong> model (nodes are honest,
+        they just sometimes die) and handles omission with retries, timing with timeouts, and partitions with quorums.
+        <strong>Byzantine</strong> faults — nodes that actively lie — are usually out of scope inside a trusted network but
+        become the whole problem in adversarial settings like public blockchains.</p>
+      </section>
+
+      <section id="gray">
+        <h2>Gray Failure — The Sickness That Hides From Your Monitoring</h2>
+        <p>A clean crash is almost a gift: the node stops, heartbeats cease, failover kicks in, and everyone knows what
+        happened. The truly insidious failure is the one where a component is <strong>neither up nor down.</strong> It's
+        limping — dropping 5% of requests, or slow only for large payloads, or fine for reads but broken for writes. This is a
+        <strong>gray failure</strong>, and its signature is <em>differential observability</em>: the system's own health
+        checks report one thing while actual users experience another.</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Why it fools you.</strong><span>Your health check is a trivial <code>GET /health</code>
+          that just proves the process is running and can answer. But a memory leak, a saturated thread pool, a slow disk, or a
+          poisoned cache degrades the <em>real</em> work path while that shallow check keeps passing. Green dashboard, angry
+          users.</span></div>
+          <div class="flow-step"><strong>Why it's dangerous.</strong><span>Because monitoring says "healthy," automation
+          <em>won't</em> fail it over or restart it — the safety net is disarmed by the very thing it's supposed to catch. A
+          gray-failing node can quietly bleed errors for hours.</span></div>
+          <div class="flow-step"><strong>How to catch it.</strong><span>Make health checks <em>deep</em> — exercise the real
+          dependencies (a real query, not a ping). Better still, watch the <strong>symptoms users feel</strong>: error rate and
+          tail latency (p99) of actual traffic. When the app's own success rate for a node diverges from that node's
+          self-reported health, you've found a gray failure. This is exactly why tomorrow's lesson on
+          <strong>observability</strong> matters.</span></div>
+        </div>
+        <p>The lesson: <strong>up/down is a lie.</strong> Health is a spectrum, and the only health signal you can fully trust
+        is whether real requests from real users are succeeding, quickly. Everything else can be green while the house burns.</p>
+      </section>
+
+      <section id="partition">
+        <h2>Network Partitions &amp; Split-Brain</h2>
+        <p>A <strong>network partition</strong> is when a network fault splits your nodes into two or more groups that can't
+        communicate, even though every node is alive and each group is internally healthy. Here's the cruel part: from inside
+        one group, a partition is <em>indistinguishable</em> from "all the other nodes crashed." You see the same thing —
+        silence — that you'd see if they were truly dead. And that ambiguity is what makes partitions so dangerous.</p>
+        <p>The classic disaster is <strong>split-brain</strong>: a cluster with a single leader gets partitioned; each side,
+        seeing the leader (or the other half) as "gone," elects its <em>own</em> leader and keeps accepting writes. Now you
+        have <strong>two</strong> masters editing the same data independently. When the network heals, their histories
+        conflict — and you're left with data corruption that no automatic merge can fully untangle (Sam's four-minute
+        nightmare).</p>
+        <div class="family-grid">
+          <div class="family-card">
+            <h4>🗳️ Quorum (majority rules)</h4>
+            <p>Require a <strong>majority</strong> of nodes to agree before acting. In a 5-node cluster split 3–2, only the side
+            with 3 can form a quorum and keep serving; the minority side must <em>step down</em>. Prevents two leaders.</p>
+            <div class="eg">Why clusters use odd numbers (3, 5, 7) — so one side always has the majority.</div>
+          </div>
+          <div class="family-card">
+            <h4>🔒 Fencing</h4>
+            <p>When promoting a new leader, forcibly <em>cut off</em> the old one (revoke its lease/token) so a "back from the
+            dead" former leader can't keep writing. A fencing token makes stale writes get rejected.</p>
+            <div class="eg">STONITH ("shoot the other node in the head"); monotonic fencing tokens.</div>
+          </div>
+          <div class="family-card">
+            <h4>⚖️ Choose your CAP side</h4>
+            <p>During a partition you must pick (Day 10): stay <strong>consistent</strong> and refuse writes on the minority
+            side (CP), or stay <strong>available</strong> and accept writes everywhere, reconciling later (AP). There's no
+            third option.</p>
+            <div class="eg">A bank chooses CP (reject); a shopping cart may choose AP (accept, merge later).</div>
+          </div>
+        </div>
+        <p>This is where today connects straight back to the <strong>CAP theorem</strong> (Day 10): a partition <em>will</em>
+        happen, and when it does, you are forced to trade consistency for availability or vice-versa. Making that trade
+        <em>safely</em> — with quorums, fencing, and consensus — is what <strong>Raft and Paxos</strong> (Days 31–32) exist to
+        do. Today just plant the flag: <em>a partition looks exactly like a mass crash, and the only safe behaviors are to
+        require a majority and to fence the losers.</em></p>
+      </section>
+
+      <section id="toolkit">
+        <h2>The Survival Toolkit — Building Reliably on Unreliable Parts</h2>
+        <p>You can't eliminate failure, so you engineer to <em>survive</em> it. Most of these you've already met over the last
+        few days — here's how they assemble into one coherent defense against the ambiguity we've been describing:</p>
+        <div class="family-grid">
+          <div class="family-card">
+            <h4>⏱ Timeouts</h4>
+            <p>Never wait forever. A bounded timeout turns an infinite hang into a definite (if ambiguous) "no answer" you can
+            act on. The first and most important defense.</p>
+            <div class="eg">Without one, a slow dependency freezes every caller (Day 23).</div>
+          </div>
+          <div class="family-card">
+            <h4>🔁 Retries + backoff + jitter</h4>
+            <p>Retry the timed-out call — but wait longer each time (exponential backoff) and add randomness (jitter) so a
+            thousand clients don't retry in lockstep and create a thundering herd.</p>
+            <div class="eg">Naive instant retries turn a blip into a self-inflicted DDoS.</div>
+          </div>
+          <div class="family-card">
+            <h4>🔑 Idempotency</h4>
+            <p>The keystone. Design operations so that doing them twice equals doing them once (via an idempotency key). Then a
+            retry after an ambiguous timeout is always safe — no double charges.</p>
+            <div class="eg">The fix for the whole simulator above. Non-negotiable with retries.</div>
+          </div>
+          <div class="family-card">
+            <h4>⚡ Circuit breakers</h4>
+            <p>Stop hammering a dependency that's clearly failing; fail fast with a fallback and give it room to recover
+            (Day 23). Prevents timing failures from cascading.</p>
+            <div class="eg">Trips open after repeated timeouts, protecting your own threads.</div>
+          </div>
+          <div class="family-card">
+            <h4>🏰 Redundancy + failover</h4>
+            <p>Run multiple copies across independent failure domains (Day 22) so one node's crash is a non-event. Detect the
+            dead node (heartbeats) and route around it.</p>
+            <div class="eg">N+1 instances across AZs; a load balancer ejects unhealthy nodes.</div>
+          </div>
+          <div class="family-card">
+            <h4>🩺 Deep health checks</h4>
+            <p>Check the real work path, not just "is the process alive," and trust user-facing error/latency signals to catch
+            gray failures the shallow check misses.</p>
+            <div class="eg">Query a real dependency; alert on p99 and success rate.</div>
+          </div>
+          <div class="family-card">
+            <h4>📉 Graceful degradation</h4>
+            <p>When a dependency is down, serve a reduced experience (stale cache, defaults, fewer features) instead of a total
+            failure. Contain the blast radius (Day 22).</p>
+            <div class="eg">Show cached recommendations rather than crashing checkout.</div>
+          </div>
+          <div class="family-card">
+            <h4>🐒 Chaos engineering</h4>
+            <p>Deliberately inject failures in production (kill nodes, add latency, drop packets) to prove your defenses work
+            <em>before</em> a real outage tests them for you.</p>
+            <div class="eg">Netflix's Chaos Monkey. "Everything fails" — so rehearse it.</div>
+          </div>
+        </div>
+        <p>The mindset tying them together: <strong>design for failure as the default, not the exception.</strong> Assume every
+        call times out, every node can die mid-operation, and every network can split. If your design still produces correct
+        results (even if degraded) under those assumptions, you have a distributed system. If it only works when everything is
+        healthy, you have a demo.</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts — Why This Never Fully Goes Away</h2>
+        <p>Distributed failure isn't a bug you fix once; it's a permanent condition you manage forever. Here's the honest
+        ledger of what makes it genuinely hard.</p>
+
+        <h3>1. Certainty is mathematically impossible</h3>
+        <p>The Two Generals' Problem isn't a lack of cleverness — it's a <em>proof</em> that guaranteed agreement over a lossy
+        channel can't be achieved. Its deeper cousin, the <strong>FLP result</strong>, shows that in a fully asynchronous
+        network you can't even guarantee that a group of nodes will <em>ever</em> agree on a single value if even one can fail.
+        We don't beat these impossibilities; we sidestep them with timeouts and probabilities — accepting "almost always
+        correct, almost always fast" instead of "always."</p>
+
+        <h3>2. You can't tell slow from dead — and detection is a dial</h3>
+        <p>Every failure detector is a bet on a timeout. Set it <strong>short</strong> and you get fast recovery but frequent
+        <em>false positives</em> — you declare healthy-but-slow nodes dead, causing needless failovers and, worse,
+        split-brain. Set it <strong>long</strong> and you avoid false alarms but users suffer through long stalls before you
+        react. There is no setting that is both fast and never-wrong; you're always trading recovery speed against false-alarm
+        rate.</p>
+
+        <h3>3. Every defense creates new failure modes</h3>
+        <p>Retries can turn a blip into a retry storm. Failover can cause split-brain. Redundancy adds coordination overhead
+        and its own bugs. A caching layer added for reliability becomes a new thing that can fail (or serve stale poison). The
+        machinery you add to survive failure is itself software that can fail — reliability is never free, and each layer must
+        earn its complexity.</p>
+
+        <h3>4. The scary failures are the partial and gray ones</h3>
+        <p>A total outage is loud, obvious, and quickly fixed. The failures that cause the longest, most expensive incidents
+        are the <em>partial</em> ones — the one shard that's slow, the 3% of writes silently lost, the node that's up for pings
+        and down for work. They evade monitoring, defeat simple failover, and corrupt data quietly. This is why
+        <strong>observability</strong> (Day 26) is not optional: you cannot survive failures you cannot see.</p>
+
+        <p style="margin-top:1rem;">The through-line: distributed systems trade the <strong>simplicity and certainty</strong> of
+        a single machine for the <strong>scale and resilience</strong> of many — and the price is that you can never again be
+        <em>sure</em> what happened. The whole craft is learning to build correct, useful systems anyway: assume the fog, make
+        every action safe to repeat, require a majority before you commit, and watch real user outcomes rather than trusting a
+        node's word for its own health. <em>Everything fails, all the time</em> — good engineers just make sure it doesn't
+        matter.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Distributed Systems House</h2>
+        <div class="palace">
+          <h4>You step out through the front door (past the bouncer) into a wide <strong>foggy courtyard</strong> between two
+          towers. You shout a message up to the far tower — and hear nothing back. Did they not hear you? Did they answer and
+          the fog swallowed their reply? You genuinely cannot tell. A brass plaque on a sundial reads: <em>"Silence is
+          ambiguous."</em> This is the Foggy Courtyard — the Hall of Ambiguous Silence.</h4>
+          <div class="palace-room"><span class="palace-icon">🏰</span><div><strong>The Fortress of the Three Towers</strong> — <span>Fault Tolerance &amp; High Availability (Day 22). Three watchtowers on separate corners, separate power — they can't fall together.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">⚡</span><div><strong>The Fuse-Box Room</strong> — <span>The Circuit Breaker (Day 23). A steel panel of switches that trips open to save the house from a shorting appliance.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Front-Door / Bouncer Room</strong> — <span>Rate Limiting &amp; Throttling (Day 24). A bouncer with a clicker and a refilling bucket of tokens at the velvet rope.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🌫️</span><div><strong>The Foggy Courtyard</strong> — <span>Distributed System Failures (today). Two towers separated by fog; you shout and get <strong>silence</strong> — unable to tell "didn't hear me" from "replied, but the fog ate it." A runner (messenger) disappears into the mist. On a bench sits a card charged <strong>twice</strong> (a lost ack + a blind retry), and a tower flying <strong>two flags</strong> at once (split-brain). Carved into the sundial: <em>"You cannot tell slow from dead — so make every action safe to repeat."</em></span></div></div>
+          <div class="palace-room"><span class="palace-icon">🛰️</span><div><strong>The Next Room</strong> — <span>Observability: Logs, Metrics &amp; Traces (Day 26). A control room full of instruments — the only way to see through the fog and know what's really happening.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Rate Limiting (Day 24)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Distributed Failures (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Observability (Day 26)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Depends on / leads to (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">CAP Theorem (Day 10)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Fault Tolerance (Day 22)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Circuit Breaker (Day 23)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Idempotency &amp; Retries</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Consensus / Raft (Days 31–32)</span>
+        </div>
+        <p>Today is the <strong>"why"</strong> beneath all of Week 4. <strong>Fault tolerance</strong> (Day 22) added
+        redundancy, the <strong>circuit breaker</strong> (Day 23) contained a failing dependency, and <strong>rate
+        limiting</strong> (Day 24) contained abusive callers — today explains the underlying enemy all three fight: partial,
+        ambiguous failure. It reaches straight back to the <strong>CAP theorem</strong> (Day 10): the network partition we met
+        today is the exact "P" that forces CAP's choice between consistency and availability. The defenses — timeouts, retries,
+        and above all <strong>idempotency</strong> — are the practical toolkit, and safely resolving partitions and electing
+        leaders without split-brain is precisely the job of <strong>consensus algorithms</strong> like Paxos and Raft (Days
+        31–32), which open Phase 2. And because the worst failures (gray, partial) hide from you, today hands directly to
+        tomorrow's <strong>observability</strong> (Day 26): you cannot survive what you cannot see. This is the keystone of the
+        reliability arc — everything before it was a tool; today is the reason the tools exist.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"A timeout means the request failed, so it's safe to just retry."</td><td>A timeout means <strong>unknown</strong>, not failed — the work may have <em>succeeded</em> and only the reply was lost. A blind retry then does it <strong>twice</strong> (double charge). Only retry operations you've made <strong>idempotent</strong>.</td></tr>
+          <tr><td>"If the health check is green, the service is healthy."</td><td>A shallow <code>/health</code> ping only proves the process answers. <strong>Gray failures</strong> pass the check while real requests fail. Trust user-facing success rate and tail latency, and make health checks exercise the real work path.</td></tr>
+          <tr><td>"I can tell a slow node from a dead one if I just look harder."</td><td>You <strong>can't</strong> — it's the Two Generals' Problem, a mathematical impossibility, not a tooling gap. Every failure detector is a timeout bet that's sometimes wrong. Design for that uncertainty instead of trying to eliminate it.</td></tr>
+          <tr><td>"When the leader disappears, the others should immediately elect a new one."</td><td>If it was a <strong>partition</strong> (not a crash), both sides do that and you get <strong>split-brain</strong> — two leaders corrupting data. Require a <strong>majority quorum</strong> and <strong>fence</strong> the old leader before promoting a new one.</td></tr>
+          <tr><td>"It works on my machine / in the demo, so the design is sound."</td><td>One machine has two outcomes (return/throw) and no network. A distributed system has partial failure, timeouts, partitions, and reordering. Correctness under a healthy network proves almost nothing — <strong>test with failures injected</strong> (chaos engineering).</td></tr>
+          <tr><td>"We'll add reliability features and then failures won't happen."</td><td>Failure is permanent and constant at scale — <em>"everything fails, all the time."</em> The goal isn't zero failures; it's making failures <strong>survivable and invisible to users</strong>. And every reliability feature is new code that can itself fail.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ Your service calls a payment API. The call <strong>times out</strong>. Explain
+          (1) the three fundamentally different things that timeout could mean and why the client can't distinguish them, (2)
+          what happens if the client blindly retries in each case, and (3) the single technique that makes retrying safe — plus
+          one other real-world distributed failure (gray failure or split-brain) and how you'd defend against it. (click to
+          reveal)</div>
+          <div class="recall-answer"><strong>(1) Three meanings of the timeout:</strong> (a) the request never reached the
+          payment API (it wasn't processed) — e.g. a dropped packet or the server crashed <em>before</em> handling it; (b) the
+          API <em>did</em> process it and charged the card, but the <code>200 OK</code> response was lost on the way back; (c)
+          the API is simply <strong>slow</strong> and is still processing, just past the client's deadline. From the client's
+          side all three are <strong>identical</strong> — the same silence. There is no way to tell them apart from the outside;
+          that ambiguity is the Two Generals' Problem, a proven impossibility, not a missing feature.
+          <strong>(2) Blind retry in each case:</strong> case (a) crash-before → the retry safely does the work that never
+          happened → <em>correct.</em> Case (b) lost-ack → the retry charges the card a <strong>second time</strong> → a
+          <em>duplicate</em> (double charge). Case (c) slow → the retry may run <em>concurrently</em> with the still-in-flight
+          original → also a duplicate/race. So a blind retry is right for one case and actively harmful for the other two — and
+          you can't tell which case you're in.
+          <strong>(3) The fix — idempotency:</strong> give each logical operation an <strong>idempotency key</strong>; the
+          server records the key when it does the work and, on any retry carrying the same key, returns the stored original
+          result <em>without</em> re-executing. Now a retry after an ambiguous timeout is always safe — it either completes work
+          that never ran or harmlessly returns the result of work already done. (Pair with exponential backoff + jitter so
+          retries don't stampede.)
+          <strong>Plus one other failure:</strong> a <em>gray failure</em> — a node passes its shallow <code>/health</code> ping
+          but real requests fail (a GC/leak/slow-disk sickness); defend by using <strong>deep health checks</strong> and
+          alerting on real user error rate and p99 latency, not the self-report. Or a <em>split-brain</em> from a network
+          partition — two halves each elect a leader and both accept writes; defend with a <strong>majority quorum</strong> (odd
+          node counts) so only one side can act, plus <strong>fencing</strong> so a revived old leader can't keep writing.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">☁️ Amazon / AWS</div><p>Werner Vogels' mantra — <strong>"Everything fails, all the time"</strong> — is baked into AWS's design. Services assume any instance, AZ, or dependency can vanish at any moment, so they're built with redundancy across Availability Zones, health-based routing, and idempotent APIs. Amazon publishes detailed public post-mortems (COEs) that repeatedly trace big outages back to partial failures and cascading effects — the exact ghosts in this lesson.</p></div>
+          <div class="realworld-card"><div class="rw-company">🐒 Netflix — Chaos Engineering</div><p>Netflix pioneered <strong>Chaos Monkey</strong> (and the broader Simian Army), which randomly kills instances <em>in production</em> during business hours. The philosophy: the only way to know your system survives failure is to make it fail constantly, on purpose, while engineers are awake to watch — so real outages become non-events, not emergencies.</p></div>
+          <div class="realworld-card"><div class="rw-company">🔬 Jepsen</div><p>Kyle Kingsbury's <strong>Jepsen</strong> tests famously break distributed databases by injecting network partitions and clock skew, then checking whether they actually deliver the consistency they advertise. Time and again it has found systems that lose or corrupt data under partition — hard proof that "handles partitions" is a claim you must <em>test</em>, not assume.</p></div>
+          <div class="realworld-card"><div class="rw-company">🌫️ Microsoft — "Gray Failure"</div><p>A well-known Microsoft Research paper, <strong>"Gray Failure: The Achilles' Heel of Cloud-Scale Systems,"</strong> named and studied the exact problem from our story: components that are degraded but not down, invisible to their own health checks. It formalized <em>differential observability</em> — the gap between what the system thinks and what users experience — as the root cause of many of Azure's hardest incidents.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is "partial failure" and why does it make distributed systems fundamentally different?</div>
+          <div class="fc-a">A: Partial failure is when some components fail while others keep running — and you often <strong>can't tell</strong> which failed, or whether anything failed at all. It's the defining property of distributed systems: a local call has two outcomes (return/throw), but a remote call adds a third — <strong>timeout / unknown</strong> — which no amount of tooling can fully resolve.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: A request times out. What are the three things it could mean, and why can't you tell them apart?</div>
+          <div class="fc-a">A: (1) The request never arrived (not processed); (2) it was processed but the reply was lost; (3) it's still being processed, just slowly. All three look <strong>identical</strong> from the client — the same silence. Distinguishing them is the Two Generals' Problem: <strong>provably impossible</strong> over an unreliable channel.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is idempotency the keystone defense for retries?</div>
+          <div class="fc-a">A: Because a timeout is ambiguous, a retry might repeat work that already succeeded (a double charge). An <strong>idempotent</strong> operation — via an idempotency key the server dedupes on — makes "doing it twice" equal "doing it once," so retrying after <em>any</em> timeout is always safe. Without it, retries corrupt data; with it, they're harmless.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is a gray failure, and why does it evade monitoring?</div>
+          <div class="fc-a">A: A gray failure is a component that's <strong>neither up nor down</strong> — degraded (slow, dropping some requests) while its shallow health check still passes. It evades monitoring via <em>differential observability</em>: the health check and the users disagree. Catch it with deep health checks and by alerting on real user error rate and p99 latency.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is split-brain, and how do you prevent it?</div>
+          <div class="fc-a">A: Split-brain is when a <strong>network partition</strong> splits a cluster and each side elects its own leader, so two masters accept writes and diverge. Prevent it by requiring a <strong>majority quorum</strong> (use odd node counts so only one side can have a majority) and <strong>fencing</strong> the old leader so a revived one can't keep writing.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Using the Two Generals image, explain why "silence is ambiguous" and why a local call has two outcomes but a remote call has three.</li>
+          <li>List as many of the eight fallacies of distributed computing as you can, and say which two bite hardest.</li>
+          <li>A payment call times out. Give the three things that could have happened, and what a blind retry does in each.</li>
+          <li>Define idempotency and explain, in one sentence, why it makes retries safe.</li>
+          <li>What is a gray failure, and why won't a normal health check catch it?</li>
+          <li>What is a network partition, why does it look like a mass crash, and what is split-brain?</li>
+          <li>Name four tools from the survival toolkit and, for each, the specific failure it defends against.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>in a distributed system, silence is ambiguous — you can never tell whether
+          your request was lost, the reply was lost, or it's just slow.</strong> A single machine gives you two honest answers
+          (return or throw); a network adds a third, <strong>the timeout</strong>, which means "I don't know" and hides three
+          different realities behind one identical face. This is <strong>partial failure</strong>, and it's not a solvable bug —
+          the Two Generals' Problem proves guaranteed certainty is impossible. So great engineers stop chasing certainty and
+          make failure <strong>survivable</strong>: assume every call can time out, make every operation
+          <strong>idempotent</strong> so a retry is harmless, use timeouts + backoff + jitter, require a <strong>majority
+          quorum</strong> and <strong>fence</strong> old leaders to avoid split-brain, watch <strong>real user outcomes</strong>
+          (not shallow health checks) to catch gray failures, and <strong>design for failure as the normal case.</strong>
+          Everything fails, all the time — the craft is making sure it doesn't matter. Tomorrow (Day 26) we build the
+          instruments that let us see through the fog: <strong>observability</strong> — logs, metrics, and traces.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-24.html">← Day 24: Rate Limiting &amp; Throttling</a>
+        <a href="day-26.html" class="coming-soon-link">Day 26: Observability →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 25 of 90 — Distributed System Failures</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── The Ambiguous Timeout simulator ──────────────────────────────────
+  var truth = 'acked';   // 'acked' | 'lost' | 'crash' | 'slow'
+  var retry = 'none';    // 'none' | 'blind' | 'idem'
+
+  var els = {
+    truthT: document.getElementById('truth-toggle'),
+    retryT: document.getElementById('retry-toggle'),
+    ccTruth: document.getElementById('cc-truth'),
+    ccTruthSub: document.getElementById('cc-truth-sub'),
+    ccClient: document.getElementById('cc-client'),
+    ccClientSub: document.getElementById('cc-client-sub'),
+    runs: document.getElementById('m-runs'),
+    final: document.getElementById('m-final'),
+    agree: document.getElementById('m-agree'),
+    safe: document.getElementById('m-safe'),
+    status: document.getElementById('sim-status')
+  };
+
+  // Human-readable server truth.
+  var TRUTH = {
+    acked: { label: '✅ Done + acked', cls: 'ok', sub: 'Server did the work AND the reply got back.', done: true },
+    lost:  { label: '📨 Done, reply lost', cls: 'bad', sub: 'Server did the work, but the response vanished in transit.', done: true },
+    crash: { label: '💥 Crashed first', cls: 'bad', sub: 'Server died before doing the work.', done: false },
+    slow:  { label: '🐌 Still working', cls: 'warn', sub: 'Server is processing, just past the deadline.', done: false }
+  };
+
+  function render() {
+    var t = TRUTH[truth];
+    // What the client sees: only a clean ack looks like success; everything
+    // else is an indistinguishable timeout.
+    var clientOK = (truth === 'acked');
+
+    els.ccTruth.textContent = t.label;
+    els.ccTruth.className = 'cc-val ' + t.cls;
+    els.ccTruthSub.textContent = t.sub;
+
+    if (clientOK) {
+      els.ccClient.textContent = '✅ 200 OK';
+      els.ccClient.className = 'cc-val ok';
+      els.ccClientSub.textContent = 'A clear success — no ambiguity here.';
+    } else {
+      els.ccClient.textContent = '⏱ Timeout — unknown';
+      els.ccClient.className = 'cc-val unknown';
+      els.ccClientSub.textContent = 'The SAME view for lost-reply, crash, AND slow. The client can’t tell them apart.';
+    }
+
+    // Compute executions of the work + final correctness given the retry policy.
+    // "runs" = how many times the actual work executed after all is said & done.
+    var runs, final, finalCls, agree, safe, statusCls, statusTxt;
+
+    if (clientOK) {
+      // Client saw success → no retry is triggered regardless of policy.
+      runs = 1; final = 'Correct ✅'; finalCls = 'good';
+      agree = 'Yes'; safe = 'n/a';
+      statusCls = 'q-status ok';
+      statusTxt = 'The happy path: the work ran once and the client got a clear 200 OK. No timeout, no retry, no ambiguity. ' +
+        'This is the only case out of four where the client actually knows what happened.';
+    } else if (retry === 'none') {
+      // No retry: whatever the server already did (or will finish) is the final
+      // state. Only the crash-before case never runs the work; lost & slow both
+      // execute it exactly once (slow just completes a moment later).
+      runs = (truth === 'crash') ? 0 : 1;
+      if (truth === 'crash') {
+        final = 'Consistent ⚪'; finalCls = 'muted2'; agree = 'Yes'; safe = 'n/a';
+        statusCls = 'q-status warn';
+        statusTxt = 'The server crashed before doing anything, and the client gave up. Nothing happened and both sides agree ' +
+          'it failed — cleanly consistent, but the user’s action silently didn’t occur (they may just try again later).';
+      } else {
+        // lost or slow: server did (or will do) the work, client thinks it failed.
+        final = 'INCONSISTENT ⚠'; finalCls = 'bad'; agree = 'No'; safe = 'n/a';
+        statusCls = 'q-status bad';
+        statusTxt = 'Silent drift: the server ' + (truth === 'lost' ? 'already charged the card' : 'is still finishing the charge') +
+          ', but the client saw a timeout and gave up — so the client believes it FAILED while the money actually moved. ' +
+          'Now the two systems disagree, and no one is coming to fix it. This is how ghosts get into your data.';
+      }
+    } else if (retry === 'blind') {
+      // Blind retry: resend the same request; server has no way to dedupe.
+      if (truth === 'crash') {
+        runs = 1; final = 'Correct ✅'; finalCls = 'good'; agree = 'Yes'; safe = 'Yes (this time)';
+        statusCls = 'q-status ok';
+        statusTxt = 'Lucky: the work never ran the first time (crash before doing it), so the blind retry simply does it once. ' +
+          'Correct — but only because you happened to be in the one case where the work hadn’t happened. You had no way to know that.';
+      } else if (truth === 'lost') {
+        runs = 2; final = 'DUPLICATE ❌'; finalCls = 'bad'; agree = 'No'; safe = 'No';
+        statusCls = 'q-status bad';
+        statusTxt = 'The classic double-charge. The server already did the work (only the reply was lost), so resending it runs ' +
+          'the work a SECOND time — the card is charged twice. A blind retry after an ambiguous timeout is a data-corruption bug.';
+      } else { // slow
+        runs = 2; final = 'DUPLICATE / RACE ❌'; finalCls = 'bad'; agree = 'No'; safe = 'No';
+        statusCls = 'q-status bad';
+        statusTxt = 'The original request is still being processed when the retry arrives, so now TWO copies of the work run ' +
+          '(possibly at the same time). Duplicate charge and a race condition — the retry made a slow request into a corrupt one.';
+      }
+    } else { // idempotent
+      // Idempotency key: server dedupes; work runs at most once, and the retry
+      // even recovers the lost acknowledgment.
+      runs = 1; final = 'Correct ✅'; finalCls = 'good'; agree = 'Yes'; safe = 'Yes';
+      statusCls = 'q-status ok';
+      if (truth === 'lost') {
+        statusTxt = 'The retry carries the SAME idempotency key. The server sees it already did this work, so it does NOT run ' +
+          'it again — it just returns the stored original result. The lost acknowledgment is recovered, the card is charged ONCE. Correct.';
+      } else if (truth === 'crash') {
+        statusTxt = 'The first attempt crashed before recording anything, so the retry (same key) runs the work exactly once and ' +
+          'records the key. Charged once, client gets its answer. Correct.';
+      } else { // slow
+        statusTxt = 'The idempotency key lets the server recognize the retry as the same operation, so it won’t run a second copy ' +
+          '— it waits for / returns the in-flight result. No duplicate, no race. Correct.';
+      }
+    }
+
+    els.runs.textContent = runs + '×';
+    els.runs.className = 'val ' + (runs === 2 ? 'bad' : (runs === 0 ? 'muted2' : 'blue'));
+    els.final.textContent = final;
+    els.final.className = 'val ' + finalCls;
+    els.agree.textContent = agree;
+    els.agree.className = 'val ' + (agree === 'No' ? 'bad' : (agree === 'Yes' ? 'good' : 'muted2'));
+    els.safe.textContent = safe;
+    els.safe.className = 'val ' + (safe === 'No' ? 'bad' : (safe.indexOf('Yes') === 0 ? 'good' : 'muted2'));
+    els.status.className = statusCls;
+    els.status.textContent = statusTxt;
+  }
+
+  function wire(container, attr, setter) {
+    Array.prototype.forEach.call(container.querySelectorAll('button'), function(btn){
+      btn.addEventListener('click', function(){
+        setter(btn.getAttribute(attr));
+        Array.prototype.forEach.call(container.querySelectorAll('button'), function(b){ b.classList.remove('active'); });
+        btn.classList.add('active');
+        render();
+      });
+    });
+  }
+  wire(els.truthT, 'data-truth', function(v){ truth = v; });
+  wire(els.retryT, 'data-retry', function(v){ retry = v; });
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+
+  // Anchor diagram: two generals on two hills, a fog valley between them, and
+  // the three fates of a message — all of which look identical (silence) to A.
+  function drawGeneralsDiagram() {
+    var svg = document.getElementById('generals-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'The Two Generals — silence is ambiguous', '#e2e8f0', '13', '700');
+
+    // fog valley band
+    svg.appendChild(rs.rectangle(250, 150, 320, 150, { stroke:'#475569', strokeWidth:1, roughness:1.6, fill:'#33415555', fillStyle:'hachure', hachureGap:6 }));
+    T(410, 230, '🌫️ FOG + ENEMY VALLEY', '#94a3b8', '10', '700');
+    T(410, 248, 'messengers may be captured', '#64748b', '8.5', '600');
+
+    // left hill / General A
+    svg.appendChild(rs.polygon([[40,300],[160,150],[280,300]], { stroke:'#22c55e', strokeWidth:1.6, roughness:1.4, fill:'#22c55e10', fillStyle:'solid' }));
+    svg.appendChild(rs.rectangle(95, 190, 130, 40, { stroke:'#22c55e', strokeWidth:1.8, roughness:1.1, fill:'#22c55e1a', fillStyle:'solid' }));
+    T(160, 208, '🛡️ General A', '#dcfce7', '11', '700');
+    T(160, 222, '"Attack at dawn"', '#86efac', '8.5', '600');
+
+    // right hill / General B
+    svg.appendChild(rs.polygon([[540,300],[660,150],[780,300]], { stroke:'#38bdf8', strokeWidth:1.6, roughness:1.4, fill:'#38bdf810', fillStyle:'solid' }));
+    svg.appendChild(rs.rectangle(595, 190, 130, 40, { stroke:'#38bdf8', strokeWidth:1.8, roughness:1.1, fill:'#38bdf81a', fillStyle:'solid' }));
+    T(660, 208, '🛡️ General B', '#e0f2fe', '11', '700');
+    T(660, 222, 'did he hear it?', '#7dd3fc', '8.5', '600');
+
+    // messenger arrow A -> B (outbound)
+    svg.appendChild(rs.line(230, 185, 590, 185, { stroke:'#fbbf24', strokeWidth:1.8, roughness:1, strokeLineDash:[7,5] }));
+    svg.appendChild(rs.line(590, 185, 576, 180, { stroke:'#fbbf24', strokeWidth:1.8, roughness:1 }));
+    svg.appendChild(rs.line(590, 185, 576, 190, { stroke:'#fbbf24', strokeWidth:1.8, roughness:1 }));
+    T(410, 176, '🏃 messenger: "ATTACK AT DAWN"', '#fde68a', '9', '700');
+
+    // captured X in the middle
+    svg.appendChild(rs.line(398, 270, 422, 294, { stroke:'#ef4444', strokeWidth:2.2, roughness:1 }));
+    svg.appendChild(rs.line(422, 270, 398, 294, { stroke:'#ef4444', strokeWidth:2.2, roughness:1 }));
+    T(410, 314, '…or captured here?', '#fca5a5', '8.5', '700');
+
+    // the three indistinguishable possibilities
+    svg.appendChild(rs.rectangle(60, 336, 700, 84, { stroke:'#334155', strokeWidth:1.2, roughness:1, fill:'#0b112055', fillStyle:'solid' }));
+    T(410, 354, 'A gets SILENCE. It could mean any of these — and they look identical:', '#cbd5e1', '9.5', '700');
+    T(180, 378, '① order never arrived', '#fca5a5', '9', '700');
+    T(410, 378, '② B agreed, reply lost', '#fca5a5', '9', '700');
+    T(640, 378, '③ all fine, just slow', '#fbbf24', '9', '700');
+    T(410, 402, 'No number of extra messengers ever makes A certain. Every network call is a messenger into the fog.', '#94a3b8', '8.5', '600');
+  }
+
+  // Mechanism diagram: local call (2 outcomes) vs remote call (3 outcomes),
+  // with the timeout branch fanning into the three ambiguous truths.
+  function drawOutcomesDiagram() {
+    var svg = document.getElementById('outcomes-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    // ---- LEFT: local call, 2 outcomes ----
+    T(180, 26, 'LOCAL call — 2 outcomes', '#86efac', '12', '700');
+    svg.appendChild(rs.rectangle(115, 44, 130, 40, { stroke:'#22c55e', strokeWidth:1.8, roughness:1.1, fill:'#22c55e14', fillStyle:'solid' }));
+    T(180, 68, 'call function()', '#dcfce7', '10', '700', true);
+    // branch success
+    svg.appendChild(rs.line(180, 84, 110, 132, { stroke:'#22c55e', strokeWidth:1.6, roughness:1 }));
+    svg.appendChild(rs.rectangle(50, 134, 120, 34, { stroke:'#22c55e', strokeWidth:1.6, roughness:1.1, fill:'#22c55e14', fillStyle:'solid' }));
+    T(110, 155, '✅ returns', '#dcfce7', '9.5', '700');
+    // branch throw
+    svg.appendChild(rs.line(180, 84, 250, 132, { stroke:'#fb7185', strokeWidth:1.6, roughness:1 }));
+    svg.appendChild(rs.rectangle(190, 134, 120, 34, { stroke:'#fb7185', strokeWidth:1.6, roughness:1.1, fill:'#fb718514', fillStyle:'solid' }));
+    T(250, 155, '❌ throws', '#fecdd3', '9.5', '700');
+    T(180, 196, 'You ALWAYS find out which.', '#86efac', '9.5', '700');
+
+    // divider
+    svg.appendChild(rs.line(360, 40, 360, 350, { stroke:'#334155', strokeWidth:1.2, roughness:1, strokeLineDash:[6,5] }));
+
+    // ---- RIGHT: remote call, 3 outcomes ----
+    T(590, 26, 'REMOTE call — 3 outcomes', '#fbbf24', '12', '700');
+    svg.appendChild(rs.rectangle(525, 44, 130, 40, { stroke:'#38bdf8', strokeWidth:1.8, roughness:1.1, fill:'#38bdf814', fillStyle:'solid' }));
+    T(590, 68, 'call remote()', '#e0f2fe', '10', '700', true);
+    // success
+    svg.appendChild(rs.line(590, 84, 470, 126, { stroke:'#22c55e', strokeWidth:1.6, roughness:1 }));
+    svg.appendChild(rs.rectangle(415, 128, 110, 32, { stroke:'#22c55e', strokeWidth:1.6, roughness:1.1, fill:'#22c55e14', fillStyle:'solid' }));
+    T(470, 148, '✅ success', '#dcfce7', '9', '700');
+    // error
+    svg.appendChild(rs.line(590, 84, 590, 126, { stroke:'#fb7185', strokeWidth:1.6, roughness:1 }));
+    svg.appendChild(rs.rectangle(535, 128, 110, 32, { stroke:'#fb7185', strokeWidth:1.6, roughness:1.1, fill:'#fb718514', fillStyle:'solid' }));
+    T(590, 148, '❌ error', '#fecdd3', '9', '700');
+    // timeout (the third)
+    svg.appendChild(rs.line(590, 84, 710, 126, { stroke:'#fbbf24', strokeWidth:2, roughness:1 }));
+    svg.appendChild(rs.rectangle(655, 128, 130, 32, { stroke:'#fbbf24', strokeWidth:2, roughness:1.1, fill:'#f59e0b18', fillStyle:'solid' }));
+    T(720, 148, '⏱ TIMEOUT (?)', '#fde68a', '9', '700');
+
+    // timeout fans into 3 truths
+    svg.appendChild(rs.rectangle(410, 196, 380, 108, { stroke:'#475569', strokeWidth:1.2, roughness:1.1, fill:'#0b112055', fillStyle:'solid' }));
+    T(600, 214, 'The timeout hides THREE realities:', '#cbd5e1', '9.5', '700');
+    T(600, 236, '① request never arrived — not done', '#fca5a5', '9', '600');
+    T(600, 258, '② done, but the reply was lost', '#fca5a5', '9', '600');
+    T(600, 280, '③ still processing — just slow', '#fbbf24', '9', '600');
+    T(600, 298, 'all three look identical from outside', '#94a3b8', '8', '700');
+    svg.appendChild(rs.line(720, 160, 660, 194, { stroke:'#fbbf24', strokeWidth:1.4, roughness:1, strokeLineDash:[4,3] }));
+
+    T(590, 336, 'You may NEVER find out which. That "?" is the whole discipline.', '#fbbf24', '9.5', '700');
+  }
+
+  function drawAll() { drawGeneralsDiagram(); drawOutcomesDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
