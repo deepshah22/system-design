@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 26: Observability — Logs, Metrics &amp; Traces | System Design Mastery</title>
+  <meta name="description" content="Yesterday you learned that distributed failures are ambiguous, gray, and hidden — you cannot survive what you cannot see. Today you learn to see. Observability is the discipline of instrumenting a system so you can ask any question about its internal state from the outside — especially questions you never anticipated. Meet the three signals (metrics, logs, traces), the three questions they answer (is it broken? where? why?), how a distributed trace stitches one request across twenty services with a trace ID, the four golden signals, observability vs monitoring (unknown-unknowns), and the cardinality/sampling/cost tradeoffs — taught through a hospital ICU anchor, a live incident-room simulator, a real trace waterfall, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* three pillars — big signal cards with a colored top bar */
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-top-width:4px; border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .pillar-card.metrics { border-top-color:#38bdf8; } .pillar-card.logs { border-top-color:#a78bfa; } .pillar-card.traces { border-top-color:#22c55e; }
+    .pillar-card .p-emoji { font-size:1.5rem; }
+    .pillar-card h4 { margin:.3rem 0 .1rem; font-size:1.05rem; }
+    .pillar-card.metrics h4 { color:#7dd3fc; } .pillar-card.logs h4 { color:#c4b5fd; } .pillar-card.traces h4 { color:#86efac; }
+    .pillar-card .q { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; font-weight:800; margin:.15rem 0 .5rem; }
+    .pillar-card.metrics .q { color:#38bdf8; } .pillar-card.logs .q { color:#a78bfa; } .pillar-card.traces .q { color:#22c55e; }
+    .pillar-card p { margin:0 0 .5rem; font-size:.83rem; }
+    .pillar-card .row { font-size:.76rem; color:var(--text-muted); margin-top:.35rem; }
+    .pillar-card .row b { color:var(--text-secondary); }
+    /* signal / golden-signals cards */
+    .sig-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.75rem; margin:1rem 0 1.5rem; }
+    .sig-card { background: var(--bg-card); border:1px solid var(--border); border-left:4px solid #fbbf24; border-radius: var(--radius); padding:.85rem 1rem; }
+    .sig-card h4 { margin:0 0 .3rem; font-size:.9rem; color:#fcd34d; }
+    .sig-card p { margin:0; font-size:.78rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .toggle-row { display:flex; gap:1.25rem; flex-wrap:wrap; align-items:center; margin-bottom:.4rem; }
+    .toggle-row .tog-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; }
+    /* the three question cards in the simulator */
+    .q-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:.75rem; margin:1rem 0 1.1rem; }
+    @media (max-width:620px){ .q-cards { grid-template-columns:1fr; } }
+    .q-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1rem; text-align:center; }
+    .q-card .qc-icon { font-size:1.4rem; }
+    .q-card .qc-q { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); font-weight:800; margin:.3rem 0 .1rem; }
+    .q-card .qc-tool { font-size:.72rem; color:var(--text-muted); margin-bottom:.5rem; }
+    .q-card .qc-verdict { font-size:.95rem; font-weight:800; line-height:1.3; }
+    .q-card .qc-verdict.ok { color:#22c55e; } .q-card .qc-verdict.warn { color:#fbbf24; } .q-card .qc-verdict.bad { color:#fb7185; }
+    .q-card .qc-sub { font-size:.74rem; color:var(--text-muted); margin-top:.4rem; }
+    .prop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:.75rem; margin:0 0 1rem; }
+    .prop-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.8rem 1rem; text-align:center; }
+    .prop-card .val { font-size:1.2rem; font-weight:800; }
+    .prop-card .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .prop-card .val.good { color:#22c55e; } .prop-card .val.bad { color:#fb7185; } .prop-card .val.warn { color:#fbbf24; } .prop-card .val.muted2 { color:#94a3b8; } .prop-card .val.blue { color:#7dd3fc; }
+    .q-status { text-align:center; font-weight:800; font-size:.92rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; line-height:1.5; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 26</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 26 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 4 — Reliability &amp; Security</span>
+    </div>
+    <h1>Observability<br><span style="color:var(--accent)">Learning to See Through the Fog</span></h1>
+    <p class="lead">
+      Yesterday's lesson ended with a warning: the worst failures are the <em>gray</em> ones — a service that's up for its
+      health check but down for real users, a request that vanished, money that moved while the client thinks it failed.
+      <strong>You cannot survive what you cannot see.</strong> Today you build the instruments that let you see. Observability is
+      the discipline of wiring a system so you can ask <em>any</em> question about what's happening inside it — from the
+      outside, after the fact, including questions you never thought to ask in advance. You'll meet the <strong>three
+      signals</strong> — <strong>metrics</strong>, <strong>logs</strong>, and <strong>traces</strong> — and, more importantly,
+      the <strong>three questions</strong> they answer: <em>is it broken? where? and why?</em> You'll see how a single
+      <strong>trace ID</strong> stitches one user's request across twenty services into one readable waterfall, learn the
+      <strong>four golden signals</strong> worth watching, understand why <strong>observability is not the same as
+      monitoring</strong>, and face the real tradeoffs — cardinality, sampling, and cost — that make this genuinely hard.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#pillars">The Three Signals</a>
+        <a href="#trace">How a Trace Works</a>
+        <a href="#workflow">The Debugging Workflow</a>
+        <a href="#signals">What to Measure</a>
+        <a href="#obs-vs-mon">Observability vs Monitoring</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🏥📈📋🩻</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>A patient (your system) is in the <strong>ICU</strong>, and you're the doctor trying to keep them alive. You can't
+            open them up and watch every cell — you have to infer what's happening inside from instruments on the outside. You
+            have exactly three. The first is the <strong>vital-signs monitor</strong> 📈 — heart rate, blood pressure, oxygen —
+            a few numbers, updated every second, always on, that <em>beep</em> the moment something leaves the safe range. It's
+            cheap and it never sleeps, and it tells you <strong>that</strong> the patient is crashing and <strong>when</strong> —
+            but a heart rate of 160 doesn't tell you <em>why</em>. The second is the <strong>nurse's chart</strong> 📋 — a
+            detailed, timestamped diary of every individual event: <em>"14:03 gave 5mg morphine, patient winced."</em> Rich,
+            specific, the record of <strong>what exactly happened</strong> — but there are thousands of entries and you can't
+            watch them all in real time. The third is the <strong>contrast dye</strong> 🩻 — you inject a tracer into one
+            patient and watch it flow through organ after organ on the scan, lighting up the <em>exact</em> spot where the blood
+            slows or stops. It follows <strong>one journey</strong> through the whole body and shows you <strong>where</strong>
+            the problem is. No single instrument is enough: the monitor says "something's wrong," the dye says "it's the left
+            kidney," and only then does the chart tell you "because of the drug given at 14:03." Burn in the image: <em>metrics
+            are the vital-signs monitor (is it broken? when?), traces are the contrast dye following one request (where?), and
+            logs are the detailed chart (why?). You need all three — and a way to jump between them.</em></p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="instruments-diagram" width="820" height="360" viewBox="0 0 820 360"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">In-the-Dark Devi</span> got the page at 2:14 a.m.: <em>checkout error rate is up.</em>
+            That was the entire message — because that was everything her systems could tell her. Her company had grown from one
+            app into a dozen services — gateway, orders, payments, inventory, pricing, email — and tonight, somewhere in that
+            web, one in twenty checkouts was failing. She had no idea which service, or why.
+          </p>
+          <p>
+            She started the only way she could: SSHing into machines and running <code>grep</code> over log files, one server at
+            a time. But there were forty servers, the logs were unstructured text her teammates had written in six different
+            styles, and — worst of all — <strong>nothing tied them together</strong>. She could see the gateway logged "received
+            order #8842," and she could see <em>a</em> payment error somewhere in the payments logs, but she couldn't prove they
+            were the <em>same</em> request. It was like reading twelve people's diaries and trying to reconstruct one conversation
+            with no names and no timestamps that lined up. Two hours in, she still didn't know where the failure lived.
+          </p>
+          <p>
+            Her dashboard hadn't helped either. It showed one big graph — <em>total error rate</em> — a single angry red line
+            climbing. It told her <strong>that</strong> something was wrong (she already knew; the customers told her). It could
+            not tell her <em>which service</em>, or <em>which customers</em>, or <em>why</em>. When she tried to ask "is it only
+            failing for orders over $100?" the dashboard just stared back: it had never been built to answer a question nobody
+            predicted. The aggregate had <strong>averaged away</strong> exactly the detail she needed.
+          </p>
+          <p>
+            The outage lasted four hours. The root cause, once found, was almost insulting: the pricing service had started
+            returning a null tax field for one product category, and payments rejected the malformed total. A <em>one-line</em>
+            fix. The next week Devi's team did the real work — the work that would have turned those four hours into four minutes.
+            They gave <strong>every request a trace ID</strong> at the front door and passed it through every service. They made
+            every log line <strong>structured</strong> — JSON with that trace ID attached. They broke the one giant error graph
+            into <strong>per-service</strong> metrics. And they wired it so that clicking a spike on a graph opened the exact
+            <strong>trace</strong> of a failing request, and clicking a slow step in that trace opened the exact <strong>log
+            lines</strong> for it. They hadn't made their system fail less. They'd made it <em>possible to see</em> — and that,
+            Devi learned, is a different and prior discipline. Its name is <strong>observability</strong>.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement"><strong>Observability</strong> is the property of a system that lets you understand its
+          internal state purely from the signals it emits — enough to answer questions you did <em>not</em> anticipate, without
+          shipping new code. It rests on <strong>three signals</strong>, and the clearest way to remember them is by the
+          <strong>question each one answers</strong>: <strong>Metrics</strong> are cheap, always-on numbers aggregated over time
+          (requests/sec, error %, p99 latency) — they tell you <strong>IS it broken, and WHEN</strong>, and they're what you
+          alert on. <strong>Traces</strong> follow <em>one</em> request across every service it touches, as a waterfall of timed
+          <em>spans</em> — they tell you <strong>WHERE</strong> it broke (which service, which hop ate the time).
+          <strong>Logs</strong> are detailed, timestamped records of individual events — they tell you <strong>WHY</strong> (the
+          exact error, the bad value). The workflow ties them together: a <strong>metric</strong> alert fires → you open the
+          <strong>trace</strong> to localize the guilty span → you read that span's <strong>logs</strong> to find the cause. The
+          glue that makes this possible is a single <strong>trace ID / correlation ID</strong> threaded through all three, so you
+          can jump between them for one specific request. And the deeper point (Day 25's ghosts): observability is what turns
+          <em>gray</em>, ambiguous, partial failures from unsolvable mysteries into things you can actually find. You can't build
+          reliable systems you can't see.</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — The Incident Room</h2>
+        <div class="sim-box">
+          <p>It's 2 a.m. and something is wrong. Pick <strong>what kind of incident</strong> you're facing, then choose
+          <strong>which signals you instrumented</strong> <em>before</em> tonight (you can't add them now — that's the whole
+          lesson). Watch which of the three questions you can actually answer, and how long it takes you to resolve.</p>
+
+          <div class="toggle-row">
+            <span class="tog-label">Tonight's incident:</span>
+          </div>
+          <div class="mode-toggle" id="incident-toggle">
+            <button data-inc="latency" class="active">🐢 p99 latency tripled</button>
+            <button data-inc="errors">🔥 5% of checkouts 500</button>
+            <button data-inc="vip">👤 one VIP's cart keeps failing</button>
+            <button data-inc="drift">🕵️ orders silently going missing</button>
+          </div>
+
+          <div class="toggle-row" style="margin-top:.4rem;">
+            <span class="tog-label">Signals you instrumented ahead of time:</span>
+          </div>
+          <div class="mode-toggle" id="tools-toggle">
+            <button data-tools="none">🚫 None (blind)</button>
+            <button data-tools="m">📈 Metrics only</button>
+            <button data-tools="ml">📈 Metrics + 📋 Logs</button>
+            <button data-tools="mlt" class="active">📈 Metrics + 📋 Logs + 🩻 Traces</button>
+          </div>
+
+          <div class="q-cards">
+            <div class="q-card">
+              <div class="qc-icon">📈</div>
+              <div class="qc-q">Is it broken? (Detect)</div>
+              <div class="qc-tool">answered by Metrics</div>
+              <div class="qc-verdict" id="qc-detect">—</div>
+              <div class="qc-sub" id="qc-detect-sub">—</div>
+            </div>
+            <div class="q-card">
+              <div class="qc-icon">🩻</div>
+              <div class="qc-q">Where? (Localize)</div>
+              <div class="qc-tool">answered by Traces</div>
+              <div class="qc-verdict" id="qc-where">—</div>
+              <div class="qc-sub" id="qc-where-sub">—</div>
+            </div>
+            <div class="q-card">
+              <div class="qc-icon">📋</div>
+              <div class="qc-q">Why? (Root cause)</div>
+              <div class="qc-tool">answered by Logs</div>
+              <div class="qc-verdict" id="qc-why">—</div>
+              <div class="qc-sub" id="qc-why-sub">—</div>
+            </div>
+          </div>
+
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val" id="m-mttr">—</div><div class="lbl">Time to resolve</div></div>
+            <div class="prop-card"><div class="val muted2" id="m-blind">—</div><div class="lbl">Flying blind?</div></div>
+          </div>
+
+          <div class="q-status warn" id="sim-status">—</div>
+
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: set the incident to <strong>🔥 5% of
+          checkouts 500</strong> and step the signals up from <em>None</em> → <em>Metrics</em> → <em>+Logs</em> → <em>+Traces</em>.
+          Metrics alone light up "Is it broken?" but leave "where?" and "why?" dark — you know there's a fire, not which room.
+          Add traces and "where?" turns green (it's the payments span). Add logs and "why?" turns green (the null tax field).
+          Now switch the incident to <strong>👤 one VIP's cart keeps failing</strong> with <strong>Metrics only</strong>: metrics
+          go <em>dark even on "is it broken?"</em> — a single user is a rounding error the aggregate averages away. Some incidents
+          are invisible to metrics entirely, and that's exactly when high-cardinality traces and logs save you.</p>
+        </div>
+      </section>
+
+      <section id="pillars">
+        <h2>The Three Signals (and the Question Each Answers)</h2>
+        <p>People call these the "three pillars of observability." Don't memorize them as a trivia list — memorize them by the
+        job each one does. They overlap in what they <em>can</em> show, but each has a natural home:</p>
+
+        <div class="pillar-grid">
+          <div class="pillar-card metrics">
+            <div class="p-emoji">📈</div>
+            <h4>Metrics</h4>
+            <div class="q">Is it broken? &amp; When?</div>
+            <p>Numbers measured and aggregated over time — a counter (requests served), a gauge (current memory), a histogram
+            (latency distribution). Tiny to store, always on, cheap to query for months. This is what dashboards and
+            <strong>alerts</strong> are built from.</p>
+            <div class="row"><b>Strength:</b> cheap, real-time, long retention, perfect for trends &amp; alerting.</div>
+            <div class="row"><b>Weakness:</b> <em>aggregate</em> — it averages detail away and can't hold high-cardinality labels
+            (one number per user_id would explode). Tells you <em>that</em>, rarely <em>why</em>.</div>
+          </div>
+          <div class="pillar-card traces">
+            <div class="p-emoji">🩻</div>
+            <h4>Traces</h4>
+            <div class="q">Where is it broken?</div>
+            <p>The end-to-end journey of <em>one</em> request across every service, drawn as a waterfall of <strong>spans</strong>
+            (each span = one operation, with a start, a duration, and a parent). A shared <strong>trace ID</strong> stitches the
+            hops together so you can see exactly which service ate the latency or threw the error.</p>
+            <div class="row"><b>Strength:</b> pinpoints the guilty service/hop in a request that crosses many services.</div>
+            <div class="row"><b>Weakness:</b> needs instrumentation in <em>every</em> service and context propagation on every
+            hop; usually <strong>sampled</strong>, so a specific rare request may not be captured.</div>
+          </div>
+          <div class="pillar-card logs">
+            <div class="p-emoji">📋</div>
+            <h4>Logs</h4>
+            <div class="q">Why is it broken?</div>
+            <p>Discrete, timestamped records of individual events — ideally <strong>structured</strong> (JSON with fields), not
+            free-form prose. The richest, most specific signal: the exact exception, the bad input, the stack trace. The place you
+            land to read the actual cause.</p>
+            <div class="row"><b>Strength:</b> maximum detail per event; can carry any field, including high-cardinality ones.</div>
+            <div class="row"><b>Weakness:</b> expensive and noisy at volume; hard to aggregate; <em>useless across services
+            without a shared correlation ID</em> (Devi's 2 a.m. nightmare).</div>
+          </div>
+        </div>
+        <p>The one habit that upgrades all three at once: <strong>emit structured data and attach a trace/correlation ID to
+        everything.</strong> Unstructured <code>print("something broke")</code> is a dead end; a structured event —
+        <code>{ level: "error", service: "payments", trace_id: "abc-123", order_id: 8842, err: "null tax" }</code> — can be
+        searched, aggregated, and jumped to from a trace. Modern practice (Honeycomb, OpenTelemetry) even argues the "three
+        pillars" framing is a little artificial: emit one <em>wide, structured event</em> per unit of work with dozens of fields,
+        and you can derive metrics, filter it like logs, and connect it like a trace from the same data.</p>
+      </section>
+
+      <section id="trace">
+        <h2>How a Trace Works — One ID to Rule Them All</h2>
+        <p>Tracing is the piece most beginners have never seen, so let's make it concrete. When a request hits your front door,
+        the first service mints a unique <strong>trace ID</strong> (say <code>abc-123</code>). Every service that touches this
+        request from then on does two things: it records a <strong>span</strong> (its own little "I started at T, worked for
+        42&nbsp;ms, here's my parent") and it <strong>passes the trace ID onward</strong> in the outgoing request's headers. Do
+        that faithfully and you can later collect every span carrying <code>abc-123</code> and lay them out on one timeline — a
+        <strong>waterfall</strong> that shows, at a glance, where the time went and where it broke.</p>
+
+        <div class="diagram-box">
+          <svg id="trace-diagram" width="820" height="380" viewBox="0 0 820 380"></svg>
+        </div>
+
+        <p>Two ideas make or break tracing:</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Context propagation.</strong><span>The trace ID (and the current span ID, so children
+          know their parent) must ride along on <em>every</em> hop — usually in HTTP headers like <code>traceparent</code> (the
+          W3C standard). Miss it on one hop and the trace breaks in two; you get orphaned spans and a blind spot exactly where you
+          need to see. This is why tracing is all-or-nothing across a system.</span></div>
+          <div class="flow-step"><strong>Sampling.</strong><span>At scale you can't keep a trace for every one of billions of
+          requests — the storage and cost would dwarf the app itself. So you <em>sample</em>: keep, say, 1%. <strong>Head-based</strong>
+          sampling decides at the start (cheap, but may miss the rare failure); <strong>tail-based</strong> sampling waits until
+          the request finishes and keeps it if it was slow or errored (smarter, but you must buffer every trace briefly). The art
+          is keeping the <em>interesting</em> traces without keeping them all.</span></div>
+        </div>
+        <p>Notice how tracing directly answers a Day-25 ghost: distributed systems have <em>"no single stack trace."</em> A trace
+        <strong>is</strong> the distributed stack trace — reassembled after the fact from spans scattered across a dozen machines,
+        held together by one ID.</p>
+      </section>
+
+      <section id="workflow">
+        <h2>The Debugging Workflow — From Alarm to Cause in Three Hops</h2>
+        <p>Signals aren't valuable in isolation; they're valuable as a <em>path</em>. The reason to have all three — and to link
+        them by a shared ID — is so an on-call engineer can travel this route at 2 a.m. without heroics:</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>1 · Detect — the metric.</strong><span>An alert fires because a metric crossed a
+          threshold: p99 latency &gt; 800&nbsp;ms, or error rate &gt; 2%. You now know <em>that</em> something is wrong and
+          roughly <em>when</em> it started. You do <strong>not</strong> yet know where or why.</span></div>
+          <div class="flow-step"><strong>2 · Localize — the trace.</strong><span>You pivot from the spiking metric to
+          <em>example traces</em> from that exact window (an "exemplar" links a metric bucket to a representative trace). The
+          waterfall shows one service's span ballooning or turning red — say <code>payments</code>. Now you know
+          <em>where</em>.</span></div>
+          <div class="flow-step"><strong>3 · Root-cause — the log.</strong><span>You click the guilty span and jump to the log
+          lines that share its trace ID: <code>{ trace_id:"abc-123", err:"tax field was null for category 'gift-card'" }</code>.
+          Now you know <em>why</em> — and you can ship the one-line fix.</span></div>
+        </div>
+        <p>Metric → trace → log. <strong>That</strong> is the loop, and every piece of the tooling exists to make each hop
+        instant. Without the shared trace ID, each hop becomes an hour of grepping (Devi's outage). With it, the whole journey is
+        three clicks.</p>
+      </section>
+
+      <section id="signals">
+        <h2>What to Actually Measure — Don't Drown, Watch the Vital Signs</h2>
+        <p>You could emit a million metrics and still miss the fire. Two famous checklists cut through the noise by telling you
+        <em>which</em> few signals actually matter. Google's SRE book calls these the <strong>Four Golden Signals</strong> —
+        watch these on every user-facing service and you'll catch the vast majority of incidents:</p>
+        <div class="sig-grid">
+          <div class="sig-card"><h4>⏱ Latency</h4><p>How long requests take — and always the <strong>tail</strong> (p95/p99),
+          not the average. Averages hide the slow requests that anger users.</p></div>
+          <div class="sig-card"><h4>🚦 Traffic</h4><p>How much demand — requests/sec, transactions/min. Context for everything
+          else; a latency spike means one thing at 10&nbsp;rps and another at 10,000.</p></div>
+          <div class="sig-card"><h4>🔥 Errors</h4><p>The rate of failing requests — 500s, timeouts, and the sneaky
+          "successful" responses with wrong content. Often the first thing users feel.</p></div>
+          <div class="sig-card"><h4>💾 Saturation</h4><p>How full your resources are — CPU, memory, queue depth. The
+          <em>leading</em> indicator: saturation climbs <em>before</em> latency and errors do.</p></div>
+        </div>
+        <p>Two sibling checklists sharpen the aim depending on what you're watching. <strong>RED</strong> (Rate, Errors,
+        Duration) is the per-<em>service</em> view — perfect for a microservice's request handling. <strong>USE</strong>
+        (Utilization, Saturation, Errors) is the per-<em>resource</em> view — perfect for a machine, disk, or connection pool.
+        And the numbers you promise to hit are <strong>SLOs</strong> (e.g. "99.9% of checkouts succeed in &lt;300&nbsp;ms"),
+        measured by <strong>SLIs</strong> (the actual metric) — your metrics exist, above all, to tell you whether you're keeping
+        those promises and how much <strong>error budget</strong> you have left.</p>
+      </section>
+
+      <section id="obs-vs-mon">
+        <h2>Observability vs Monitoring — Known-Unknowns vs Unknown-Unknowns</h2>
+        <p>These words get used interchangeably, but the distinction is the whole point of today. <strong>Monitoring</strong> is
+        watching for failure modes you <em>already predicted</em>: you built a dashboard for CPU, an alert for disk-full, a graph
+        for the login endpoint. It answers <strong>known-unknowns</strong> — "I know CPU might spike; is it spiking?" It's
+        essential, but it can only ever tell you about the questions you thought to ask <em>in advance</em>.</p>
+        <p><strong>Observability</strong> is the deeper capability: having emitted rich enough data that you can ask
+        <em>brand-new</em> questions after the fact — questions no dashboard anticipated — and get answers, <em>without shipping
+        new instrumentation</em>. It answers <strong>unknown-unknowns</strong> — "wait, is this only failing for Android users on
+        the checkout endpoint paying with gift cards over $100?" This is the borrowed control-theory definition: a system is
+        <em>observable</em> if you can infer its internal state from its external outputs. Devi's dashboard was
+        <strong>monitoring</strong> (one graph, one predicted question). What she built afterward — high-cardinality, structured,
+        correlated data she could slice any way — was <strong>observability</strong>.</p>
+        <div class="flow-box">
+          <div class="flow-step"><strong>Monitoring asks:</strong><span>"Is the thing I'm watching OK?" — dashboards, thresholds,
+          predefined alerts. Great for the failure modes you've seen before.</span></div>
+          <div class="flow-step"><strong>Observability asks:</strong><span>"What is happening, and why — including things I never
+          imagined?" — arbitrary slicing of rich, high-cardinality data. Essential for novel failures, which at scale are most of
+          them.</span></div>
+        </div>
+        <p>You need both. Monitoring catches the known fires fast; observability lets you fight the fire you've never seen before
+        — and in a distributed system, <em>every</em> big incident is one you've never seen before.</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts — Why This Isn't Free</h2>
+        <p>Observability sounds like a pure good — just log everything! — but it's a genuine engineering discipline precisely
+        because the naive version bankrupts you or blinds you. Here's the honest ledger.</p>
+
+        <h3>1. Cardinality is the enemy of metrics</h3>
+        <p>A metric with a label is really one time-series <em>per distinct label value</em>. Add <code>user_id</code> as a label
+        and a system with 10 million users spawns 10 million time-series — your metrics database falls over. This
+        <strong>cardinality explosion</strong> is why metrics must stay low-cardinality (status code, endpoint, region — not user
+        or request ID), and why per-user or per-request questions belong to logs and traces instead. Choosing what becomes a
+        metric label vs a log field is a core skill.</p>
+
+        <h3>2. You can't keep everything — sampling means blind spots</h3>
+        <p>Full-fidelity logs and traces for every request can cost more than running the actual product. So you sample and you
+        set retention limits — and every sample rate is a bet. Sample 1% and the one trace that would've explained the incident
+        may be the 99% you threw away. Tail-based sampling helps (keep the errors and slow ones), but it adds buffering and
+        complexity. There is no setting that is both complete and affordable.</p>
+
+        <h3>3. The cost bill is real — and it can exceed the app</h3>
+        <p>It is genuinely common for a company's observability bill (ingest + storage + a vendor like Datadog) to rival or exceed
+        its production compute bill. Telemetry is data, data is money, and "log everything at debug forever" is how teams get a
+        six-figure surprise. Observability is an ongoing cost/value tradeoff, not a one-time setup.</p>
+
+        <h3>4. Correlation doesn't happen by accident</h3>
+        <p>The magic trick — jump from metric to trace to log for one request — only works if a <strong>trace/correlation ID is
+        propagated through every hop and stamped on every signal.</strong> Miss it in one service, one async queue, one
+        background job, and the trail goes cold exactly there. Getting consistent context propagation across many teams,
+        languages, and third-party libraries is the hardest <em>organizational</em> part, which is why the industry rallied
+        around one standard — <strong>OpenTelemetry</strong> — to make instrumentation vendor-neutral and consistent.</p>
+
+        <p style="margin-top:1rem;">The through-line: observability trades <strong>money and engineering discipline</strong> for
+        the ability to <strong>answer questions you didn't plan for</strong>. Do it well and a 4-hour mystery becomes a 4-minute
+        pivot from graph to trace to log. Do it naively — unstructured logs, no trace IDs, one giant averaged dashboard, or a
+        firehose you can't afford — and you get Devi's 2 a.m.: drowning in data and still blind.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace: The Mission-Control Room</h2>
+        <div class="palace">
+          <h4>You leave the Foggy Courtyard (Day 25) — the place where you shouted into the mist and got only ambiguous silence —
+          and step through a heavy door into a glowing <strong>Mission-Control Room</strong>. Suddenly the fog outside doesn't
+          matter, because in here <em>you can see.</em> Three walls of instruments watch the fog for you. A brass plate on the
+          door reads: <em>"You cannot fix what you cannot see."</em></h4>
+          <div class="palace-room"><span class="palace-icon">🏰</span><div><strong>The Fortress of the Three Towers</strong> — <span>Fault Tolerance &amp; High Availability (Day 22). Three watchtowers on separate power — they can't fall together.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">⚡</span><div><strong>The Fuse-Box Room</strong> — <span>The Circuit Breaker (Day 23). A panel of switches that trips open to save the house from a shorting appliance.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Front-Door / Bouncer Room</strong> — <span>Rate Limiting &amp; Throttling (Day 24). A bouncer with a clicker and a refilling bucket of tokens at the velvet rope.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🌫️</span><div><strong>The Foggy Courtyard</strong> — <span>Distributed System Failures (Day 25). Two towers separated by fog; you shout and get <strong>silence</strong> you can't interpret. The reason the next room exists.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🛰️</span><div><strong>The Mission-Control Room</strong> — <span>Observability (today). Three walls of instruments watching the patient-in-the-fog. <strong>Wall 1 — a bank of live gauges (📈 metrics)</strong> that beep when a vital sign leaves the safe zone ("<em>is it broken? when?</em>"). <strong>Wall 2 — a glowing scan where a drop of contrast dye (🩻 a trace) flows through service after service</strong>, lighting up the one that stalls ("<em>where?</em>"). <strong>Wall 3 — a wall of pinned index cards (📋 logs), each stamped with the same case-number (the trace ID)</strong>, so you can pull the exact cards for one request ("<em>why?</em>"). A single golden thread — the <strong>trace ID</strong> — runs between all three walls, letting you walk from a beeping gauge to the dye to the right index card in three steps. Carved on the console: <em>"metric → trace → log."</em></span></div></div>
+          <div class="palace-room"><span class="palace-icon">🔐</span><div><strong>The Next Room</strong> — <span>API Gateway &amp; Service Mesh (Day 27). The guarded reception desk where every request is greeted, checked, routed — and, naturally, traced.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Distributed Failures (Day 25)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Observability (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">API Gateway &amp; Service Mesh (Day 27)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Powers / connects to (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Fault Tolerance (Day 22)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Circuit Breaker (Day 23)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Rate Limiting (Day 24)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Event-Driven / Correlation IDs (Day 21)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Microservices (Phase 2)</span>
+        </div>
+        <p>Today is the <strong>"how do we see it?"</strong> that all of Week 4 has been quietly demanding. <strong>Fault
+        tolerance</strong> (Day 22) needs health signals to know when to fail over; the <strong>circuit breaker</strong> (Day 23)
+        is only useful if you <em>alert on its state</em>; <strong>rate limiting</strong> (Day 24) has to be watched via its 429
+        rate so a mis-set limiter doesn't cause its own outage; and yesterday's <strong>gray and partial failures</strong> (Day
+        25) are <em>only</em> catchable with the deep, real-user signals we built today — metrics on actual success rate and p99,
+        not a shallow health ping. It reaches back to <strong>event-driven architecture</strong> (Day 21), whose "no single stack
+        trace" problem is exactly what <strong>correlation IDs and traces</strong> solve. And it points straight ahead: the
+        <strong>API gateway and service mesh</strong> (Day 27) are where tracing, metrics, and logging often get injected for
+        free at the edges of every service — and observability becomes the nervous system of the <strong>microservices</strong>
+        world that opens Phase 2. Every reliability tool is blind without it.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"We have dashboards, so we have observability."</td><td>Dashboards are <strong>monitoring</strong> — answers to questions you predicted. Observability is being able to ask <em>new</em> questions after the fact. A wall of graphs you built last quarter won't answer "why is it only failing for gift-card orders?"</td></tr>
+          <tr><td>"Metrics, logs, and traces are three separate tools I can adopt one at a time and be fine."</td><td>Their power is in the <strong>workflow between them</strong> (metric→trace→log), which only works if a shared <strong>trace/correlation ID</strong> links all three. Three disconnected silos give you three dead ends, not one path to root cause.</td></tr>
+          <tr><td>"Just log everything at debug level, forever — more data is safer."</td><td>That's how you get a firehose you can't search and a bill bigger than your app. Volume without <strong>structure</strong> and <strong>sampling</strong> is noise. Log <em>structured</em> events, sample intelligently, set retention.</td></tr>
+          <tr><td>"Put <code>user_id</code> as a label on every metric so we can drill into any user."</td><td><strong>Cardinality explosion:</strong> one time-series per user melts your metrics database. High-cardinality fields (user, request, order ID) belong on <strong>logs and traces</strong>, not metric labels.</td></tr>
+          <tr><td>"The average latency is 50 ms, so we're fast."</td><td>Averages <strong>hide the tail</strong>. If p99 is 3 seconds, 1 in 100 users is furious — and on a page that makes 100 calls, nearly <em>every</em> user hits that tail. Always watch <strong>p95/p99</strong>, not the mean.</td></tr>
+          <tr><td>"Health check is green, so the service is observable/healthy."</td><td>A shallow <code>/health</code> ping is the <em>opposite</em> of observability — it's one predicted, aggregate signal. It's exactly what <strong>gray failures</strong> (Day 25) sail through. Trust real user error rate and tail latency.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ It's 2 a.m. An alert says checkout error rate jumped from 0.1% to 4%. Walk
+          through (1) the three signals of observability and the specific question each one answers, (2) the exact step-by-step
+          path you'd take from the alert to the root cause and which signal you use at each step, and (3) the one piece of "glue"
+          that makes that path possible — plus why a giant averaged dashboard alone would leave you stuck. (click to reveal)</div>
+          <div class="recall-answer"><strong>(1) The three signals and their questions:</strong> <em>Metrics</em> — cheap,
+          always-on numbers aggregated over time (error rate, p99 latency, requests/sec); they answer <strong>"is it broken, and
+          when?"</strong> and are what alerts fire on. <em>Traces</em> — the end-to-end waterfall of <em>one</em> request across
+          all the services it touches, built from timed spans; they answer <strong>"where is it broken?"</strong> (which
+          service/hop). <em>Logs</em> — detailed, structured, timestamped records of individual events; they answer
+          <strong>"why is it broken?"</strong> (the exact error/bad value).
+          <strong>(2) The path:</strong> <em>Detect</em> — the <strong>metric</strong> alert already fired (error rate up), so I
+          know <em>that</em> it's broken and roughly when. <em>Localize</em> — I pivot to <strong>traces</strong> from that time
+          window and read the waterfall; one span (say <code>payments</code>) is red or ballooning, so now I know <em>where</em>.
+          <em>Root-cause</em> — I click that span and jump to the <strong>log</strong> lines sharing its trace ID:
+          <code>err: "tax field null for category gift-card"</code> — now I know <em>why</em>, and ship the fix. Metric → trace →
+          log, three hops.
+          <strong>(3) The glue:</strong> a single <strong>trace ID / correlation ID</strong> minted at the front door and
+          propagated through every hop and stamped on every metric exemplar, span, and log line — that's what lets me jump between
+          the three for <em>one specific request</em>. Without it (and with only one big averaged error-rate graph), I'd know the
+          error rate is up but not which of a dozen services caused it or why — the aggregate <strong>averaged away</strong> the
+          detail — so I'd be back to SSHing into 40 boxes and grepping unstructured logs with no way to prove two lines belong to
+          the same request. That's monitoring without observability.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🔭 Google — Dapper &amp; the Golden Signals</div><p>Google's <strong>Dapper</strong> paper (2010) invented large-scale distributed tracing — trace IDs, spans, and sampling — and seeded nearly every tracing system since (Zipkin, Jaeger). Google's <strong>SRE book</strong> gave the industry the <strong>Four Golden Signals</strong> (latency, traffic, errors, saturation) and the SLI/SLO/error-budget discipline that turns metrics into promises.</p></div>
+          <div class="realworld-card"><div class="rw-company">🤝 OpenTelemetry (CNCF)</div><p><strong>OpenTelemetry (OTel)</strong> is the industry's answer to vendor lock-in: one vendor-neutral standard and set of libraries for emitting metrics, logs, and traces, with <strong>context propagation</strong> baked in (the W3C <code>traceparent</code> header). Instrument once with OTel and ship the data to Jaeger, Prometheus, Datadog, or Honeycomb — the correlation glue, standardized.</p></div>
+          <div class="realworld-card"><div class="rw-company">📊 Prometheus + Grafana &amp; Jaeger</div><p>The open-source backbone: <strong>Prometheus</strong> scrapes and stores metrics (pull-based, label-aware — and famously strict about cardinality), <strong>Grafana</strong> visualizes them, and <strong>Jaeger</strong> stores and renders trace waterfalls. Together they're the default free stack for the metric→trace→log workflow.</p></div>
+          <div class="realworld-card"><div class="rw-company">🍯 Honeycomb — Wide Events &amp; High Cardinality</div><p>Honeycomb (founded by ex-Facebook Scuba engineers) championed the <strong>"observability is not three pillars"</strong> view: emit one <em>arbitrarily-wide, structured event</em> per request with high-cardinality fields, and you can slice by anything — user, build, feature flag — to catch the unknown-unknowns metrics can't. It reframed the field around asking novel questions, not watching fixed dashboards.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is observability, and how does it differ from monitoring?</div>
+          <div class="fc-a">A: <strong>Observability</strong> is the ability to understand a system's internal state from the signals it emits — enough to answer questions you <em>didn't anticipate</em>, without shipping new code (unknown-unknowns). <strong>Monitoring</strong> is watching predefined dashboards/alerts for failure modes you <em>predicted</em> (known-unknowns). You need both; observability is what saves you in a novel incident.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Name the three signals and the single question each one answers best.</div>
+          <div class="fc-a">A: <strong>Metrics</strong> → "is it broken, and when?" (cheap, always-on, aggregate numbers you alert on). <strong>Traces</strong> → "where is it broken?" (one request's waterfall of spans across services). <strong>Logs</strong> → "why is it broken?" (detailed, structured, per-event records).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What ties metrics, logs, and traces together, and why does it matter?</div>
+          <div class="fc-a">A: A shared <strong>trace ID / correlation ID</strong>, minted at the front door and <strong>propagated through every hop</strong> and stamped on every signal. It's the glue that lets you pivot metric → trace → log for <em>one specific request</em>. Without it, the three signals are disconnected dead ends.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is a distributed trace made of, and what two things must every service do?</div>
+          <div class="fc-a">A: A trace is a tree of <strong>spans</strong> — each span is one operation with a start, duration, and parent — sharing one trace ID. Every service must (1) record its own span and (2) <strong>propagate the trace/span context</strong> onward (e.g. the <code>traceparent</code> header). Miss propagation on one hop and the trace breaks.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why can't you just add <code>user_id</code> as a label on your metrics?</div>
+          <div class="fc-a">A: <strong>Cardinality explosion.</strong> A metric label creates one time-series per distinct value; a per-user label with millions of users creates millions of series and overwhelms the metrics store. Keep metric labels low-cardinality (status, endpoint, region); put high-cardinality fields (user, request, order ID) on <strong>logs and traces</strong> instead.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Using the ICU image, match each instrument (vital-signs monitor, contrast dye, nurse's chart) to a signal and the question it answers.</li>
+          <li>Give the metric → trace → log debugging workflow, and say what each hop tells you (detect / localize / root-cause).</li>
+          <li>What is the one piece of "glue" that makes it possible to jump between the three signals for a single request?</li>
+          <li>Explain the difference between monitoring and observability in terms of known-unknowns vs unknown-unknowns.</li>
+          <li>List the Four Golden Signals, and say which one is the <em>leading</em> indicator and why.</li>
+          <li>Define cardinality explosion and explain which signal high-cardinality data belongs to.</li>
+          <li>What are head-based vs tail-based sampling, and what's the tradeoff of sampling at all?</li>
+          <li>Give one reason (from Day 25) that observability is <em>required</em> to catch gray/partial failures.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>you cannot fix what you cannot see — observability is the discipline of
+          emitting enough signal to answer questions you never planned for.</strong> It stands on three signals, best remembered
+          by the question each answers: <strong>metrics</strong> tell you <em>is it broken, and when</em> (cheap, always-on,
+          what you alert on); <strong>traces</strong> follow one request across every service to tell you <em>where</em>; and
+          <strong>logs</strong> give the detailed record of <em>why</em>. Their real power is the workflow between them —
+          <strong>metric → trace → log</strong> — made possible only by a shared <strong>trace/correlation ID</strong> threaded
+          through every hop. Watch the vital signs (latency, traffic, errors, saturation), always at the <strong>tail</strong>
+          (p99, not the average); keep metrics low-cardinality and push the rich detail to structured logs and traces; and
+          respect the real costs — cardinality, sampling, and a telemetry bill that can rival your app. Do it well and yesterday's
+          gray, ambiguous, four-hour mysteries become four-minute pivots from a graph to a trace to a log. Tomorrow (Day 27) we
+          reach the front desk of the microservices world — the <strong>API Gateway &amp; Service Mesh</strong>, where routing,
+          security, and this very telemetry get handled at the edge of every service.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-25.html">← Day 25: Distributed System Failures</a>
+        <a href="day-27.html" class="coming-soon-link">Day 27: API Gateway &amp; Service Mesh →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 26 of 90 — Observability: Logs, Metrics &amp; Traces</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── The Incident Room simulator ──────────────────────────────────────
+  var incident = 'latency';  // 'latency' | 'errors' | 'vip' | 'drift'
+  var tools = 'mlt';         // 'none' | 'm' | 'ml' | 'mlt'
+
+  var els = {
+    incT: document.getElementById('incident-toggle'),
+    toolT: document.getElementById('tools-toggle'),
+    detect: document.getElementById('qc-detect'), detectSub: document.getElementById('qc-detect-sub'),
+    where: document.getElementById('qc-where'), whereSub: document.getElementById('qc-where-sub'),
+    why: document.getElementById('qc-why'), whySub: document.getElementById('qc-why-sub'),
+    mttr: document.getElementById('m-mttr'),
+    blind: document.getElementById('m-blind'),
+    status: document.getElementById('sim-status')
+  };
+
+  // Which tools are present for each preset.
+  var HAS = {
+    none: { m:false, l:false, t:false },
+    m:    { m:true,  l:false, t:false },
+    ml:   { m:true,  l:true,  t:false },
+    mlt:  { m:true,  l:true,  t:true }
+  };
+
+  // Whether METRICS can even detect this incident.
+  // Aggregate incidents (latency/errors) show up in metrics; a single VIP and
+  // silent drift are invisible to aggregate metrics.
+  var METRIC_DETECTS = { latency:true, errors:true, vip:false, drift:false };
+
+  // A short "where" answer per incident, once traces localize it.
+  var WHERE_ANSWER = {
+    latency: 'the payments span is ballooning',
+    errors:  'the payments span is throwing',
+    vip:     "the VIP's trace dies at pricing",
+    drift:   'orders → inventory span silently drops'
+  };
+  var WHY_ANSWER = {
+    latency: 'a slow downstream DB query',
+    errors:  'a null tax field on gift-cards',
+    vip:     'a bad discount code path',
+    drift:   'a swallowed exception, no error surfaced'
+  };
+
+  function setVerdict(el, sub, cls, txt, subtxt) {
+    el.textContent = txt; el.className = 'qc-verdict ' + cls;
+    sub.textContent = subtxt;
+  }
+
+  function render() {
+    var h = HAS[tools];
+    var metricCanDetect = h.m && METRIC_DETECTS[incident];
+
+    // ── Detect (metrics) ──
+    if (!h.m) {
+      setVerdict(els.detect, els.detectSub, 'bad', '❌ No', 'No metrics — you only found out because customers complained.');
+    } else if (metricCanDetect) {
+      setVerdict(els.detect, els.detectSub, 'ok', '✅ Yes', 'The metric crossed its threshold and paged you — you know THAT and WHEN.');
+    } else {
+      // metrics exist but incident is invisible to aggregates
+      setVerdict(els.detect, els.detectSub, 'warn', '⚠ Missed', (incident === 'vip'
+        ? 'One user is a rounding error — the aggregate metric never budged.'
+        : 'Nothing errored, so no metric moved — the loss is silent.'));
+    }
+
+    // ── Localize (traces) ──
+    if (h.t) {
+      setVerdict(els.where, els.whereSub, 'ok', '✅ Yes', 'Trace waterfall: ' + WHERE_ANSWER[incident] + '.');
+    } else if (h.m || h.l) {
+      setVerdict(els.where, els.whereSub, 'warn', '⚠ Guesswork', 'No traces — you can only guess which of a dozen services is at fault.');
+    } else {
+      setVerdict(els.where, els.whereSub, 'bad', '❌ No', 'Blind — no way to tell where in the system it is.');
+    }
+
+    // ── Root cause (logs) ──
+    if (h.l) {
+      // logs give the "why" — but only quickly if you can localize (traces) or
+      // at least detect; still, structured logs eventually reveal the cause.
+      if (h.t) {
+        setVerdict(els.why, els.whySub, 'ok', '✅ Yes', 'Jump by trace ID to the log: ' + WHY_ANSWER[incident] + '.');
+      } else {
+        setVerdict(els.why, els.whySub, 'warn', '⚠ Slow', 'Logs hold the cause, but with no trace to point at, you grep by hand.');
+      }
+    } else {
+      setVerdict(els.why, els.whySub, 'bad', '❌ No', 'No logs — the exact cause is unknowable from the outside.');
+    }
+
+    // ── MTTR + blind + status ──
+    var mttr, mttrCls, blind, blindCls, statusCls, statusTxt;
+    var greens = 0;
+    if (metricCanDetect) greens++;
+    if (h.t) greens++;
+    if (h.l && h.t) greens++;
+
+    if (tools === 'none') {
+      mttr = 'Hours+'; mttrCls = 'bad'; blind = 'Totally'; blindCls = 'bad';
+      statusCls = 'q-status bad';
+      statusTxt = 'Flying completely blind. You learned about the incident from angry customers, and every diagnosis is SSH-and-guess. ' +
+        'This is the pre-observability dark age — exactly Devi’s 2 a.m.';
+    } else if (tools === 'm') {
+      if (metricCanDetect) {
+        mttr = 'Hours'; mttrCls = 'warn'; blind = 'Half'; blindCls = 'warn';
+        statusCls = 'q-status warn';
+        statusTxt = 'Metrics told you THAT it broke and WHEN — but with no traces or logs you can’t tell WHERE or WHY. ' +
+          'You know the building is on fire; you don’t know which room or what started it. Long, stressful debugging ahead.';
+      } else {
+        mttr = 'Hours+'; mttrCls = 'bad'; blind = 'Mostly'; blindCls = 'bad';
+        statusCls = 'q-status bad';
+        statusTxt = 'This incident is invisible to aggregate metrics (' + (incident === 'vip' ? 'a single user' : 'a silent, error-less loss') +
+          '), so your one tool didn’t even fire. High-cardinality traces/logs are the only things that would have caught it.';
+      }
+    } else if (tools === 'ml') {
+      if (metricCanDetect) {
+        mttr = '~30 min'; mttrCls = 'warn'; blind = 'A little'; blindCls = 'warn';
+        statusCls = 'q-status warn';
+        statusTxt = 'Metrics detected it and structured logs hold the cause — but with no traces you must guess WHICH service to look ' +
+          'in, then grep. Better than blind, still slower than it should be. The missing middle step is localization.';
+      } else {
+        mttr = 'Hours'; mttrCls = 'bad'; blind = 'Mostly'; blindCls = 'bad';
+        statusCls = 'q-status bad';
+        statusTxt = 'Your metrics never fired (this incident hides from aggregates), so you didn’t even start looking until a human ' +
+          'noticed. The logs could explain it — if only something told you where and when to look.';
+      }
+    } else { // mlt — full stack
+      if (metricCanDetect) {
+        mttr = '~4 min'; mttrCls = 'good'; blind = 'No'; blindCls = 'good';
+        statusCls = 'q-status ok';
+        statusTxt = 'The full loop: the METRIC paged you, you pivoted to the TRACE to see it’s ' + WHERE_ANSWER[incident] +
+          ', then jumped by trace ID to the LOG — ' + WHY_ANSWER[incident] + '. Metric → trace → log, three clicks, root cause found.';
+      } else {
+        mttr = '~10 min'; mttrCls = 'warn'; blind = 'Barely'; blindCls = 'warn';
+        statusCls = 'q-status warn';
+        statusTxt = 'Metrics couldn’t detect this one (it hides from aggregates), so no alarm fired — but once a human flagged it, ' +
+          'high-cardinality traces and logs pinpointed it instantly: ' + WHERE_ANSWER[incident] + ', because ' + WHY_ANSWER[incident] +
+          '. This is the exact case where traces/logs matter most and metrics are blind.';
+      }
+    }
+
+    els.mttr.textContent = mttr; els.mttr.className = 'val ' + mttrCls;
+    els.blind.textContent = blind; els.blind.className = 'val ' + blindCls;
+    els.status.className = statusCls; els.status.textContent = statusTxt;
+  }
+
+  function wire(container, attr, setter) {
+    Array.prototype.forEach.call(container.querySelectorAll('button'), function(btn){
+      btn.addEventListener('click', function(){
+        setter(btn.getAttribute(attr));
+        Array.prototype.forEach.call(container.querySelectorAll('button'), function(b){ b.classList.remove('active'); });
+        btn.classList.add('active');
+        render();
+      });
+    });
+  }
+  wire(els.incT, 'data-inc', function(v){ incident = v; });
+  wire(els.toolT, 'data-tools', function(v){ tools = v; });
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+
+  // Anchor diagram: one system in the fog, three instruments watching it, each
+  // labelled with the question it answers.
+  function drawInstrumentsDiagram() {
+    var svg = document.getElementById('instruments-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'Three instruments watching one system in the fog', '#e2e8f0', '13', '700');
+
+    // the system in the fog (center)
+    svg.appendChild(rs.rectangle(320, 150, 180, 70, { stroke:'#94a3b8', strokeWidth:1.6, roughness:1.4, fill:'#33415555', fillStyle:'hachure', hachureGap:6 }));
+    T(410, 182, '🖥️ your system', '#e2e8f0', '12', '700');
+    T(410, 200, '(partial failures hide here)', '#94a3b8', '8.5', '600');
+
+    // ── Metrics panel (left, blue) ──
+    svg.appendChild(rs.rectangle(40, 70, 210, 90, { stroke:'#38bdf8', strokeWidth:1.6, roughness:1.2, fill:'#38bdf814', fillStyle:'solid' }));
+    T(145, 90, '📈 METRICS', '#7dd3fc', '11.5', '800');
+    // little line-graph inside
+    svg.appendChild(rs.line(60, 140, 90, 128, { stroke:'#38bdf8', strokeWidth:1.4, roughness:0.8 }));
+    svg.appendChild(rs.line(90, 128, 120, 134, { stroke:'#38bdf8', strokeWidth:1.4, roughness:0.8 }));
+    svg.appendChild(rs.line(120, 134, 150, 108, { stroke:'#fb7185', strokeWidth:1.8, roughness:0.8 }));
+    svg.appendChild(rs.line(150, 108, 180, 116, { stroke:'#38bdf8', strokeWidth:1.4, roughness:0.8 }));
+    T(210, 128, 'beep!', '#fca5a5', '8.5', '700');
+    T(145, 152, 'IS it broken? WHEN?', '#bae6fd', '8.5', '700');
+    // arrow to system
+    svg.appendChild(rs.line(250, 150, 322, 168, { stroke:'#38bdf8', strokeWidth:1.4, roughness:1, strokeLineDash:[5,4] }));
+
+    // ── Traces panel (right, green) ──
+    svg.appendChild(rs.rectangle(570, 70, 210, 90, { stroke:'#22c55e', strokeWidth:1.6, roughness:1.2, fill:'#22c55e14', fillStyle:'solid' }));
+    T(675, 90, '🩻 TRACES', '#86efac', '11.5', '800');
+    // dye path through 3 organs/services
+    svg.appendChild(rs.line(590, 122, 760, 122, { stroke:'#22c55e', strokeWidth:1.6, roughness:1, strokeLineDash:[4,3] }));
+    ['#22c55e','#22c55e','#fb7185'].forEach(function(c, i){
+      svg.appendChild(rs.circle(600 + i*70, 122, 16, { stroke:c, strokeWidth:1.8, roughness:1.1, fill:c+'22', fillStyle:'solid' }));
+    });
+    T(740, 108, 'stalls here', '#fca5a5', '8', '700');
+    T(675, 152, 'WHERE is it broken?', '#bbf7d0', '8.5', '700');
+    svg.appendChild(rs.line(570, 150, 498, 168, { stroke:'#22c55e', strokeWidth:1.4, roughness:1, strokeLineDash:[5,4] }));
+
+    // ── Logs panel (bottom, purple) ──
+    svg.appendChild(rs.rectangle(305, 262, 210, 84, { stroke:'#a78bfa', strokeWidth:1.6, roughness:1.2, fill:'#a78bfa14', fillStyle:'solid' }));
+    T(410, 282, '📋 LOGS', '#c4b5fd', '11.5', '800');
+    T(410, 300, '14:03 err: tax field null', '#ddd6fe', '8', '600', true);
+    T(410, 314, 'trace_id: abc-123  order: 8842', '#a78bfa', '7.5', '600', true);
+    T(410, 334, 'WHY is it broken?', '#ddd6fe', '8.5', '700');
+    svg.appendChild(rs.line(410, 262, 410, 222, { stroke:'#a78bfa', strokeWidth:1.4, roughness:1, strokeLineDash:[5,4] }));
+
+    // the golden thread label
+    T(410, 244, '— one trace ID links all three —', '#fcd34d', '8.5', '800');
+  }
+
+  // Mechanism diagram: a distributed trace waterfall — one request across 4
+  // services, payments span long (the culprit), all sharing one trace ID.
+  function drawTraceDiagram() {
+    var svg = document.getElementById('trace-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 22, 'One request as a trace waterfall — trace_id: abc-123', '#e2e8f0', '13', '700');
+    T(410, 40, 'each bar is a SPAN: where it sits = when · how wide = how long', '#94a3b8', '9', '600');
+
+    // time axis
+    svg.appendChild(rs.line(210, 62, 790, 62, { stroke:'#475569', strokeWidth:1.2, roughness:1 }));
+    T(210, 56, '0 ms', '#64748b', '8', '600', false, 'start');
+    T(790, 56, '520 ms', '#64748b', '8', '600', false, 'end');
+
+    // spans: [label, x, width, color, dur, indent-note]
+    var base = 210, scale = 580/520; // px per ms across 520ms
+    var spans = [
+      { label:'gateway',   start:0,   dur:520, color:'#38bdf8', y:82,  note:'root span' },
+      { label:'orders',    start:20,  dur:470, color:'#22c55e', y:118, note:'' },
+      { label:'inventory', start:35,  dur:40,  color:'#22c55e', y:154, note:'fast ✓' },
+      { label:'payments',  start:90,  dur:360, color:'#fb7185', y:190, note:'← the culprit: 360 ms' },
+      { label:'pricing DB',start:110, dur:300, color:'#f59e0b', y:226, note:'slow query' },
+      { label:'email',     start:470, dur:18,  color:'#22c55e', y:262, note:'fast ✓' }
+    ];
+    spans.forEach(function(s){
+      var x = base + s.start*scale, w = Math.max(s.dur*scale, 6);
+      svg.appendChild(rs.rectangle(x, s.y, w, 22, { stroke:s.color, strokeWidth:1.6, roughness:1, fill:s.color+'22', fillStyle:'solid' }));
+      // label to the left
+      T(200, s.y+16, s.label, '#cbd5e1', '9.5', '700', true, 'end');
+      if (s.note) T(x + w + 8, s.y+16, s.note, s.color === '#fb7185' ? '#fca5a5' : '#94a3b8', '8.5', '700', false, 'start');
+    });
+
+    // bracket highlighting where the time went
+    svg.appendChild(rs.line(base + 90*scale, 214, base + 90*scale, 250, { stroke:'#fb7185', strokeWidth:1.2, roughness:1, strokeLineDash:[3,3] }));
+    svg.appendChild(rs.line(base + 450*scale, 214, base + 450*scale, 250, { stroke:'#fb7185', strokeWidth:1.2, roughness:1, strokeLineDash:[3,3] }));
+
+    // legend / conclusion
+    svg.appendChild(rs.rectangle(150, 300, 520, 62, { stroke:'#334155', strokeWidth:1.2, roughness:1, fill:'#0b112055', fillStyle:'solid' }));
+    T(410, 320, 'The waterfall answers "WHERE?" instantly: 360 of 520 ms is the payments span,', '#cbd5e1', '9.5', '700');
+    T(410, 338, 'and its child pricing-DB query. Click that span → its logs (same trace_id) → "WHY".', '#cbd5e1', '9.5', '700');
+    T(410, 354, 'Without the shared trace_id, these 6 spans are 6 unrelated log piles on 6 machines.', '#fbbf24', '8.5', '700');
+  }
+
+  function drawAll() { drawInstrumentsDiagram(); drawTraceDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
