@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 27: API Gateway &amp; Service Mesh | System Design Mastery</title>
+  <meta name="description" content="Yesterday we built the instruments to see inside a distributed system. But who enforces the rules at the edge, and who wires reliability into every internal call? Today: the two 'traffic infrastructures' of a microservice system. An API Gateway is the single smart front door for traffic entering your system (north-south) — it does authentication, routing, rate limiting, TLS termination, and request shaping so your services don't each reinvent them. A Service Mesh is a mesh of sidecar proxies beside every service that handles the traffic between services (east-west) — mutual TLS, retries, timeouts, load balancing, and tracing — pushed out of application code and into the platform, steered by a control plane. Learn north-south vs east-west traffic, what each layer owns, the sidecar/data-plane/control-plane model, gateway-vs-mesh tradeoffs, and when a mesh is overkill — taught through a grand-hotel anchor, a live 'move cross-cutting concerns out of your code' simulator, an Excalidraw-style architecture diagram, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* two-direction cards — colored left bar (north-south vs east-west) */
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.ns { border-left-color:#38bdf8; } .pillar-card.ew { border-left-color:#22c55e; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.ns h4 { color:#7dd3fc; } .pillar-card.ew h4 { color:#86efac; }
+    .pillar-card .answers { font-size:.8rem; font-weight:700; color:var(--text-primary); margin:.35rem 0; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    .pillar-card .eg { font-size:.75rem; color:var(--text-muted); margin-top:.45rem; }
+    .pillar-card .weak { font-size:.75rem; color:#fca5a5; margin-top:.35rem; }
+    /* numbered accent cards (gateway jobs) */
+    .signal-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .signal-card { background: var(--bg-card); border:1px solid var(--border); border-left:4px solid #fbbf24; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .signal-card .snum { font-size:.7rem; font-weight:800; color:#fbbf24; letter-spacing:.05em; }
+    .signal-card h4 { margin:.15rem 0 .35rem; font-size:.95rem; color:#fde68a; }
+    .signal-card p { margin:0; font-size:.82rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .mode-toggle.gw-toggle button.active { background:#0ea5e9; } .mode-toggle.mesh-toggle button.active { background:#16a34a; }
+    .toggle-row { display:flex; gap:1.25rem; flex-wrap:wrap; align-items:center; margin-bottom:.4rem; }
+    .toggle-row .tog-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; }
+    .slider-row { display:flex; align-items:center; gap:.75rem; margin:.5rem 0 1rem; flex-wrap:wrap; }
+    .slider-row input[type=range] { flex:1; min-width:180px; accent-color: var(--accent); }
+    .slider-row .sval { font-weight:800; color:var(--accent-light); font-size:.9rem; min-width:5.5rem; }
+    .prop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.75rem; margin:1rem 0; }
+    .prop-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.8rem 1rem; text-align:center; }
+    .prop-card .val { font-size:1.05rem; font-weight:800; line-height:1.3; }
+    .prop-card .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .prop-card .val.good { color:#22c55e; } .prop-card .val.bad { color:#fb7185; } .prop-card .val.warn { color:#fbbf24; } .prop-card .val.muted2 { color:#94a3b8; } .prop-card .val.blue { color:#7dd3fc; }
+    .q-status { text-align:center; font-weight:800; font-size:.92rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; line-height:1.5; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 27</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 27 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 4 — Reliability &amp; Security</span>
+    </div>
+    <h1>API Gateway &amp; Service Mesh<br><span style="color:var(--accent)">One Front Door, a Butler for Every Room</span></h1>
+    <p class="lead">
+      Once a system becomes a fleet of services, two ugly questions appear. First: <em>where do clients knock?</em> If every
+      phone app has to know the address of a dozen backend services — and each service re-implements login, TLS, and rate
+      limiting slightly differently — you have chaos at the edge. Second: <em>how do services talk to each other safely?</em>
+      When service A calls B calls C, who handles retries, encryption, timeouts, and tracing on <em>every one</em> of those
+      internal hops? Today we meet the two pieces of infrastructure that answer these questions. An <strong>API Gateway</strong>
+      is a single smart front door for traffic <em>entering</em> your system (<strong>north-south</strong>): it authenticates,
+      routes, rate-limits, terminates TLS, and shapes requests, so your services stop reinventing the edge. A <strong>Service
+      Mesh</strong> is a fleet of tiny <strong>sidecar</strong> proxies riding beside every service, handling traffic
+      <em>between</em> services (<strong>east-west</strong>): mutual TLS, retries, timeouts, load balancing, and tracing —
+      lifted out of your application code and into the platform, steered from a central <strong>control plane</strong>. The
+      through-line of the whole lesson: both exist to <strong>move cross-cutting concerns out of your business logic</strong> —
+      one at the edge, one between services. You'll learn north-south vs east-west traffic, exactly what each layer owns, the
+      sidecar / data-plane / control-plane model, how they wire in the observability you built yesterday, the gateway-vs-mesh
+      tradeoffs, and the crucial judgement call: when a service mesh is a superpower and when it's expensive overkill.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#directions">North-South vs East-West</a>
+        <a href="#gateway">What a Gateway Does</a>
+        <a href="#mesh">What a Mesh Does</a>
+        <a href="#anatomy">Anatomy of a Request</a>
+        <a href="#versus">Gateway vs Mesh</a>
+        <a href="#toolkit">The Toolkit</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🏨 🚪 🤵</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Picture a huge <strong>grand hotel</strong>. Hundreds of guests arrive from the street every minute, and the
+            hotel is full of departments — the kitchen, housekeeping, the spa, accounting, the concierge desk. Now imagine the
+            hotel had <em>no</em> front entrance: guests wandered in through any window they could find, each department invented
+            its own way of checking IDs, and there was no one to say "the spa is that way." Bedlam. So the hotel builds
+            <strong>one grand front door with a doorman</strong>. <em>Everyone</em> enters there. The doorman checks your
+            reservation (<strong>authentication</strong>), turns you away politely if the lobby is packed
+            (<strong>rate limiting</strong>), points you to the right floor (<strong>routing</strong>), and handles the messy
+            street-facing details — umbrellas, taxis, the language you speak — so the departments inside never have to. That
+            single manned front door is your <strong>API Gateway</strong>: it governs everything coming in from the
+            <em>outside world</em> (<strong>north-south</strong> traffic). But there's a second problem the doorman can't solve.
+            Inside the hotel, departments constantly call each other — the kitchen phones housekeeping, accounting phones the
+            spa. If every employee has to dial by hand, remember which lines are secure, redial when a call drops, and jot down
+            who called whom, they'll spend all day on the phone instead of doing their jobs. So the hotel gives <strong>every
+            single employee a personal assistant</strong> who sits right beside them and handles <em>all</em> their internal
+            calls: encrypting the line (<strong>mutual TLS</strong>), redialling if it drops (<strong>retries</strong>), hanging
+            up if no one answers in ten seconds (<strong>timeouts</strong>), picking the least-busy colleague to call
+            (<strong>load balancing</strong>), and logging every call (<strong>tracing</strong>). That army of personal
+            assistants — one beside each employee, all following rules set by the manager's office — is your <strong>Service
+            Mesh</strong>: it governs the traffic <em>between departments inside</em> (<strong>east-west</strong> traffic). Burn
+            in the image: <em>the API Gateway is the one grand front door with a doorman (traffic in from outside,
+            north-south); the service mesh is a personal assistant beside every employee handling internal calls (traffic
+            between services, east-west). Both exist so the departments can just do their real work.</em></p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="820" height="380" viewBox="0 0 820 380"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Splintering Sam</span> ran the backend for a fast-growing food-delivery app. Last
+            year it was one tidy program — a monolith — and life was simple: the mobile app called <em>one</em> address, and
+            login, encryption, and throttling were each written <em>once</em>. Then the company grew, and the monolith was
+            split into microservices: <code>users</code>, <code>restaurants</code>, <code>orders</code>, <code>payments</code>,
+            <code>delivery</code>, <code>search</code>, and more. That's when the trouble started.
+          </p>
+          <p>
+            First, the <strong>edge</strong> fell apart. The mobile team now had to know the address of every service, and the
+            app was littered with URLs. Worse, <em>each</em> service team had re-implemented authentication — and they'd done it
+            slightly differently. One checked the token on every route; one forgot to check it on a new endpoint entirely. TLS
+            certificates were managed in seven places. Three teams built their own rate limiter; four didn't bother. A security
+            audit found the hole in the one service that forgot. Sam realized the problem: <em>every service was solving the same
+            edge concerns, badly and inconsistently.</em>
+          </p>
+          <p>
+            So Sam put an <strong>API Gateway</strong> in front of everything. Now the mobile app called exactly <em>one</em>
+            address. The gateway checked the auth token <em>once</em>, at the door, and rejected anyone who failed before a
+            single backend service was even touched. It terminated TLS, enforced one consistent rate limit per customer, and
+            routed <code>/orders/*</code> to the orders service and <code>/search/*</code> to search. The mobile team stopped
+            caring where services lived. Seven inconsistent implementations of login collapsed into one. The edge was calm.
+          </p>
+          <p>
+            But calm at the door only revealed the mess <em>inside</em>. Now <code>orders</code> called <code>payments</code>
+            called <code>fraud</code> called <code>users</code> — a web of internal calls. And every one of those hops had the
+            <em>same</em> problems the edge just fixed: was the connection encrypted? Did anyone retry when a call failed? Was
+            there a timeout so a slow dependency couldn't hang the whole chain (remember Day 23's circuit breaker)? Did the
+            <code>trace_id</code> from yesterday's lesson actually get passed along? Each team was hand-coding retries and mTLS
+            and tracing into their service — in three different programming languages — and getting it subtly wrong. Sam was
+            watching the monolith's edge chaos reappear, this time <em>between</em> the services.
+          </p>
+          <p>
+            The fix was the same idea, pointed inward. Sam's platform team rolled out a <strong>service mesh</strong>: beside
+            every service, they deployed a tiny <strong>sidecar proxy</strong>. All of a service's inbound and outbound traffic
+            now flowed through its sidecar — and the sidecar handled mutual TLS (every internal call encrypted and
+            mutually-authenticated, automatically), retries with backoff, timeouts, smart load balancing, and emitting a span for
+            every call, all from configuration pushed by a central <strong>control plane</strong>. The application teams
+            deleted their hand-rolled networking code. A security policy — "all payment traffic must be mTLS" — became one config
+            line applied fleet-wide, in every language, with zero code changes. Sam finally had what the monolith had by accident
+            and microservices had destroyed: <strong>reliability and security as a property of the platform, not something each
+            team re-invents.</strong> One front door for the world; one assistant beside every service.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">Both an API gateway and a service mesh exist to <strong>pull cross-cutting concerns
+          out of your application code and into the platform</strong> — the difference is <em>which</em> traffic. An
+          <strong>API Gateway</strong> sits at the edge and governs <strong>north-south</strong> traffic (clients ↔ your
+          system): it's a single entry point that does authentication, routing, rate limiting, TLS termination, and
+          request/response shaping — one centralized chokepoint, so the outside world sees one contract and your services stop
+          reinventing the edge. A <strong>Service Mesh</strong> governs <strong>east-west</strong> traffic (service ↔ service,
+          <em>inside</em> the system): it deploys a <strong>sidecar proxy</strong> next to every service instance, and those
+          sidecars (the <strong>data plane</strong>) transparently handle mutual TLS, retries, timeouts, load balancing, and
+          tracing for every internal call, configured centrally by a <strong>control plane</strong> — decentralized enforcement,
+          one place to set policy. The one-line test: <em>is it traffic coming in from the outside world? → gateway. Is it
+          traffic between your own services? → mesh.</em> They're complementary, not competitors: a request typically enters
+          through the gateway (north-south) and then flows service-to-service through the mesh (east-west). And a mesh is not
+          free — it doubles your process count and adds a network hop, so you reach for it only when the number of services and
+          the reliability/security bar justify it.</div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Move the Cross-Cutting Concerns Out of Your Code</h2>
+        <div class="sim-box">
+          <p>You run a system of microservices. Each one needs <strong>edge concerns</strong> (authenticate the caller,
+          terminate TLS, rate-limit, expose one endpoint) <em>and</em> <strong>inter-service concerns</strong> (encrypt internal
+          calls with mTLS, retry, time out, trace). With no infrastructure, <em>every service re-implements all of it</em> — in
+          every language, inconsistently. Toggle a gateway and a mesh, drag the number of services, and watch where the
+          responsibility lives — and how much duplicated networking code you're on the hook to maintain.</p>
+
+          <div class="toggle-row"><span class="tog-label">API Gateway (handles the edge, north-south):</span></div>
+          <div class="mode-toggle gw-toggle" id="gw-toggle">
+            <button data-on="false" class="active">✖ No gateway</button>
+            <button data-on="true">🚪 Add API Gateway</button>
+          </div>
+
+          <div class="toggle-row"><span class="tog-label">Service Mesh (handles service-to-service, east-west):</span></div>
+          <div class="mode-toggle mesh-toggle" id="mesh-toggle">
+            <button data-on="false" class="active">✖ No mesh</button>
+            <button data-on="true">🤵 Add Service Mesh</button>
+          </div>
+
+          <div class="slider-row">
+            <span class="tog-label">Microservices:</span>
+            <input type="range" id="svc-slider" min="2" max="30" value="8" />
+            <span class="sval" id="svc-val">8 services</span>
+          </div>
+
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val" id="m-entry">—</div><div class="lbl">Client entry points</div></div>
+            <div class="prop-card"><div class="val" id="m-edge">—</div><div class="lbl">Who does the edge (authN/TLS/limit)</div></div>
+            <div class="prop-card"><div class="val" id="m-inter">—</div><div class="lbl">Who does mTLS / retries / tracing</div></div>
+            <div class="prop-card"><div class="val bad" id="m-copies">—</div><div class="lbl">Cross-cutting code you maintain</div></div>
+          </div>
+
+          <div class="q-status warn" id="sim-status">—</div>
+
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: start with <strong>both off</strong>
+          and drag services up to 30 — every service is its own front door <em>and</em> hand-codes its own mTLS/retries/tracing,
+          so the "code you maintain" number climbs to <em>~2× the service count</em> in inconsistent copies. Turn on the
+          <strong>gateway</strong>: client entry points collapse to <strong>1</strong> and the edge concerns move to one place —
+          but internal calls are still hand-rolled. Turn on the <strong>mesh</strong>: the inter-service concerns move into the
+          sidecars, so your application code carries <em>none</em> of it. With <strong>both on</strong>, your services do
+          <em>only business logic</em> — and notice the number no longer grows as you add services, because the platform, not
+          each team, owns the cross-cutting concerns.</p>
+        </div>
+      </section>
+
+      <section id="directions">
+        <h2>North-South vs East-West — The One Distinction to Anchor Everything</h2>
+        <p>Almost everything in this lesson snaps into place once you hold one mental picture: traffic in a system flows in two
+        directions, and each has its own piece of infrastructure. The names come from network diagrams, where clients sit at
+        the top and services spread out in a row below.</p>
+
+        <div class="pillar-grid">
+          <div class="pillar-card ns">
+            <h4>⬍ North-South traffic</h4>
+            <div class="answers">Clients ↔ your system — traffic crossing the <em>edge</em>, in and out of the boundary.</div>
+            <p>A phone app, a browser, or a partner's server calling your API from the <strong>outside world</strong>. It's
+            <em>untrusted</em> until proven otherwise, comes over the public internet, and needs one clear front door.</p>
+            <div class="eg">Governed by the <strong>API Gateway</strong> (and a load balancer / CDN in front). One central
+            chokepoint you fully control.</div>
+          </div>
+          <div class="pillar-card ew">
+            <h4>⬌ East-West traffic</h4>
+            <div class="answers">Service ↔ service — traffic <em>inside</em> your system, between your own components.</div>
+            <p>The <code>orders</code> service calling <code>payments</code> calling <code>fraud</code>. High volume, many hops
+            per user request, and in a big system it dwarfs north-south traffic. Historically trusted "because it's internal" —
+            a dangerous assumption.</p>
+            <div class="eg">Governed by the <strong>Service Mesh</strong> (sidecars). Decentralized — enforcement lives beside
+            every service, policy is set centrally.</div>
+          </div>
+        </div>
+
+        <p>Why the distinction earns its keep: the two directions have <em>different threat models and different scale</em>.
+        North-south is a small number of well-defined entry points facing a hostile internet, so you want one hardened door.
+        East-west is a huge, fast-changing web of internal calls where the old assumption "internal means safe" is exactly how
+        breaches spread — modern <strong>zero-trust</strong> security says encrypt and authenticate <em>every</em> hop, even
+        internal ones, which is precisely what a mesh automates. Keep the picture: <em>gateway guards the door; mesh guards the
+        hallways.</em></p>
+      </section>
+
+      <section id="gateway">
+        <h2>What an API Gateway Actually Does</h2>
+        <p>An API gateway is a reverse proxy (Day 3's idea) with a job description. It's the <em>one</em> address clients call,
+        and it takes on the edge concerns so that no backend service has to — and so they're done <strong>once, consistently</strong>.</p>
+        <div class="signal-grid">
+          <div class="signal-card">
+            <div class="snum">JOB 1</div>
+            <h4>🚪 Single entry &amp; routing</h4>
+            <p>One public endpoint. It inspects each request (path, host, headers) and <strong>routes</strong> it to the right
+            backend service — <code>/orders/*</code> → orders, <code>/search/*</code> → search. Clients never learn the internal map.</p>
+          </div>
+          <div class="signal-card">
+            <div class="snum">JOB 2</div>
+            <h4>🔑 AuthN &amp; AuthZ</h4>
+            <p>Validates the caller's identity — a JWT or API key (Day 29's topic) — <strong>once, at the door</strong>, and
+            rejects the unauthenticated before any backend is touched. Offloads a concern every service would otherwise redo.</p>
+          </div>
+          <div class="signal-card">
+            <div class="snum">JOB 3</div>
+            <h4>🌡 Rate limiting &amp; quotas</h4>
+            <p>Enforces "100 req/min per API key" at the edge (Day 24's token bucket), shielding every service behind it from a
+            flood and giving you one place to price and throttle traffic.</p>
+          </div>
+          <div class="signal-card">
+            <div class="snum">JOB 4</div>
+            <h4>🔒 TLS termination</h4>
+            <p>Decrypts incoming HTTPS at the edge so certificates and cipher config live in <em>one</em> place, not scattered
+            across every service. (It can re-encrypt onward — hand-off to the mesh.)</p>
+          </div>
+          <div class="signal-card">
+            <div class="snum">JOB 5</div>
+            <h4>🔀 Shaping &amp; aggregation</h4>
+            <p>Translates protocols (public REST → internal gRPC, Day 17), rewrites headers, and can <strong>aggregate</strong>
+            several backend calls into one response so a mobile app makes a single round trip.</p>
+          </div>
+          <div class="signal-card">
+            <div class="snum">JOB 6</div>
+            <h4>📈 Edge observability</h4>
+            <p>The natural place to <strong>stamp the <code>trace_id</code></strong> from yesterday's lesson, log every request,
+            and measure the Four Golden Signals for all traffic entering the system.</p>
+          </div>
+        </div>
+        <p>Two vocabulary notes interviewers love. A <strong>reverse proxy</strong> (like plain Nginx) forwards traffic and does
+        TLS/routing but doesn't understand your API; an <strong>API gateway</strong> is a reverse proxy that <em>also</em> knows
+        about auth, rate limits, quotas, and API-level routing — it's the proxy plus the policy. And the
+        <strong>Backend-for-Frontend (BFF)</strong> pattern is a gateway variant: a <em>separate</em> gateway per client type
+        (one for the mobile app, one for the web app, one for partners), each shaping responses for its own consumer instead of
+        one gateway trying to please everyone.</p>
+      </section>
+
+      <section id="mesh">
+        <h2>What a Service Mesh Actually Does</h2>
+        <p>A service mesh takes the exact same instinct — <em>lift cross-cutting concerns out of application code</em> — and
+        applies it to the traffic <strong>between</strong> your services. Its defining trick is the <strong>sidecar</strong>.</p>
+
+        <h3>The sidecar: a proxy that rides along</h3>
+        <p>Next to <em>every</em> service instance, the mesh deploys a small proxy process — the <strong>sidecar</strong> (Envoy
+        is the common one). Your service is told to send <em>all</em> its network traffic to its own sidecar, and all incoming
+        traffic arrives via that sidecar too. Your code thinks it's calling <code>payments</code> directly; really it's calling
+        its local sidecar, which calls the <em>payments</em> sidecar, which hands off to payments. Because <em>every</em> byte
+        between services now passes through a pair of proxies you control, the mesh can enforce policy on every hop
+        <strong>without touching your code or caring what language it's written in</strong>.</p>
+
+        <div class="flow-box">
+          <div class="flow-step"><span>🔒</span><div><strong>Automatic mutual TLS.</strong> Sidecars encrypt <em>and</em>
+          mutually authenticate every service-to-service call, issuing and rotating certificates for you. Zero-trust for
+          east-west traffic, with no crypto code in your service.</div></div>
+          <div class="flow-step"><span>🔁</span><div><strong>Retries, timeouts &amp; circuit breaking.</strong> The reliability
+          patterns from Days 22–25 — retry with backoff, per-call timeouts, circuit breakers, outlier ejection — configured once
+          and applied to every call, so a slow dependency can't hang the chain.</div></div>
+          <div class="flow-step"><span>⚖️</span><div><strong>Smart load balancing &amp; service discovery.</strong> The sidecar
+          knows every healthy instance of the callee and spreads load across them (least-request, round-robin), reacting to
+          health in real time.</div></div>
+          <div class="flow-step"><span>🧭</span><div><strong>Tracing &amp; metrics for free.</strong> Every sidecar emits a
+          span and golden-signal metrics for every hop — so yesterday's observability appears across your whole system
+          <em>without</em> each team instrumenting by hand.</div></div>
+          <div class="flow-step"><span>🚦</span><div><strong>Traffic control.</strong> Because it sits in the path, the mesh can
+          do canary releases, blue-green, and fault injection — "send 5% of traffic to v2," "inject 100ms of latency to test
+          resilience" — as pure config.</div></div>
+        </div>
+
+        <h3>Data plane vs control plane — the two halves of every mesh</h3>
+        <div class="flow-box">
+          <div class="flow-step"><span>🔧</span><div><strong>Data plane.</strong> The fleet of sidecar proxies that actually
+          carry your traffic and enforce the rules — mTLS, retries, load balancing, metrics. It's <em>distributed</em>: one
+          proxy per service instance, in the request path.</div></div>
+          <div class="flow-step"><span>🧠</span><div><strong>Control plane.</strong> The brain (e.g. Istio's
+          <code>istiod</code>). You don't put it in the request path; instead it holds your policy — "all payment traffic must be
+          mTLS," "retry orders→payments twice with 200ms timeout" — and <strong>pushes that configuration to every sidecar</strong>.
+          One place to set policy; every proxy enforces it.</div></div>
+        </div>
+        <p>That split is the whole elegance: <strong>centralized policy, decentralized enforcement.</strong> You change one rule
+        in the control plane and it takes effect across thousands of proxies, in every language, with no redeploy of your
+        services. The cost, which we'll weigh below, is that you're now running a proxy for <em>every</em> service instance.</p>
+      </section>
+
+      <section id="anatomy">
+        <h2>Anatomy of a Request — The Two Working Together</h2>
+        <p>Here's how a single user tap flows through both layers. The gateway handles the one north-south hop at the edge; the
+        mesh handles every east-west hop inside. Trace one request end-to-end:</p>
+
+        <div class="diagram-box">
+          <svg id="anatomy-diagram" width="820" height="440" viewBox="0 0 820 440"></svg>
+        </div>
+
+        <div class="code-label">The same instinct, pointed two ways</div>
+        <div class="code-panel"><span class="muted"># NORTH-SOUTH: one front door for the outside world (API gateway config)</span>
+route: <span class="s">"/orders/*"</span>  →  <span class="f">orders-service</span>
+  <span class="k">authn</span>:      require_valid_jwt        <span class="muted"># reject at the door</span>
+  <span class="k">rate_limit</span>: 100/min per api_key       <span class="muted"># Day 24</span>
+  <span class="k">tls</span>:        terminate                 <span class="muted"># certs live here, once</span>
+
+<span class="muted"># EAST-WEST: policy for every internal hop (mesh control plane → all sidecars)</span>
+mesh_policy:
+  <span class="k">mtls</span>:     STRICT                        <span class="muted"># encrypt + authenticate every call</span>
+  <span class="k">retries</span>:  attempts=2  per_try_timeout=200ms  <span class="b"># Days 22-23</span>
+  <span class="k">timeout</span>:  1s
+  <span class="k">tracing</span>:  propagate traceparent         <span class="muted"># Day 26, automatically</span></div>
+        <p>Notice that <em>none</em> of this lives in the orders, payments, or fraud source code. The edge rules live in the
+        gateway; the inter-service rules live in the mesh's control plane and are enforced by sidecars. Your services are left to
+        do the one thing only they can: the actual business logic.</p>
+      </section>
+
+      <section id="versus">
+        <h2>Gateway vs Mesh — When to Use Which</h2>
+        <p>They're often confused because both are "proxies that do networking for you." The clean way to keep them apart is the
+        traffic direction and the shape of the deployment.</p>
+        <table class="algo-table">
+          <tr><th>Dimension</th><th>API Gateway</th><th>Service Mesh</th></tr>
+          <tr><td>Traffic direction</td><td><strong>North-south</strong> — clients ↔ system (the edge)</td><td><strong>East-west</strong> — service ↔ service (inside)</td></tr>
+          <tr><td>Deployment shape</td><td><strong>Centralized</strong> — one (clustered) entry point</td><td><strong>Decentralized</strong> — a sidecar beside every service instance</td></tr>
+          <tr><td>Primary concerns</td><td>AuthN/Z, routing, rate limiting, TLS termination, request shaping, aggregation</td><td>mTLS, retries, timeouts, load balancing, tracing, traffic splitting</td></tr>
+          <tr><td>Who it faces</td><td>The <em>untrusted</em> outside world</td><td>Your <em>own</em> services (zero-trust internal)</td></tr>
+          <tr><td>Knows about</td><td>The public API contract &amp; clients</td><td>The internal service topology &amp; health</td></tr>
+          <tr><td>You need it when…</td><td><em>Always</em>, the moment you expose an API to clients</td><td>You have <em>many</em> services and need uniform reliability/security across their calls</td></tr>
+        </table>
+        <p>The most important nuance: <strong>they are not either/or.</strong> A mature system uses <em>both</em> — the gateway
+        for the edge and the mesh for the interior. A related pattern blurs the line: an <strong>ingress gateway</strong> is the
+        mesh's <em>own</em> front door (the mesh handling the north-south hop into the cluster), which is why teams running a mesh
+        sometimes let it absorb the API-gateway role too. But conceptually, keep the two jobs distinct: <em>door vs
+        hallways.</em></p>
+      </section>
+
+      <section id="toolkit">
+        <h2>The Toolkit</h2>
+        <p>You don't build these from scratch — mature options exist for each layer.</p>
+        <div class="family-grid">
+          <div class="family-card"><h4>🚪 API gateways (managed)</h4><p>Cloud-managed edge gateways with auth, throttling, and
+          routing built in.</p><div class="eg">AWS API Gateway, Google Cloud API Gateway, Azure API Management.</div></div>
+          <div class="family-card"><h4>🚪 API gateways (self-hosted)</h4><p>Run-them-yourself gateways, often on Nginx/Envoy,
+          rich in plugins.</p><div class="eg">Kong, Apigee, Tyk, KrakenD, Nginx / Envoy as a gateway.</div></div>
+          <div class="family-card"><h4>🤵 Service meshes</h4><p>Sidecar-based meshes with a control plane for policy, mTLS, and
+          traffic control.</p><div class="eg">Istio (Envoy-based), Linkerd, Consul Connect, AWS App Mesh.</div></div>
+          <div class="family-card"><h4>🔧 The sidecar proxy</h4><p>The data-plane workhorse most meshes and many gateways are
+          built on.</p><div class="eg">Envoy (CNCF) — the de-facto proxy of the cloud-native world.</div></div>
+          <div class="family-card"><h4>🧵 Sidecar-less meshes</h4><p>Newer designs that avoid a proxy per pod — a per-node proxy,
+          or eBPF in the kernel — to cut the sidecar's cost.</p><div class="eg">Istio ambient mode, Cilium Service Mesh (eBPF).</div></div>
+          <div class="family-card"><h4>🚦 Ingress controllers</h4><p>The Kubernetes front door that routes external traffic into
+          the cluster — a gateway's job in K8s terms (Day 62).</p><div class="eg">Nginx Ingress, Envoy Gateway, the Gateway API.</div></div>
+        </div>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>These layers are powerful, and the single most senior thing you can say about them is <em>when not to use them</em>.
+        Every capability is bought with complexity, latency, or a new failure mode.</p>
+
+        <h3>The gateway is a single point of failure — and a chokepoint</h3>
+        <p>If <em>all</em> traffic enters through one door and that door falls over, your whole system is unreachable — so the
+        gateway must be run as a highly-available, horizontally-scaled cluster (Day 22), never one box. It also adds one network
+        hop and can become a bottleneck or, organizationally, a place where too much logic accretes (the "smart gateway, dumb
+        services" anti-pattern). Keep it doing edge concerns, not business logic.</p>
+
+        <h3>A mesh doubles your moving parts</h3>
+        <p>A sidecar per service instance means you're now running <em>twice</em> as many processes, each using CPU and memory,
+        and adding a small latency tax (typically single-digit milliseconds) to <em>every</em> internal call. At scale that's a
+        real resource and cost line. It's the central reason sidecar-<em>less</em> meshes exist.</p>
+
+        <h3>Operational complexity is the real bill</h3>
+        <p>A service mesh is a sophisticated distributed system you now have to <em>operate</em> — a control plane to run and
+        upgrade, sidecars to inject and keep in sync, and a steep learning curve. Many teams have adopted Istio, drowned in its
+        complexity, and pulled it back out. The honest rule: <strong>a mesh pays off when you have <em>many</em> services (dozens+)
+        in <em>multiple languages</em> that all need uniform mTLS, retries, and tracing.</strong> With three services, a shared
+        library or the gateway alone is simpler, and a mesh is expensive overkill.</p>
+
+        <h3>Where does the retry live? (double-work danger)</h3>
+        <p>Once the mesh can retry, your application might <em>also</em> retry, and the gateway might retry too — three layers
+        each retrying the same failed call turns one error into a retry storm (Day 25's cascading failure). Decide <em>one</em>
+        owner per concern: usually let the mesh own transport retries and make sure the operation is <strong>idempotent</strong>
+        (a theme we'll hit again) so a retry is safe.</p>
+
+        <p style="margin-top:1rem;">The through-line: gateways and meshes trade <strong>added infrastructure and latency</strong>
+        for <strong>consistency, security, and reliability your teams don't have to hand-build.</strong> Reach for the gateway
+        the moment you have clients; reach for the mesh only when the number and diversity of services makes uniform east-west
+        policy worth the operational weight.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">🏨</span><div><strong>The Grand Lobby &amp; the Assistants</strong>
+          — <span>You leave yesterday's <em>glass-walled control room</em> and step into the mansion's <strong>grand
+          lobby</strong>. There's now exactly one <strong>front door with a uniformed doorman</strong> — every visitor from the
+          street is checked here (badge = auth), turned away if the lobby's full (rate limit), and pointed to the right wing
+          (routing). That doorman is the <strong>API Gateway</strong>, guarding all traffic from the outside
+          (<em>north-south</em>). Then you notice something new about the staff: <strong>beside every single worker stands a
+          quiet personal assistant</strong> who places all their internal calls — encrypting the line, redialling dropped calls,
+          hanging up on no-answer, and logging every conversation. Those assistants are the <strong>service mesh</strong> handling
+          all traffic <em>between</em> rooms (<em>east-west</em>), and up in the manager's office a single clipboard (the
+          <strong>control plane</strong>) sets the rules every assistant follows. Engraved over the door:
+          <em>"One door for the world, an assistant for every room — so the staff can just do their work."</em></span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Next Room</strong> — <span>Security
+          Fundamentals (Day 28). The doorman checks badges — but <em>what makes a badge trustworthy?</em> Next we go into the
+          vault: encryption, hashing, the CIA triad, and the threats every one of these layers is defending against.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Observability (Day 26)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">API Gateway &amp; Service Mesh (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Security Fundamentals (Day 28)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Pulls together</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Reverse Proxy / LB (Days 2–3)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Circuit Breaker (Day 23)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Rate Limiting (Day 24)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Tracing (Day 26)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Auth: OAuth &amp; JWT (Day 29)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Kubernetes (Day 62)</span>
+        </div>
+        <p>Today is where a whole week converges. The gateway is a specialized <strong>reverse proxy / load balancer</strong>
+        (Days 2–3) that also enforces the <strong>rate limiting</strong> of Day 24 and stamps the <strong>trace ID</strong> of
+        Day 26 at the edge. The service mesh <em>automates</em> the reliability toolkit you spent Week 4 learning — the
+        <strong>retries, timeouts, and circuit breaking</strong> of Days 22–23, made uniform across every internal hop, plus the
+        mTLS that answers the trust problem Day 25's failures exposed — and it emits Day 26's traces and golden signals for free.
+        It hands directly to <strong>Day 28–29</strong>: the gateway authenticates with the tokens (JWT/OAuth) you're about to
+        learn, and the mesh's mTLS is the zero-trust posture built on the security fundamentals up next. And both become concrete
+        infrastructure in Phase 3 when we reach <strong>Kubernetes</strong> (ingress controllers and Istio). This lesson is the
+        moment the individual reliability and observability tools stop being libraries you bolt on and become a
+        <strong>platform</strong> your services inherit.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"An API gateway and a service mesh do the same thing — pick one."</td><td>They handle <strong>different
+          traffic</strong>. The gateway governs <strong>north-south</strong> (clients↔system, the edge); the mesh governs
+          <strong>east-west</strong> (service↔service, inside). Mature systems run <em>both</em>.</td></tr>
+          <tr><td>"A service mesh is just an API gateway for internal calls."</td><td>Different shape entirely. A gateway is one
+          <strong>centralized</strong> entry point; a mesh is <strong>decentralized</strong> — a sidecar beside every service
+          instance, with a control plane setting policy. Centralized door vs distributed enforcement.</td></tr>
+          <tr><td>"Every microservice project needs a service mesh."</td><td>A mesh doubles your processes, adds latency, and is
+          a complex system to operate. With a handful of services it's <strong>overkill</strong>; it pays off at dozens of
+          services in multiple languages needing uniform mTLS/retries/tracing.</td></tr>
+          <tr><td>"Internal traffic is safe because it's behind the firewall."</td><td>That assumption is how breaches spread
+          laterally. <strong>Zero-trust</strong> says authenticate and encrypt <em>every</em> hop — exactly what a mesh's
+          automatic <strong>mTLS</strong> provides for east-west traffic.</td></tr>
+          <tr><td>"Put all the logic in the gateway so services stay dumb."</td><td>A gateway bloated with business logic
+          becomes a bottleneck and a deployment chokepoint (the "smart gateway" anti-pattern). Keep it to <em>edge</em> concerns;
+          business logic belongs in the services.</td></tr>
+          <tr><td>"The mesh retries for me, so I'll add retries in my code too, just in case."</td><td>Multiple layers each
+          retrying the same call causes a <strong>retry storm</strong> (Day 25). Pick <em>one</em> owner per concern and make the
+          operation <strong>idempotent</strong> so a retry is safe.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ Your company has split a monolith into 20 microservices in 3 languages. The
+          mobile team complains they have to call many endpoints and re-implement auth; the platform team is worried that
+          internal calls aren't encrypted and each service hand-codes retries and tracing differently. Which piece(s) of
+          infrastructure solve which problem, why, and what's the one distinction that tells them apart? Also: when would you
+          <em>not</em> add the mesh? (click to reveal)</div>
+          <div class="recall-answer"><strong>Two problems, two layers, one distinction.</strong>
+          <strong>(1) The edge problem → API Gateway (north-south).</strong> The mobile team's pain — many endpoints, duplicated,
+          inconsistent auth — is <em>traffic entering the system from the outside</em>. An API gateway gives clients <em>one</em>
+          entry point, authenticates the token <strong>once at the door</strong> (rejecting bad callers before any backend is
+          touched), enforces one consistent rate limit, terminates TLS in one place, and routes each path to the right service.
+          Seven inconsistent logins collapse into one; the mobile app stops caring where services live.
+          <strong>(2) The interior problem → Service Mesh (east-west).</strong> Unencrypted internal calls and each team
+          hand-coding retries/tracing is <em>traffic between your own services</em>. A mesh deploys a <strong>sidecar proxy</strong>
+          beside every instance; all inter-service traffic flows through the sidecars, which transparently add <strong>mutual
+          TLS</strong> (every internal hop encrypted and authenticated — zero-trust), retries with backoff, timeouts, load
+          balancing, and a trace span per hop — configured centrally by the <strong>control plane</strong> and enforced by the
+          distributed <strong>data plane</strong>, in every language, with <em>no application-code changes</em>. A one-line
+          policy ("payments must be mTLS") applies fleet-wide.
+          <strong>The distinguishing question:</strong> <em>is the traffic coming from the outside world (north-south → gateway)
+          or between my own services (east-west → mesh)?</em> Centralized door vs a decentralized assistant beside every service.
+          <strong>When NOT to add the mesh:</strong> if you had only 3 services, the mesh's cost — doubled process count, a
+          latency tax per hop, and a complex control plane to operate — would outweigh the benefit; a shared library or the
+          gateway alone would be simpler. A mesh earns its keep at <em>many</em> services in <em>multiple</em> languages needing
+          <em>uniform</em> security and reliability — which is exactly this scenario, so here it's justified.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🎬 Netflix — Zuul at the edge</div><p>Netflix open-sourced
+          <strong>Zuul</strong>, the API gateway fronting its streaming APIs: dynamic routing, auth, load shedding, and
+          resilience for billions of daily requests. Paired with Eureka (discovery) and Hystrix (circuit breaking, Day 23), it
+          was the template for the cloud-native edge — one smart, resilient front door for a massive microservice fleet.</p></div>
+          <div class="realworld-card"><div class="rw-company">🚗 Lyft — Envoy, born from pain</div><p>Lyft built
+          <strong>Envoy</strong> because its polyglot microservices each implemented networking differently and debugging
+          cross-service issues was agony. Envoy — a high-performance sidecar proxy — became the CNCF standard and the data plane
+          under Istio, AWS App Mesh, and many gateways. It's the single most important piece of software in this lesson.</p></div>
+          <div class="realworld-card"><div class="rw-company">☁️ Google &amp; IBM — Istio</div><p><strong>Istio</strong> (Google
+          + IBM + Lyft) pairs an Envoy data plane with the <code>istiod</code> control plane to deliver mTLS, traffic management,
+          and telemetry across a fleet. It's the most powerful — and famously the most complex — mesh, which is exactly why
+          lighter options (Linkerd) and sidecar-less designs (Istio <em>ambient</em>, Cilium) emerged.</p></div>
+          <div class="realworld-card"><div class="rw-company">🔗 Kong &amp; AWS — gateways as a product</div><p><strong>Kong</strong>
+          (an Nginx/Envoy-based, plugin-rich gateway) and <strong>AWS API Gateway</strong> (fully managed, with auth, throttling,
+          and usage plans built in) show the two flavors: self-hosted and cloud-managed. Both let a team get one consistent,
+          secured, observable edge without hand-building it — the north-south half of today's lesson as a service.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What's the core difference between an API gateway and a service mesh?</div>
+          <div class="fc-a">A: The <strong>traffic direction</strong>. An <strong>API gateway</strong> governs
+          <strong>north-south</strong> traffic (clients ↔ system, at the edge) from one centralized entry point. A <strong>service
+          mesh</strong> governs <strong>east-west</strong> traffic (service ↔ service, inside) via a decentralized sidecar proxy
+          beside every service instance. Both pull cross-cutting concerns out of app code; they're complementary, not
+          either/or.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Name four jobs an API gateway does at the edge.</div>
+          <div class="fc-a">A: Any of: <strong>single entry point &amp; routing</strong>, <strong>authentication/authorization</strong>
+          (once, at the door), <strong>rate limiting / quotas</strong>, <strong>TLS termination</strong>, request/response
+          <strong>shaping &amp; aggregation</strong> (incl. protocol translation), and <strong>edge observability</strong>
+          (stamping the trace ID, logging, golden signals).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is a sidecar, and what's the data plane vs the control plane?</div>
+          <div class="fc-a">A: A <strong>sidecar</strong> is a proxy deployed beside every service instance; all the service's
+          traffic flows through it. The <strong>data plane</strong> is the fleet of sidecars that carry traffic and enforce rules
+          (mTLS, retries, LB, metrics). The <strong>control plane</strong> is the brain that holds policy and pushes config to
+          every sidecar. Centralized policy, decentralized enforcement.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Give three reliability/security features a service mesh adds to east-west calls for free.</div>
+          <div class="fc-a">A: Any of: <strong>automatic mutual TLS</strong> (encrypt + authenticate every internal hop),
+          <strong>retries with backoff</strong>, <strong>timeouts &amp; circuit breaking</strong>, <strong>smart load balancing /
+          discovery</strong>, <strong>distributed tracing &amp; metrics</strong> per hop, and <strong>traffic splitting</strong>
+          (canary / fault injection) — all without changing application code, in any language.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: When is a service mesh NOT worth it?</div>
+          <div class="fc-a">A: When you have only a handful of services. A mesh doubles process count (a sidecar per instance),
+          adds a per-hop latency tax, and is a complex distributed system to operate. It pays off at <em>dozens</em> of services
+          in <em>multiple languages</em> needing <em>uniform</em> mTLS/retries/tracing; below that, a shared library or the
+          gateway alone is simpler.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Using the hotel image, explain the API gateway (front door + doorman) and the service mesh (an assistant beside every employee) — and which traffic direction each governs.</li>
+          <li>Define north-south vs east-west traffic, and say which infrastructure handles each and why their threat models differ.</li>
+          <li>List four jobs an API gateway does at the edge, and explain why doing auth "once, at the door" beats each service doing it.</li>
+          <li>What is a sidecar? Explain data plane vs control plane and the phrase "centralized policy, decentralized enforcement."</li>
+          <li>Name three things a mesh gives east-west calls for free, and tie two of them back to earlier Week 4 lessons.</li>
+          <li>Give the one-question test for gateway-vs-mesh, and explain why they're complementary rather than competing.</li>
+          <li>State when you would <em>not</em> adopt a service mesh, and name two concrete costs it imposes.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>an API gateway is the one smart front door for traffic entering your system
+          (north-south); a service mesh is a sidecar proxy beside every service handling traffic between services (east-west) —
+          and both exist to move cross-cutting concerns out of your business logic and into the platform.</strong> The gateway
+          centralizes the edge — authentication, routing, rate limiting, TLS termination, request shaping — so clients see one
+          contract and no service reinvents the edge. The mesh decentralizes enforcement — a data plane of sidecars adds mutual
+          TLS, retries, timeouts, load balancing, and tracing to every internal hop, configured once in a control plane and
+          applied fleet-wide in any language. The distinguishing question is always: <em>is this traffic from the outside world
+          (gateway) or between my own services (mesh)?</em> They're complementary — a request enters through the gateway and
+          then rides the mesh — but neither is free: the gateway must be highly available (it's a chokepoint), and a mesh doubles
+          your processes and demands real operational maturity, so reach for it only when many polyglot services justify uniform
+          east-west policy. Tomorrow (Day 28) we open the vault the doorman is protecting: the <strong>Security
+          Fundamentals</strong> — encryption, hashing, and the threats every one of these layers is built to stop.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-26.html">← Day 26: Observability — Logs, Metrics &amp; Traces</a>
+        <a href="day-28.html" class="coming-soon-link">Day 28: Security Fundamentals →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 27 of 90 — API Gateway &amp; Service Mesh</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── "Move cross-cutting concerns out of your code" simulator ──────────
+  var state = { gateway:false, mesh:false, services:8 };
+  var els = {
+    gw:     document.getElementById('gw-toggle'),
+    mesh:   document.getElementById('mesh-toggle'),
+    slider: document.getElementById('svc-slider'),
+    sval:   document.getElementById('svc-val'),
+    entry:  document.getElementById('m-entry'),
+    edge:   document.getElementById('m-edge'),
+    inter:  document.getElementById('m-inter'),
+    copies: document.getElementById('m-copies'),
+    status: document.getElementById('sim-status')
+  };
+
+  function setCell(el, text, cls) { el.textContent = text; el.className = 'val ' + cls; }
+
+  function render() {
+    var g = state.gateway, m = state.mesh, n = state.services;
+
+    // Client entry points
+    if (g) setCell(els.entry, '1 (the gateway)', 'good');
+    else   setCell(els.entry, n + ' (one per service)', 'bad');
+
+    // Who does the edge concerns
+    if (g) setCell(els.edge, '✅ Gateway — once', 'good');
+    else   setCell(els.edge, '❌ Each service, inconsistently', 'bad');
+
+    // Who does the inter-service concerns
+    if (m) setCell(els.inter, '✅ Sidecars — 0 app code', 'good');
+    else   setCell(els.inter, '❌ Hand-coded in each service', 'bad');
+
+    // Cross-cutting code copies you maintain: ~n for the edge if no gateway,
+    // ~n for inter-service if no mesh. Both handled by platform => 0.
+    var copies = (g ? 0 : n) + (m ? 0 : n);
+    var cls;
+    if (copies === 0)          cls = 'good';
+    else if (copies <= n)      cls = 'warn';
+    else                       cls = 'bad';
+    var label = copies === 0
+      ? '0 — the platform owns it'
+      : '~' + copies + ' inconsistent copies';
+    setCell(els.copies, label, cls);
+
+    // Status summary
+    var txt, scls;
+    if (g && m) {
+      txt = '🎯 Best case: clients hit one front door, sidecars secure and stitch every internal call, and your services carry ZERO cross-cutting code. Add more services — the number you maintain stays 0. Reliability & security are now a property of the platform.';
+      scls = 'q-status ok';
+    } else if (!g && !m) {
+      txt = '🕶️ The worst of Splintering Sam\'s world: no front door (clients juggle ' + n + ' endpoints) and every service hand-rolls auth, mTLS, retries, and tracing — inconsistently, in every language. The code you maintain grows with every service you add.';
+      scls = 'q-status bad';
+    } else if (g && !m) {
+      txt = '🚪 The edge is calm — one entry point, auth once at the door, one rate limit and TLS config. But INSIDE, service-to-service calls are still hand-coded and often unencrypted. Add the mesh to secure and standardize east-west traffic.';
+      scls = 'q-status warn';
+    } else {
+      txt = '🤵 Internal calls are now uniform and mTLS-encrypted via the sidecars — but you still have no single front door: clients juggle ' + n + ' endpoints and each service re-implements edge auth. Add the gateway to tame north-south traffic.';
+      scls = 'q-status warn';
+    }
+    els.status.textContent = txt;
+    els.status.className = scls;
+  }
+
+  function wireToggle(container, key) {
+    Array.prototype.forEach.call(container.querySelectorAll('button'), function(btn){
+      btn.addEventListener('click', function(){
+        state[key] = btn.getAttribute('data-on') === 'true';
+        Array.prototype.forEach.call(container.querySelectorAll('button'), function(b){
+          b.classList.toggle('active', b === btn);
+        });
+        render();
+      });
+    });
+  }
+  wireToggle(els.gw, 'gateway');
+  wireToggle(els.mesh, 'mesh');
+  els.slider.addEventListener('input', function(){
+    state.services = parseInt(els.slider.value, 10);
+    els.sval.textContent = state.services + ' services';
+    render();
+  });
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+
+  // Anchor diagram: the grand hotel — one front door (gateway, north-south)
+  // and a personal assistant beside every room (mesh, east-west).
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 22, 'One front door for the world · an assistant beside every room', '#e2e8f0', '13', '700');
+
+    // Outside world (clients)
+    T(80, 70, '🌍 Outside world', '#94a3b8', '10', '700');
+    ['📱','💻','🤝'].forEach(function(e,i){ T(45 + i*34, 96, e, '#cbd5e1', '15'); });
+    T(80, 118, 'clients', '#64748b', '8.5', '600');
+
+    // north-south arrow into the gateway
+    svg.appendChild(rs.line(130, 96, 205, 96, { stroke:'#38bdf8', strokeWidth:1.8, roughness:1 }));
+    T(168, 86, 'N–S', '#7dd3fc', '8', '700');
+
+    // API Gateway — the single front door
+    svg.appendChild(rs.rectangle(210, 60, 90, 250, { stroke:'#38bdf8', strokeWidth:1.8, roughness:1.1, fill:'#38bdf810', fillStyle:'solid' }));
+    T(255, 84, '🚪', '#fff', '18');
+    T(255, 108, 'API', '#7dd3fc', '11', '700');
+    T(255, 122, 'GATEWAY', '#7dd3fc', '11', '700');
+    T(255, 150, 'authN', '#bae6fd', '8.5', '600');
+    T(255, 166, 'routing', '#bae6fd', '8.5', '600');
+    T(255, 182, 'rate limit', '#bae6fd', '8.5', '600');
+    T(255, 198, 'TLS term', '#bae6fd', '8.5', '600');
+    T(255, 296, 'north-south', '#94a3b8', '8', '700');
+
+    // The building interior with services + sidecars
+    svg.appendChild(rs.rectangle(340, 52, 458, 266, { stroke:'#334155', strokeWidth:1.4, roughness:1, fill:'#22c55e08', fillStyle:'solid' }));
+    T(569, 70, '🏨 Inside the building — the Service Mesh (east-west)', '#86efac', '10.5', '700');
+
+    // control plane
+    svg.appendChild(rs.rectangle(600, 82, 180, 34, { stroke:'#a78bfa', strokeWidth:1.5, roughness:1, fill:'#a78bfa14', fillStyle:'solid' }));
+    T(690, 103, '🧠 control plane (policy)', '#c4b5fd', '9', '700');
+
+    // service + sidecar pairs
+    var svcs = [
+      ['orders',    360, 150],
+      ['payments',  520, 150],
+      ['fraud',     680, 150],
+      ['users',     360, 245],
+      ['search',    520, 245],
+      ['delivery',  680, 245]
+    ];
+    svcs.forEach(function(s){
+      var x = s[1], y = s[2];
+      // service box
+      svg.appendChild(rs.rectangle(x, y, 76, 44, { stroke:'#e2e8f0', strokeWidth:1.4, roughness:1, fill:'#1e293b', fillStyle:'solid' }));
+      T(x + 38, y + 20, s[0], '#e2e8f0', '9', '700');
+      T(x + 38, y + 34, 'svc', '#64748b', '7.5', '600');
+      // sidecar (assistant) attached
+      svg.appendChild(rs.rectangle(x + 78, y + 8, 20, 28, { stroke:'#22c55e', strokeWidth:1.4, roughness:1, fill:'#22c55e22', fillStyle:'solid' }));
+      T(x + 88, y + 26, '🤵', '#fff', '11');
+      // dashed control line from control plane
+      svg.appendChild(rs.line(690, 116, x + 88, y + 6, { stroke:'#a78bfa', strokeWidth:0.9, roughness:0.8, strokeLineDash:[3,3] }));
+    });
+
+    // east-west arrows between sidecars (illustrative)
+    svg.appendChild(rs.line(478, 172, 520, 172, { stroke:'#22c55e', strokeWidth:1.6, roughness:1 }));
+    svg.appendChild(rs.line(638, 172, 680, 172, { stroke:'#22c55e', strokeWidth:1.6, roughness:1 }));
+    svg.appendChild(rs.line(398, 194, 398, 245, { stroke:'#22c55e', strokeWidth:1.6, roughness:1 }));
+    T(500, 300, 'sidecar 🤵 beside every service — mTLS · retries · tracing on every east-west hop', '#86efac', '8.5', '700');
+
+    // gateway hands off into the building
+    svg.appendChild(rs.line(300, 172, 358, 172, { stroke:'#38bdf8', strokeWidth:1.8, roughness:1 }));
+
+    T(410, 344, 'Gateway = the door (north-south) · Mesh = an assistant per room (east-west) — cross-cutting concerns leave your code', '#cbd5e1', '9.5', '700');
+    T(410, 364, 'so the services can just do their real work.', '#94a3b8', '9', '600');
+  }
+
+  // Anatomy diagram: one request through both layers, north-south then east-west.
+  function drawAnatomyDiagram() {
+    var svg = document.getElementById('anatomy-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 22, 'One user tap: north-south through the gateway, east-west through the mesh', '#e2e8f0', '12.5', '700');
+
+    // client
+    T(70, 96, '📱', '#fff', '22');
+    T(70, 124, 'mobile app', '#94a3b8', '9', '700');
+
+    // north-south hop
+    svg.appendChild(rs.line(110, 100, 190, 100, { stroke:'#38bdf8', strokeWidth:2, roughness:1 }));
+    T(150, 90, 'HTTPS', '#7dd3fc', '8', '700');
+    T(150, 132, 'north-south', '#38bdf8', '8.5', '700');
+
+    // gateway
+    svg.appendChild(rs.rectangle(195, 66, 120, 130, { stroke:'#38bdf8', strokeWidth:1.8, roughness:1.1, fill:'#38bdf810', fillStyle:'solid' }));
+    T(255, 90, '🚪 API GATEWAY', '#7dd3fc', '9.5', '700');
+    T(255, 112, '① verify JWT', '#bae6fd', '8.5', '600');
+    T(255, 128, '② rate limit', '#bae6fd', '8.5', '600');
+    T(255, 144, '③ terminate TLS', '#bae6fd', '8.5', '600');
+    T(255, 160, '④ route /orders', '#bae6fd', '8.5', '600');
+    T(255, 178, 'stamp trace_id', '#fcd34d', '8', '700');
+
+    // hop into the mesh (orders)
+    svg.appendChild(rs.line(315, 130, 372, 130, { stroke:'#38bdf8', strokeWidth:2, roughness:1 }));
+
+    // ── mesh region ──
+    svg.appendChild(rs.rectangle(360, 60, 430, 300, { stroke:'#334155', strokeWidth:1.3, roughness:1, fill:'#22c55e08', fillStyle:'solid' }));
+    T(575, 78, '🏨 Service Mesh — every hop below is east-west (⬌)', '#86efac', '9.5', '700');
+
+    // control plane
+    svg.appendChild(rs.rectangle(600, 90, 175, 30, { stroke:'#a78bfa', strokeWidth:1.4, roughness:1, fill:'#a78bfa14', fillStyle:'solid' }));
+    T(687, 109, '🧠 control plane', '#c4b5fd', '9', '700');
+
+    // helper to draw a service+sidecar block
+    function svcBlock(x, y, name) {
+      svg.appendChild(rs.rectangle(x, y, 90, 50, { stroke:'#e2e8f0', strokeWidth:1.4, roughness:1, fill:'#1e293b', fillStyle:'solid' }));
+      T(x + 45, y + 22, name, '#e2e8f0', '9.5', '700');
+      T(x + 45, y + 38, 'business logic', '#64748b', '7.5', '600');
+      // sidecar
+      svg.appendChild(rs.rectangle(x - 26, y + 10, 22, 30, { stroke:'#22c55e', strokeWidth:1.4, roughness:1, fill:'#22c55e22', fillStyle:'solid' }));
+      T(x - 15, y + 29, '🤵', '#fff', '11');
+      // control-plane dashed line
+      svg.appendChild(rs.line(687, 120, x - 15, y + 8, { stroke:'#a78bfa', strokeWidth:0.8, roughness:0.8, strokeLineDash:[3,3] }));
+    }
+    svcBlock(410, 150, 'orders');
+    svcBlock(410, 270, 'payments');
+    svcBlock(660, 210, 'fraud');
+
+    // east-west hop orders -> payments (through sidecars)
+    svg.appendChild(rs.line(430, 200, 430, 270, { stroke:'#22c55e', strokeWidth:1.8, roughness:1 }));
+    T(300, 236, 'orders → payments', '#86efac', '8', '700', false, 'start');
+    // orders -> fraud
+    svg.appendChild(rs.line(500, 175, 634, 225, { stroke:'#22c55e', strokeWidth:1.8, roughness:1 }));
+
+    // annotation: what the sidecars add on each east-west hop
+    svg.appendChild(rs.rectangle(560, 285, 218, 66, { stroke:'#22c55e', strokeWidth:1.4, roughness:1, fill:'#22c55e10', fillStyle:'solid' }));
+    T(669, 303, 'each ⬌ hop, via sidecars:', '#86efac', '8.5', '700');
+    T(669, 318, '🔒 mTLS · 🔁 retry+timeout', '#bbf7d0', '8.5', '600');
+    T(669, 333, '⚖️ load balance · 🧭 trace span', '#bbf7d0', '8.5', '600');
+    T(669, 347, '— zero app code', '#fcd34d', '8', '700');
+
+    T(410, 384, 'Gateway does the ONE north-south hop at the edge; the mesh does EVERY east-west hop inside — services hold only business logic.', '#cbd5e1', '9', '700');
+  }
+
+  function drawAll() { drawAnchorDiagram(); drawAnatomyDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
