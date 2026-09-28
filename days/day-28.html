@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 28: Security Fundamentals | System Design Mastery</title>
+  <meta name="description" content="Yesterday the doorman checked badges at the gate — but what makes a badge trustworthy in the first place? Today we open the vault. Security Fundamentals: the CIA triad (Confidentiality, Integrity, Availability) that names what you're protecting; the three cryptographic tools every system leans on — encryption (reversible, keeps secrets), hashing (one-way, proves nothing changed and stores passwords), and digital signatures (proves who sent it and that it wasn't altered); symmetric vs asymmetric keys and how PKI/certificates let strangers trust each other; how to store passwords safely with salted slow hashing; and the mindset — defense in depth, least privilege, and zero trust — that assumes every layer will eventually be attacked. Taught through a castle-and-vault anchor, a live 'harden the system and watch the attacks bounce off' simulator, Excalidraw-style diagrams, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* CIA triad cards — colored left bar per pillar */
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.c { border-left-color:#818cf8; } .pillar-card.i { border-left-color:#fbbf24; } .pillar-card.a { border-left-color:#22c55e; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.c h4 { color:#a5b4fc; } .pillar-card.i h4 { color:#fde68a; } .pillar-card.a h4 { color:#86efac; }
+    .pillar-card .answers { font-size:.8rem; font-weight:700; color:var(--text-primary); margin:.35rem 0; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    .pillar-card .eg { font-size:.75rem; color:var(--text-muted); margin-top:.45rem; }
+    .pillar-card .weak { font-size:.75rem; color:#fca5a5; margin-top:.35rem; }
+    /* numbered accent cards (crypto tools / principles) */
+    .signal-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .signal-card { background: var(--bg-card); border:1px solid var(--border); border-left:4px solid #fbbf24; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .signal-card .snum { font-size:.7rem; font-weight:800; color:#fbbf24; letter-spacing:.05em; }
+    .signal-card h4 { margin:.15rem 0 .35rem; font-size:.95rem; color:#fde68a; }
+    .signal-card p { margin:0; font-size:.82rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: #ef4444; color:#fff; }
+    .def-row { display:flex; gap:.5rem; flex-wrap:wrap; margin:.4rem 0 1.1rem; }
+    .def-chip { border:1px solid var(--border); background:var(--bg-card); color:var(--text-muted); font-weight:700; font-size:.8rem; padding:.5rem .85rem; border-radius:9px; cursor:pointer; transition:all .15s; display:inline-flex; align-items:center; gap:.4rem; }
+    .def-chip.on { background:#16a34a; border-color:#16a34a; color:#fff; }
+    .toggle-row { display:flex; gap:1.25rem; flex-wrap:wrap; align-items:center; margin-bottom:.4rem; }
+    .toggle-row .tog-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; }
+    .prop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.75rem; margin:1rem 0; }
+    .prop-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.8rem 1rem; text-align:center; }
+    .prop-card .val { font-size:1.05rem; font-weight:800; line-height:1.3; }
+    .prop-card .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .prop-card .val.good { color:#22c55e; } .prop-card .val.bad { color:#fb7185; } .prop-card .val.warn { color:#fbbf24; } .prop-card .val.muted2 { color:#94a3b8; } .prop-card .val.blue { color:#7dd3fc; }
+    .q-status { text-align:center; font-weight:800; font-size:.92rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; line-height:1.5; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 28</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 28 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 4 — Reliability &amp; Security</span>
+    </div>
+    <h1>Security Fundamentals<br><span style="color:var(--accent)">The Vault Behind the Front Door</span></h1>
+    <p class="lead">
+      Yesterday the doorman at the gate checked everyone's badge. But that raises a deeper question the doorman can't
+      answer: <em>what makes a badge trustworthy at all?</em> How do two strangers who've never met agree on a secret over a
+      wire anyone can tap? How do you keep a password safe even after an attacker steals your entire database? How do you
+      know a message wasn't quietly altered on its way to you? Today we open the vault. Security isn't one feature you bolt
+      on at the end — it's a way of thinking that runs through <em>every</em> layer of a system. We start with the
+      <strong>CIA triad</strong> — <strong>Confidentiality</strong>, <strong>Integrity</strong>, and
+      <strong>Availability</strong> — the three things you're always protecting. Then we meet the three tools that do almost
+      all the work: <strong>encryption</strong> (reversible — keeps secrets), <strong>hashing</strong> (one-way — proves
+      nothing changed, and safely stores passwords), and <strong>digital signatures</strong> (prove <em>who</em> sent
+      something and that it wasn't touched). We'll see how <strong>symmetric vs asymmetric</strong> keys and
+      <strong>certificates (PKI)</strong> let total strangers trust each other, exactly how to store a password so a stolen
+      database is nearly worthless, and the mindset that separates a senior engineer from a junior one:
+      <strong>defense in depth</strong>, <strong>least privilege</strong>, and <strong>zero trust</strong> — designing as if
+      every single layer will eventually be breached.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#triad">The CIA Triad</a>
+        <a href="#crypto">The Three Crypto Tools</a>
+        <a href="#keys">Keys &amp; Certificates</a>
+        <a href="#passwords">Storing Passwords Safely</a>
+        <a href="#anatomy">Anatomy of a Secure Request</a>
+        <a href="#principles">Security Principles</a>
+        <a href="#threats">Common Threats</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🏰 🔒 💎</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Picture a <strong>castle guarding the crown jewels</strong>. The jewels — your users' data — sit in a
+            <strong>vault</strong> at the very center. A thief who wants them has to get past <em>layer after layer</em>: a
+            wide <strong>moat</strong>, then thick <strong>outer walls</strong>, then armed <strong>guards</strong> checking
+            everyone inside, then finally the vault's <strong>combination lock</strong>. No single wall is assumed to be
+            perfect — the whole point is that even if the thief scales one wall, three more stand behind it. That's
+            <strong>defense in depth</strong>: many independent layers, because you plan for each one to eventually fail.
+            Now look at what the castle is actually protecting. Three things. First, the jewels must stay
+            <strong>secret</strong> — only the king's key opens the vault. That's <strong>Confidentiality</strong>, and the
+            tool is the <strong>lock</strong> (<em>encryption</em>). Second, every royal scroll leaving the castle carries a
+            <strong>wax seal</strong> pressed with the king's signet ring — if the seal is broken or the ring is wrong, you
+            know instantly the message was tampered with or forged. That's <strong>Integrity</strong> and
+            <strong>authenticity</strong>, and the tools are the <strong>fingerprint and the seal</strong> (<em>hashing and
+            digital signatures</em>). Third, the drawbridge has to stay <em>down for allies</em> even while under siege —
+            a castle no one can enter has failed its people just as surely as one that's been robbed. That's
+            <strong>Availability</strong>. Together these three — <strong>keep it secret, keep it unaltered, keep it
+            reachable</strong> — are the <strong>CIA triad</strong>, the north star of everything security. Burn in the
+            image: <em>a castle of many walls (defense in depth) guarding jewels that must stay secret (Confidentiality =
+            the lock/encryption), sealed against tampering (Integrity = the fingerprint &amp; wax seal = hashing &amp;
+            signatures), and still reachable by its people (Availability). Assume every wall will be attacked — so build
+            more than one.</em></p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="820" height="400" viewBox="0 0 820 400"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Plaintext Pat</span> shipped a beloved little app fast. Users signed up, and to
+            keep things "simple" Pat stored their passwords in the database exactly as typed — <code>hunter2</code>,
+            <code>letmein</code>, right there in a column called <code>password</code>. Traffic ran over plain
+            <strong>HTTP</strong> because HTTPS "was a hassle to set up." Internal services trusted each other completely —
+            after all, they were behind the company firewall. It worked. It was fast to build. And it was a disaster waiting
+            for a trigger.
+          </p>
+          <p>
+            The trigger came on café Wi-Fi. A user logged in over the coffee-shop network, and someone at the next table was
+            quietly <strong>sniffing the traffic</strong>. Because there was no encryption on the wire, that person read the
+            username and password in plaintext as clearly as a postcard. That alone was bad. But it got catastrophically
+            worse: months later, an attacker found a hole in an unrelated service and <strong>dumped the whole database</strong>.
+            Every password, in plaintext. Within hours those email-and-password pairs were being tried on banks, email
+            providers, and other sites — because people reuse passwords — and Pat's breach became <em>dozens</em> of
+            breaches. Pat learned the hard way that <em>"it's internal" is not a security model</em>, and that
+            <em>a database is stolen sooner or later — the only question is what the thief gets when it happens.</em>
+          </p>
+          <p>
+            Rebuilding, Pat stopped thinking in features and started thinking in the <strong>CIA triad</strong>. First,
+            <strong>Confidentiality</strong>: every connection now used <strong>TLS</strong> (HTTPS), so traffic on the wire
+            became unreadable scramble — the café eavesdropper would now see only ciphertext. Second, and the lesson that
+            stung most, passwords. Pat never stored a password again. Instead each one went through a <strong>salted, slow
+            hash</strong> (bcrypt): a one-way function that turns <code>hunter2</code> into
+            <code>$2b$12$Nq7…</code> and <em>cannot be reversed</em>. Now even a full database dump gives the attacker
+            useless gibberish — there's nothing to "decrypt," because a hash was never encryption to begin with.
+          </p>
+          <p>
+            Then <strong>Integrity</strong>: the tokens Pat's services passed around got <strong>digitally signed</strong>,
+            so a client couldn't quietly change <code>role=user</code> to <code>role=admin</code> without the signature
+            failing — any tampering was caught instantly. And to make sure clients were really talking to Pat's server and
+            not an impostor on that same café network, the app validated the server's <strong>certificate</strong> against
+            trusted authorities — the mechanism that lets a stranger prove who they are.
+          </p>
+          <p>
+            Finally, Pat threw out "internal means safe." Every service now had to <em>prove</em> its identity to every
+            other service (<strong>zero trust</strong>), each ran with only the permissions it strictly needed
+            (<strong>least privilege</strong> — the reporting service could <em>read</em> orders but never
+            <em>delete</em> them), and defenses were <strong>layered</strong> so that no single failure meant game over.
+            The next time an attacker probed the system, they hit a wall — and behind it, another wall. Pat finally
+            understood the sentence that separates senior engineers from juniors: <strong>security isn't a feature you add;
+            it's an assumption you design around — that every layer will, eventually, be attacked.</strong>
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">Security is about protecting three things — the <strong>CIA triad</strong>:
+          <strong>Confidentiality</strong> (only the right people can read it), <strong>Integrity</strong> (no one altered
+          it without detection), and <strong>Availability</strong> (it stays reachable). You defend them with three
+          cryptographic tools that are easy to confuse and must be kept straight: <strong>encryption</strong> is
+          <em>reversible</em> and keeps secrets (you can decrypt with the key); <strong>hashing</strong> is <em>one-way</em>
+          and proves nothing changed — it's how you store passwords, and you can <em>never</em> get the original back;
+          <strong>digital signatures</strong> prove <em>who</em> sent something and that it wasn't tampered with. Two flavors
+          of encryption: <strong>symmetric</strong> (one shared secret key — fast, but how do two strangers agree on it?)
+          and <strong>asymmetric</strong> (a public key anyone can use to encrypt or verify, and a private key only you hold
+          to decrypt or sign — this is what makes <strong>TLS</strong> and <strong>certificates</strong> possible, letting
+          strangers trust each other). Above the tools sits the mindset: <strong>defense in depth</strong> (many independent
+          layers because each will eventually fail), <strong>least privilege</strong> (grant the minimum access needed), and
+          <strong>zero trust</strong> (never trust a request just because it's "internal" — verify every time). The one-line
+          test: <em>am I keeping it secret (encrypt), proving it's unchanged (hash / sign), or proving who sent it
+          (sign / certificate)?</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Harden the System, Watch the Attacks Bounce</h2>
+        <div class="sim-box">
+          <p>You run Plaintext Pat's app <em>before</em> the rebuild: no defenses on. Pick an attacker's move below, then
+          switch on security layers one at a time and watch whether the attack succeeds. Each attack is stopped by
+          <em>one</em> specific defense — the goal is to feel, viscerally, that a defense you didn't turn on is a door left
+          open.</p>
+
+          <div class="toggle-row"><span class="tog-label">The attacker tries to…</span></div>
+          <div class="mode-toggle" id="attack-toggle">
+            <button data-atk="eavesdrop" class="active">🕵️ Eavesdrop on the wire</button>
+            <button data-atk="stealdb">💾 Crack the stolen password DB</button>
+            <button data-atk="tamper">✂️ Tamper with a request</button>
+            <button data-atk="mitm">🎭 Impersonate your server</button>
+            <button data-atk="stealdisk">🗄️ Read PII off a stolen disk</button>
+          </div>
+
+          <div class="toggle-row"><span class="tog-label">Defenses you've switched on:</span></div>
+          <div class="def-row" id="def-row">
+            <button class="def-chip" data-def="tls">🔒 TLS (encrypt in transit)</button>
+            <button class="def-chip" data-def="hashing">#️⃣ Salted slow password hashing</button>
+            <button class="def-chip" data-def="integrity">✍️ Integrity check (MAC / signature)</button>
+            <button class="def-chip" data-def="cert">📜 Certificate validation (PKI)</button>
+            <button class="def-chip" data-def="atrest">🗝️ Encryption at rest</button>
+          </div>
+
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val blue" id="m-goal">—</div><div class="lbl">Attacker's goal</div></div>
+            <div class="prop-card"><div class="val" id="m-defense">—</div><div class="lbl">The defense that stops it</div></div>
+            <div class="prop-card"><div class="val" id="m-hardened">0 / 5</div><div class="lbl">Layers hardened</div></div>
+          </div>
+
+          <div class="q-status bad" id="sim-status">—</div>
+
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: leave <strong>all defenses off</strong>
+          and click through the five attacks — every single one succeeds, which is exactly Pat's breach. Now turn on the one
+          matching defense for each attack and watch it flip to <em>blocked</em>. The lesson isn't that one tool is magic —
+          it's that <strong>each threat needs its own layer</strong>. Miss one and that door stays wide open, no matter how
+          many others you've locked. (Real-world nuance: <strong>TLS actually bundles confidentiality, integrity, and server
+          authentication together</strong> — we split them here so you can see each job clearly.)</p>
+        </div>
+      </section>
+
+      <section id="triad">
+        <h2>The CIA Triad — What You're Actually Protecting</h2>
+        <p>Before any tool, name the goal. Almost every security decision maps to protecting one of three properties. Miss
+        one and you have a real, if less obvious, security failure — a system no one can reach is broken even if its secrets
+        are perfectly safe.</p>
+
+        <div class="pillar-grid">
+          <div class="pillar-card c">
+            <h4>🔒 Confidentiality</h4>
+            <div class="answers">Only authorized people can read the data.</div>
+            <p>Keeping secrets secret — on the wire and on disk. The main tool is <strong>encryption</strong>, backed by
+            access control (authN/authZ, Day 29).</p>
+            <div class="eg">Broken by: eavesdropping, a stolen unencrypted database, an over-broad permission.</div>
+          </div>
+          <div class="pillar-card i">
+            <h4>🪬 Integrity</h4>
+            <div class="answers">The data wasn't altered — and you can prove it.</div>
+            <p>Detecting any tampering, accidental or malicious. Tools: <strong>hashing</strong> (checksums), <strong>MACs</strong>,
+            and <strong>digital signatures</strong> (which also prove <em>who</em>).</p>
+            <div class="eg">Broken by: a man-in-the-middle flipping a value, a corrupted file, a forged token.</div>
+          </div>
+          <div class="pillar-card a">
+            <h4>⛲ Availability</h4>
+            <div class="answers">The system stays reachable when legitimate users need it.</div>
+            <p>Security's third leg, and the one engineers forget. Defended by everything in Week 4 — redundancy, rate
+            limiting, DDoS protection, circuit breakers.</p>
+            <div class="eg">Broken by: a DDoS flood, a ransomware lockout, an outage that denies service.</div>
+          </div>
+        </div>
+
+        <p>Why hold all three at once? Because they <em>trade off</em>. Encrypt everything and lose the key → perfect
+        confidentiality, zero availability. Make a system trivially reachable by everyone → great availability, no
+        confidentiality. Senior security work is balancing the triad for <em>your</em> threats, not maximizing one. A fourth
+        idea rides alongside integrity — <strong>authenticity</strong> (proving <em>who</em> an actor really is) and
+        <strong>non-repudiation</strong> (they can't later deny it) — both delivered by digital signatures. Keep the picture:
+        <em>secret, unaltered, reachable.</em></p>
+      </section>
+
+      <section id="crypto">
+        <h2>The Three Cryptographic Tools</h2>
+        <p>Nearly all of applied security is three primitives used well. The single most common interview stumble is
+        confusing <em>encryption</em> with <em>hashing</em> — so nail the difference: <strong>encryption is a locked box you
+        can reopen with the key; hashing is a fingerprint you can never turn back into the finger.</strong></p>
+        <div class="signal-grid">
+          <div class="signal-card">
+            <div class="snum">TOOL 1</div>
+            <h4>🔒 Encryption — reversible secrecy</h4>
+            <p>Scrambles data with a <strong>key</strong> so only a key-holder can unscramble it. <strong>Two-way</strong>:
+            encrypt → ciphertext → decrypt → original. Use it for <em>secrets you need back later</em>: traffic on the wire
+            (TLS), data on disk, secrets in a config store. <em>Never</em> for passwords.</p>
+          </div>
+          <div class="signal-card">
+            <div class="snum">TOOL 2</div>
+            <h4>#️⃣ Hashing — one-way fingerprint</h4>
+            <p>Maps any input to a fixed-size digest that <strong>can't be reversed</strong>, where the tiniest input change
+            flips the whole output. Same input always → same digest. Use it to <em>verify without storing the original</em>:
+            password storage, file/data integrity checks, deduplication. (SHA-256 for integrity; bcrypt/argon2 for passwords.)</p>
+          </div>
+          <div class="signal-card">
+            <div class="snum">TOOL 3</div>
+            <h4>✍️ Digital signatures — who + unaltered</h4>
+            <p>The sender signs with their <strong>private key</strong>; anyone verifies with the matching <strong>public
+            key</strong>. A valid signature proves two things at once: the message <em>wasn't tampered with</em>
+            (integrity) <em>and</em> it really came from that sender (authenticity). It's what makes certificates and signed
+            tokens trustworthy.</p>
+          </div>
+        </div>
+        <p>A close cousin of the signature is the <strong>MAC</strong> (message authentication code, e.g. HMAC): like a
+        signature it proves integrity + authenticity, but it uses a <em>shared secret key</em> instead of a public/private
+        pair — faster, but both sides must already share the secret. Rule of thumb: <strong>HMAC when both parties share a
+        key; a digital signature when the verifier only has your public key.</strong></p>
+
+        <div class="diagram-box">
+          <svg id="tools-diagram" width="820" height="330" viewBox="0 0 820 330"></svg>
+        </div>
+      </section>
+
+      <section id="keys">
+        <h2>Keys &amp; Certificates — How Strangers Come to Trust Each Other</h2>
+        <p>Encryption needs keys, and there are two families. The difference is the whole reason HTTPS between total
+        strangers is even possible.</p>
+
+        <h3>Symmetric vs asymmetric</h3>
+        <table class="algo-table">
+          <tr><th>Dimension</th><th>Symmetric</th><th>Asymmetric (public-key)</th></tr>
+          <tr><td>Keys</td><td><strong>One shared secret</strong> key encrypts and decrypts</td><td>A <strong>key pair</strong>: public (share freely) + private (never share)</td></tr>
+          <tr><td>Speed</td><td>Very fast — good for bulk data</td><td>Much slower — good for small payloads &amp; setup</td></tr>
+          <tr><td>The hard part</td><td><strong>Key distribution</strong>: how do two strangers agree on the secret without an eavesdropper hearing it?</td><td>Solves distribution — you can hand out the public key in the open</td></tr>
+          <tr><td>Examples</td><td>AES, ChaCha20</td><td>RSA, ECC / Elliptic Curve, Diffie-Hellman</td></tr>
+        </table>
+
+        <p>The magic of asymmetric keys: <strong>what one key locks, only the other unlocks.</strong> Encrypt with someone's
+        <em>public</em> key → only their <em>private</em> key can decrypt (secrecy). Sign with your <em>private</em> key →
+        anyone with your <em>public</em> key can verify it was you (authenticity). This is how TLS starts a connection:
+        asymmetric keys are used briefly to <em>safely agree on</em> a fast symmetric key, then the rest of the conversation
+        uses the speedy symmetric cipher. Best of both — <em>asymmetric to bootstrap trust, symmetric to move data.</em></p>
+
+        <h3>Certificates and PKI — trusting a public key</h3>
+        <p>One problem remains. When your browser gets a public key claiming to be <code>bank.com</code>, how does it know an
+        attacker didn't substitute <em>their</em> public key? The answer is a <strong>certificate</strong>: a document that
+        binds a public key to an identity (<code>bank.com</code>), <strong>digitally signed by a Certificate Authority
+        (CA)</strong> your device already trusts. Your browser ships with a list of trusted CAs; it checks the CA's signature
+        on the certificate, and if it's valid, it trusts the key. That chain of trust — CAs vouching for identities — is
+        <strong>PKI (Public Key Infrastructure)</strong>. It's exactly the "certificate validation" toggle in the simulator,
+        and it's what stops the café impostor from impersonating your bank. <strong>mTLS</strong> from yesterday's mesh is
+        just this in both directions: client <em>and</em> server each present a certificate.</p>
+      </section>
+
+      <section id="passwords">
+        <h2>Storing Passwords Safely — The Canonical Example</h2>
+        <p>This is the single most-asked applied-security question, and it ties the tools together. The rule is blunt:
+        <strong>never store passwords, and never encrypt them — hash them.</strong> Here's why, and how, step by step.</p>
+        <div class="flow-box">
+          <div class="flow-step"><span>❌</span><div><strong>Plaintext.</strong> Store <code>hunter2</code> as-is. One
+          database leak and every account — plus every <em>other</em> site where the user reused that password — is
+          compromised. This was Pat's original sin.</div></div>
+          <div class="flow-step"><span>❌</span><div><strong>Encryption.</strong> Tempting, but wrong: encryption is
+          reversible, so the decryption key lives <em>somewhere</em> — and whoever steals the database can usually steal the
+          key too. You don't ever need the original password back; you only need to check a guess. So don't make it
+          recoverable.</div></div>
+          <div class="flow-step"><span>⚠️</span><div><strong>Plain fast hash (MD5/SHA-256).</strong> One-way, good — but too
+          fast and unsalted. Attackers precompute <strong>rainbow tables</strong> of common passwords' hashes and reverse
+          yours by lookup; and identical passwords produce identical hashes, exposing patterns.</div></div>
+          <div class="flow-step"><span>✅</span><div><strong>Salted, slow hash (bcrypt / scrypt / argon2).</strong> Add a
+          random <strong>salt</strong> to each password before hashing — so identical passwords get different hashes and
+          rainbow tables are useless — and use a <strong>deliberately slow</strong> algorithm so brute-forcing billions of
+          guesses becomes economically impossible. This is the correct answer.</div></div>
+        </div>
+
+        <div class="code-label">Signup and login — never the plaintext, only the salted slow hash</div>
+        <div class="code-panel"><span class="muted"># SIGN UP — store only the salted, slow hash (bcrypt), never the password</span>
+salt   = <span class="f">random_bytes</span>()                 <span class="muted"># unique per user</span>
+digest = <span class="f">bcrypt</span>(password, salt, <span class="k">cost</span>=<span class="n">12</span>)  <span class="muted"># slow on purpose</span>
+db.<span class="f">save</span>(user, digest)                    <span class="muted"># salt is stored inside the digest</span>
+
+<span class="muted"># LOG IN — hash the guess the same way and compare, in constant time</span>
+ok = bcrypt.<span class="f">verify</span>(guess, db.<span class="f">load</span>(user).digest)
+<span class="k">if</span> ok: <span class="s">"welcome"</span>   <span class="muted"># we NEVER decrypted anything — a hash can't be reversed</span></div>
+        <p>Two finishing touches senior engineers add: a per-user salt (above) <em>plus</em> optionally a global secret
+        <strong>pepper</strong> kept outside the database, and <strong>rate limiting + MFA</strong> so that even a correct
+        password guess is throttled and a second factor is required. Notice the whole design assumes the database
+        <em>will</em> be stolen — and makes the theft nearly worthless anyway. That is defense in depth applied to one field.</p>
+      </section>
+
+      <section id="anatomy">
+        <h2>Anatomy of a Secure Request — The Tools Working Together</h2>
+        <p>Watch a single login flow and see all three tools cooperate. Confidentiality on the wire, authenticity of the
+        server, integrity of the token, and a hash guarding the password — each doing exactly one job.</p>
+        <div class="flow-box">
+          <div class="flow-step"><span>📜</span><div><strong>1. Verify the server (PKI + signature).</strong> The client
+          opens TLS; the server presents a <strong>certificate</strong>. The client checks the <strong>CA's digital
+          signature</strong> on it — proving this really is <code>bank.com</code>, not the café impostor.
+          (<em>Authenticity.</em>)</div></div>
+          <div class="flow-step"><span>🤝</span><div><strong>2. Agree on a key (asymmetric → symmetric).</strong> Using
+          public-key crypto, the two sides safely agree on a fast <strong>symmetric session key</strong> without any
+          eavesdropper learning it.</div></div>
+          <div class="flow-step"><span>🔒</span><div><strong>3. Encrypt the traffic (symmetric).</strong> The password
+          travels inside the TLS tunnel as ciphertext. The café sniffer sees only scramble.
+          (<em>Confidentiality.</em>)</div></div>
+          <div class="flow-step"><span>#️⃣</span><div><strong>4. Check the password (hashing).</strong> The server hashes the
+          submitted password with the stored salt and compares digests — it never decrypts anything, because there's nothing
+          to decrypt.</div></div>
+          <div class="flow-step"><span>✍️</span><div><strong>5. Issue a signed token (signature).</strong> On success the
+          server returns a <strong>signed</strong> session token. If the client edits <code>role=user</code>→<code>admin</code>,
+          the signature fails and the server rejects it. (<em>Integrity + authenticity</em> — tomorrow's JWT.)</div></div>
+        </div>
+        <div class="code-label">Each tool does exactly one job</div>
+        <div class="code-panel"><span class="muted"># CONFIDENTIALITY — reversible, keeps secrets on the wire &amp; on disk</span>
+tls: <span class="k">encrypt</span>(traffic, session_key)      <span class="muted"># decryptable with the key</span>
+
+<span class="muted"># INTEGRITY / AUTHENTICITY — prove unaltered &amp; who sent it</span>
+token.<span class="k">sig</span> = <span class="f">sign</span>(payload, server_private_key)  <span class="b"># verify with public key</span>
+
+<span class="muted"># PASSWORD — one-way, NEVER decrypted, only re-hashed &amp; compared</span>
+stored = <span class="f">bcrypt</span>(password, salt)            <span class="muted"># no key can reverse this</span></div>
+      </section>
+
+      <section id="principles">
+        <h2>Security Principles — The Mindset Above the Tools</h2>
+        <p>Tools are necessary but not sufficient. These principles are how senior engineers <em>reason</em> about security —
+        and they show up in every design review.</p>
+        <div class="family-grid">
+          <div class="family-card"><h4>🧅 Defense in depth</h4><p>Never rely on one control. Layer independent defenses so a
+          single failure isn't a breach — the castle's moat, walls, guards, and vault.</p><div class="eg">WAF + TLS + authZ + encrypted DB + least privilege, all at once.</div></div>
+          <div class="family-card"><h4>🔑 Least privilege</h4><p>Grant every user, service, and token the <em>minimum</em>
+          access it needs, and nothing more — so a compromise has a small blast radius.</p><div class="eg">The reports service can read orders, never delete them.</div></div>
+          <div class="family-card"><h4>🚫 Zero trust</h4><p>"Internal" is not a security boundary. Authenticate and authorize
+          <em>every</em> request, even service-to-service — the assumption Pat learned the hard way.</p><div class="eg">mTLS between services (Day 27); verify every hop.</div></div>
+          <div class="family-card"><h4>🛑 Secure by default / fail closed</h4><p>The safe option is the default; when something
+          errors, <em>deny</em> access rather than allow it.</p><div class="eg">A permission check that throws should block, not wave the user through.</div></div>
+          <div class="family-card"><h4>📉 Minimize attack surface</h4><p>Fewer open ports, endpoints, and dependencies = fewer
+          ways in. Turn off what you don't use.</p><div class="eg">Close unused ports; don't expose the admin panel to the internet.</div></div>
+          <div class="family-card"><h4>🧩 Don't roll your own crypto</h4><p>Use vetted, battle-tested libraries and protocols.
+          Amateur crypto is where breaches hide.</p><div class="eg">Use TLS, bcrypt, and a real auth library — not a homemade cipher.</div></div>
+        </div>
+      </section>
+
+      <section id="threats">
+        <h2>Common Threats — What You're Defending Against</h2>
+        <p>You can't defend what you can't name. These are the workhorse attacks every backend engineer should recognize —
+        the core of a simple <strong>threat model</strong> (ask of each feature: <em>what could go wrong, and what stops
+        it?</em>).</p>
+        <table class="algo-table">
+          <tr><th>Threat</th><th>What it is</th><th>The defense</th></tr>
+          <tr><td>Eavesdropping / MITM</td><td>Reading or altering traffic on the network</td><td>TLS (encryption + cert validation)</td></tr>
+          <tr><td>Credential theft / stuffing</td><td>Stolen passwords replayed across sites</td><td>Salted slow hashing, MFA, rate limits</td></tr>
+          <tr><td>SQL injection</td><td>Malicious input treated as a query command</td><td>Parameterized queries; validate/escape input</td></tr>
+          <tr><td>XSS (cross-site scripting)</td><td>Attacker's script runs in a victim's browser</td><td>Output encoding, Content-Security-Policy</td></tr>
+          <tr><td>CSRF</td><td>A site tricks a logged-in user's browser into acting</td><td>Anti-CSRF tokens, SameSite cookies</td></tr>
+          <tr><td>Broken access control</td><td>Users reach data/actions they shouldn't</td><td>Server-side authZ on every request (Day 29), least privilege</td></tr>
+          <tr><td>DDoS</td><td>Flooding to deny service (attacks availability)</td><td>Rate limiting (Day 24), CDN/scrubbing, autoscaling</td></tr>
+        </table>
+        <p>The common thread in the input-based attacks (injection, XSS) is one timeless rule: <strong>never trust input.</strong>
+        All the categories above map onto industry checklists like the <strong>OWASP Top 10</strong> — worth a browse — but
+        the mental model matters more than the list: for every feature, walk each leg of the CIA triad and ask what breaks
+        it and which layer catches it.</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>Security is never free, and the most senior thing you can say is where it <em>costs</em> — because a control
+        applied blindly can hurt more than the threat it addresses.</p>
+
+        <h3>Security vs usability vs performance</h3>
+        <p>Every control trades against the other legs. Force a 32-character password rotated weekly and users write it on a
+        sticky note — you <em>lowered</em> security by fighting usability. Encrypt and hash everything on the hot path and you
+        pay latency. The craft is proportionality: strong controls where the data is sensitive, light touch where it isn't.</p>
+
+        <h3>Key management is the real problem</h3>
+        <p>Crypto rarely fails because the math broke; it fails because a <strong>key leaked</strong> — committed to a repo,
+        logged, or left in an environment variable. Secrets need a real home (a KMS / secrets manager), rotation, and tight
+        access. "Where does the key live, and who can read it?" is the question that decides whether your encryption is real.</p>
+
+        <h3>The human layer &amp; the supply chain</h3>
+        <p>The most common breach isn't a cracked cipher — it's <strong>phishing</strong>, a leaked token, or a compromised
+        dependency you pulled from a package registry. Defense in depth has to include people (MFA, training) and your
+        software supply chain (pinned, scanned dependencies), not just your own code.</p>
+
+        <h3>Compliance is a floor, not a ceiling</h3>
+        <p>GDPR, PCI-DSS, HIPAA, SOC 2 set minimum bars for handling personal, payment, or health data. Meeting them is
+        necessary but not the same as being secure — treat them as the starting line.</p>
+
+        <p style="margin-top:1rem;">The through-line: security buys <strong>reduced risk</strong> with
+        <strong>added complexity, latency, and friction</strong>. You'll never make a system perfectly secure; you make it
+        <em>expensive enough to attack</em> that attackers move on — and you assume every layer will eventually be tested.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">🏰</span><div><strong>Down Into the Vault</strong>
+          — <span>You pass the <em>grand lobby's doorman</em> from yesterday and follow the stairs <strong>down into the
+          castle vault</strong>. It's protected in <strong>layers</strong> — a moat, thick walls, guards, and finally the
+          lock (<strong>defense in depth</strong>). Inside sit the <strong>crown jewels</strong>: they must stay
+          <em>secret</em> behind the vault lock (<strong>Confidentiality</strong> = encryption), every scroll leaving bears a
+          <strong>wax seal</strong> that shatters if tampered with (<strong>Integrity</strong> = hashing &amp; signatures),
+          and the drawbridge stays down for allies even under siege (<strong>Availability</strong>). On a workbench lie the
+          three tools: a <strong>lock</strong> you can reopen with a key (encryption), a <strong>fingerprint</strong> you can
+          never turn back into a finger (hashing), and a <strong>signet ring</strong> that proves who pressed the seal
+          (signatures). Engraved over the vault door: <em>"Keep it secret, keep it unaltered, keep it reachable — and assume
+          every wall will be attacked."</em></span></div></div>
+          <div class="palace-room"><span class="palace-icon">🎫</span><div><strong>The Next Room</strong> — <span>Authentication:
+          OAuth 2.0 &amp; JWT (Day 29). We have the tools that make a badge <em>trustworthy</em>; next we mint the badges
+          themselves — how a user proves who they are, and how a signed token carries that identity safely across every
+          service.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">API Gateway &amp; Service Mesh (Day 27)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Security Fundamentals (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Auth: OAuth 2.0 &amp; JWT (Day 29)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Underpins</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">HTTPS / TLS (Day 5)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">mTLS in the mesh (Day 27)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Rate limiting / DDoS (Day 24)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">High availability (Day 22)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">JWT signatures (Day 29)</span>
+        </div>
+        <p>Today is the bedrock the rest of the week stands on. The <strong>TLS/HTTPS</strong> you met on Day 5 <em>is</em>
+        asymmetric keys bootstrapping a symmetric session plus certificate validation — now you know the machinery inside it.
+        The <strong>mTLS</strong> the service mesh sprinkled over every east-west hop on Day 27 is PKI pointed in both
+        directions. <strong>Availability</strong>, the forgotten leg of the CIA triad, is the entire subject of Week 4 —
+        redundancy (Day 22), circuit breakers (Day 23), and rate limiting against DDoS (Day 24). And this lesson hands
+        directly to <strong>Day 29</strong>: the digital signatures you learned today are exactly what make a
+        <strong>JWT</strong> tamper-proof, and the confidentiality/PKI foundation is what <strong>OAuth</strong> is built on.
+        Every "who is this and what may they do?" question from here on assumes the primitives you just learned.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"We encrypt the passwords, so they're safe."</td><td>Passwords should be <strong>hashed, not
+          encrypted</strong>. Encryption is reversible — the key is stealable. Use a <strong>salted, slow hash</strong>
+          (bcrypt/argon2); you never need the original back.</td></tr>
+          <tr><td>"Hashing and encryption are basically the same thing."</td><td>Opposite intents. <strong>Encryption is
+          two-way</strong> (you can decrypt with a key). <strong>Hashing is one-way</strong> (no key reverses it). Encrypt to
+          keep secrets you'll need back; hash to verify without storing the original.</td></tr>
+          <tr><td>"Internal traffic is safe — it's behind the firewall."</td><td>That's how breaches spread laterally.
+          <strong>Zero trust</strong>: authenticate and encrypt <em>every</em> hop, even internal ones (the mesh's mTLS from
+          Day 27).</td></tr>
+          <tr><td>"A hash is unreadable, so it's fine for secrets."</td><td>A hash isn't secrecy — it can't be decrypted
+          because it destroys the data. Fast unsalted hashes of common passwords are reversed by <strong>rainbow
+          tables</strong>. Salt + a slow algorithm are what matter.</td></tr>
+          <tr><td>"HTTPS means my whole app is secure."</td><td>TLS secures data <em>in transit</em> only. It does nothing
+          for SQL injection, broken access control, stored plaintext passwords, or a leaked key. Security is
+          <strong>every</strong> layer.</td></tr>
+          <tr><td>"We'll add security before launch."</td><td>Bolted-on security misses the architecture-level decisions
+          (trust boundaries, key management, least privilege). It's a <strong>design assumption</strong>, threaded through
+          from the start.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ An attacker steals your entire user database — every row. In one design
+          every account is instantly compromised (and so are those users' accounts on <em>other</em> sites); in another the
+          dump is nearly worthless. Explain exactly what the second design did to its passwords and why it works, why you must
+          not simply "encrypt" them instead, and name the three cryptographic tools and the one-line job of each. (click to
+          reveal)</div>
+          <div class="recall-answer"><strong>The safe design hashed the passwords with a salted, slow one-way function.</strong>
+          Instead of storing <code>hunter2</code> (or an encrypted, and therefore <em>reversible</em>, version of it), each
+          password was run through <strong>bcrypt/scrypt/argon2</strong> with a unique random <strong>salt</strong> and stored
+          only as the resulting digest. This works for three reasons: <strong>(1) one-way</strong> — a hash can't be reversed,
+          so a stolen digest gives the attacker nothing to "decrypt"; there is no key to steal because a hash never used one.
+          <strong>(2) salted</strong> — the per-user random salt means identical passwords produce different digests, which
+          makes precomputed <strong>rainbow tables</strong> useless and hides patterns. <strong>(3) slow</strong> — a
+          deliberately expensive algorithm makes brute-forcing billions of guesses economically impossible.
+          <strong>Why not encrypt?</strong> Encryption is <em>reversible</em>, so a decryption key must exist somewhere — and
+          whoever steals the database can usually steal the key too, turning every password back into plaintext. You never
+          need the original password back; you only need to check a guess, so make it irreversible.
+          <strong>The three tools:</strong> <strong>Encryption</strong> — reversible; keeps secrets you'll need back (TLS on
+          the wire, data at rest). <strong>Hashing</strong> — one-way fingerprint; verify without storing the original
+          (passwords, integrity checks). <strong>Digital signatures</strong> — sign with a private key, verify with the public
+          key; prove <em>who</em> sent it <em>and</em> that it wasn't altered. Bonus for the senior answer: layer on
+          <strong>rate limiting + MFA</strong> so even a correct guess is throttled and needs a second factor — defense in
+          depth applied to one field.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🔓 The plaintext-password breaches</div><p>Time and again, giant
+          leaks turned into cross-site catastrophes because passwords were stored in plaintext or with fast unsalted hashes —
+          attackers cracked them and replayed the credentials elsewhere (<strong>credential stuffing</strong>). The industry
+          moved to <strong>bcrypt/argon2 + salt</strong> precisely because a database <em>will</em> eventually leak; the goal
+          is to make the leak worthless.</p></div>
+          <div class="realworld-card"><div class="rw-company">🔒 Let's Encrypt — TLS for everyone</div><p><strong>Let's
+          Encrypt</strong> issued free, automated certificates and helped flip the web from majority-HTTP to majority-HTTPS.
+          It's PKI at planetary scale: a trusted CA vouching for identities so any two strangers — your browser and any
+          server — can establish confidentiality and authenticity automatically.</p></div>
+          <div class="realworld-card"><div class="rw-company">☁️ Google BeyondCorp — zero trust</div><p>Google's
+          <strong>BeyondCorp</strong> abandoned the "trusted internal network" model entirely: every request is authenticated
+          and authorized based on device and user identity, not network location. It's the industry blueprint for
+          <strong>zero trust</strong> — the exact lesson Plaintext Pat learned about "internal isn't safe."</p></div>
+          <div class="realworld-card"><div class="rw-company">🗝️ AWS KMS &amp; HashiCorp Vault — key management</div><p>Because
+          leaked keys, not broken math, cause most crypto failures, teams centralize secrets in a <strong>KMS</strong> (AWS
+          KMS, Google Cloud KMS) or <strong>Vault</strong>: keys are generated, stored, rotated, and access-controlled in one
+          hardened place, never scattered in code or config. It answers the real question: <em>where does the key live?</em></p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is the CIA triad?</div>
+          <div class="fc-a">A: The three properties security protects: <strong>Confidentiality</strong> (only authorized
+          people can read it — encryption), <strong>Integrity</strong> (it wasn't altered, and you can prove it — hashing /
+          signatures), and <strong>Availability</strong> (it stays reachable for legitimate users — redundancy, rate limiting,
+          DDoS defense).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Encryption vs hashing — what's the core difference and when do you use each?</div>
+          <div class="fc-a">A: <strong>Encryption is reversible</strong> (decrypt with a key) — use it for secrets you need
+          back: TLS traffic, data at rest. <strong>Hashing is one-way</strong> (no key can reverse it) — use it to verify
+          without storing the original: passwords (salted + slow), integrity checks. Never encrypt passwords; hash them.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Symmetric vs asymmetric encryption, and how does TLS use both?</div>
+          <div class="fc-a">A: <strong>Symmetric</strong> = one shared key, fast, but hard to distribute to strangers.
+          <strong>Asymmetric</strong> = a public/private key pair that solves distribution (share the public key openly). TLS
+          uses <strong>asymmetric</strong> keys to safely agree on a fast <strong>symmetric</strong> session key, then moves
+          the data with the symmetric cipher — bootstrap trust asymmetrically, move bulk data symmetrically.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: How should you store a user's password, and why not just encrypt it?</div>
+          <div class="fc-a">A: With a <strong>salted, slow one-way hash</strong> (bcrypt / scrypt / argon2). The salt defeats
+          rainbow tables; the slowness defeats brute force; one-wayness means a stolen DB has nothing to decrypt. Don't
+          encrypt — encryption is reversible, so a stealable key exists, and you never need the original password back.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What do defense in depth, least privilege, and zero trust each mean?</div>
+          <div class="fc-a">A: <strong>Defense in depth</strong> = many independent layers because each will eventually fail.
+          <strong>Least privilege</strong> = grant the minimum access needed, shrinking the blast radius of any compromise.
+          <strong>Zero trust</strong> = never trust a request just because it's "internal"; authenticate and authorize every
+          request, every hop.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Using the castle image, name the CIA triad and the tool that defends each leg — and explain why "availability" counts as security.</li>
+          <li>State the core difference between encryption and hashing, and give one correct use of each.</li>
+          <li>Explain why you must hash passwords, not encrypt them — and what "salt" and "slow" each defend against.</li>
+          <li>Describe symmetric vs asymmetric keys and exactly how TLS uses both to let two strangers talk securely.</li>
+          <li>What is a certificate, what is a CA, and how does PKI stop an impostor from pretending to be your bank?</li>
+          <li>Give the one-line job of each of the three cryptographic tools (encryption, hashing, signatures).</li>
+          <li>Define defense in depth, least privilege, and zero trust, and give a concrete example of each.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>security means protecting the CIA triad — Confidentiality, Integrity, and
+          Availability — with three tools you must never confuse: encryption (reversible, keeps secrets), hashing (one-way,
+          proves nothing changed and stores passwords), and digital signatures (prove who sent it and that it wasn't
+          altered).</strong> Symmetric keys are fast but hard to share; asymmetric key pairs solve distribution and, through
+          certificates and PKI, let total strangers trust each other — which is exactly how TLS and mTLS work. Store passwords
+          with a salted, slow hash so a stolen database is worthless, never with reversible encryption. And above every tool
+          sits the mindset that separates senior engineers from juniors: <strong>defense in depth, least privilege, and zero
+          trust</strong> — design as if every layer will eventually be attacked, because it will. Tomorrow (Day 29) we mint
+          the badges the doorman checks: <strong>Authentication with OAuth 2.0 &amp; JWT</strong> — how a user proves who they
+          are, and how a signed token (built on today's signatures) carries that identity safely across every service.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-27.html">← Day 27: API Gateway &amp; Service Mesh</a>
+        <a href="day-29.html" class="coming-soon-link">Day 29: Auth — OAuth 2.0 &amp; JWT →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 28 of 90 — Security Fundamentals</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── "Harden the system" attack simulator ─────────────────────────────
+  var ATTACKS = {
+    eavesdrop: {
+      def: 'tls',
+      goal: 'Read your users’ data as it crosses the network',
+      defense: 'TLS — encryption in transit',
+      blocked: '🔒 Blocked. Traffic is encrypted with TLS, so the café sniffer sees only ciphertext — confidentiality holds.',
+      breached: '🕵️ BREACHED. With no TLS, the login travels in plaintext like a postcard — the eavesdropper reads the password directly. Turn on 🔒 TLS.'
+    },
+    stealdb: {
+      def: 'hashing',
+      goal: 'Crack the passwords in a stolen database dump',
+      defense: 'Salted, slow password hashing (bcrypt/argon2)',
+      blocked: '#️⃣ Blocked. Passwords are salted + slow-hashed — there is nothing to decrypt and brute force is uneconomical. The dump is nearly worthless.',
+      breached: '💥 BREACHED. Passwords are plaintext (or fast unsalted hashes) — cracked in minutes and replayed on other sites. Turn on #️⃣ salted slow hashing.'
+    },
+    tamper: {
+      def: 'integrity',
+      goal: 'Alter a request in flight (change $10 → $10,000, or role=user → admin)',
+      defense: 'Integrity check (MAC / digital signature)',
+      blocked: '✍️ Blocked. The payload is signed, so any change breaks the signature and the server rejects it — integrity holds.',
+      breached: '✂️ BREACHED. With no signature/MAC, the man-in-the-middle edits the value and no one notices. Turn on ✍️ integrity checks.'
+    },
+    mitm: {
+      def: 'cert',
+      goal: 'Impersonate your server and hijack the session (man-in-the-middle)',
+      defense: 'Certificate validation (PKI / trust chain)',
+      blocked: '📜 Blocked. The client validates the server’s certificate against a trusted CA, so the impostor’s fake key is rejected — authenticity holds.',
+      breached: '🎭 BREACHED. Without cert validation the client trusts any key — the impostor sits in the middle and reads everything. Turn on 📜 certificate validation.'
+    },
+    stealdisk: {
+      def: 'atrest',
+      goal: 'Read customer PII straight off a stolen disk or backup',
+      defense: 'Encryption at rest',
+      blocked: '🗝️ Blocked. The disk is encrypted at rest, so a stolen drive or backup is unreadable ciphertext — confidentiality holds.',
+      breached: '🗄️ BREACHED. Data sits in plaintext on disk — a stolen drive or leaked backup exposes all of it. Turn on 🗝️ encryption at rest.'
+    }
+  };
+
+  var state = { attack: 'eavesdrop', defenses: { tls:false, hashing:false, integrity:false, cert:false, atrest:false } };
+  var els = {
+    attack:   document.getElementById('attack-toggle'),
+    defrow:   document.getElementById('def-row'),
+    goal:     document.getElementById('m-goal'),
+    defense:  document.getElementById('m-defense'),
+    hardened: document.getElementById('m-hardened'),
+    status:   document.getElementById('sim-status')
+  };
+
+  function render() {
+    var a = ATTACKS[state.attack];
+    var on = state.defenses[a.def];
+
+    els.goal.textContent = a.goal;
+    els.goal.className = 'val blue';
+
+    els.defense.textContent = a.defense;
+    els.defense.className = 'val ' + (on ? 'good' : 'muted2');
+
+    var count = 0, k;
+    for (k in state.defenses) { if (state.defenses[k]) count++; }
+    els.hardened.textContent = count + ' / 5';
+    els.hardened.className = 'val ' + (count === 5 ? 'good' : count === 0 ? 'bad' : 'warn');
+
+    els.status.textContent = on ? a.blocked : a.breached;
+    els.status.className = 'q-status ' + (on ? 'ok' : 'bad');
+  }
+
+  Array.prototype.forEach.call(els.attack.querySelectorAll('button'), function(btn){
+    btn.addEventListener('click', function(){
+      state.attack = btn.getAttribute('data-atk');
+      Array.prototype.forEach.call(els.attack.querySelectorAll('button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      render();
+    });
+  });
+  Array.prototype.forEach.call(els.defrow.querySelectorAll('.def-chip'), function(chip){
+    chip.addEventListener('click', function(){
+      var d = chip.getAttribute('data-def');
+      state.defenses[d] = !state.defenses[d];
+      chip.classList.toggle('on', state.defenses[d]);
+      render();
+    });
+  });
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+
+  // Anchor diagram: the castle — defense in depth rings around the jewels,
+  // plus the CIA triad triangle.
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'A castle of many walls, guarding jewels that must stay secret, sealed & reachable', '#e2e8f0', '13', '700');
+
+    // ── Left: defense-in-depth nested rings ──
+    T(240, 52, '🏰 Defense in depth — layer after layer', '#cbd5e1', '10.5', '700');
+
+    // outer: untrusted internet
+    svg.appendChild(rs.rectangle(70, 66, 350, 296, { stroke:'#ef4444', strokeWidth:1.6, roughness:1.2, fill:'#ef444408', fillStyle:'solid' }));
+    T(150, 82, '🌍 untrusted internet', '#fca5a5', '9', '700', false, 'start');
+
+    // ring 1: network
+    svg.appendChild(rs.rectangle(100, 96, 290, 236, { stroke:'#38bdf8', strokeWidth:1.5, roughness:1.1, fill:'#38bdf80a', fillStyle:'solid' }));
+    T(120, 112, '🔒 Network: TLS · firewall · WAF', '#7dd3fc', '9', '700', false, 'start');
+
+    // ring 2: application
+    svg.appendChild(rs.rectangle(130, 128, 230, 176, { stroke:'#a78bfa', strokeWidth:1.5, roughness:1.1, fill:'#a78bfa0a', fillStyle:'solid' }));
+    T(150, 144, '🎫 App: authN/Z · validation', '#c4b5fd', '9', '700', false, 'start');
+
+    // ring 3: data
+    svg.appendChild(rs.rectangle(160, 160, 170, 116, { stroke:'#22c55e', strokeWidth:1.5, roughness:1.1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(180, 176, '🗝️ Data: encrypt · hash', '#86efac', '9', '700', false, 'start');
+
+    // center: the jewels
+    svg.appendChild(rs.rectangle(200, 198, 92, 60, { stroke:'#fbbf24', strokeWidth:1.8, roughness:1, fill:'#fbbf2418', fillStyle:'solid' }));
+    T(246, 224, '💎', '#fff', '20');
+    T(246, 246, 'the data', '#fde68a', '9', '700');
+
+    // ── Right: CIA triad triangle ──
+    T(645, 52, 'What you’re protecting: the CIA triad', '#cbd5e1', '10.5', '700');
+    // triangle vertices
+    var top = [645, 96], bl = [560, 250], br = [730, 250];
+    svg.appendChild(rs.line(top[0], top[1], bl[0], bl[1], { stroke:'#64748b', strokeWidth:1.4, roughness:1.1 }));
+    svg.appendChild(rs.line(top[0], top[1], br[0], br[1], { stroke:'#64748b', strokeWidth:1.4, roughness:1.1 }));
+    svg.appendChild(rs.line(bl[0], bl[1], br[0], br[1], { stroke:'#64748b', strokeWidth:1.4, roughness:1.1 }));
+
+    // confidentiality (top)
+    T(645, 88, '🔒', '#fff', '18');
+    T(645, 76, 'Confidentiality', '#a5b4fc', '9.5', '700');
+    T(645, 150, 'keep it', '#94a3b8', '8', '600');
+    T(645, 162, 'secret', '#a5b4fc', '9', '700');
+
+    // integrity (bottom-left)
+    T(560, 268, '🪬', '#fff', '16');
+    T(560, 284, 'Integrity', '#fde68a', '9.5', '700');
+    T(560, 298, 'unaltered', '#94a3b8', '8', '600');
+
+    // availability (bottom-right)
+    T(730, 268, '⛲', '#fff', '16');
+    T(730, 284, 'Availability', '#86efac', '9.5', '700');
+    T(730, 298, 'reachable', '#94a3b8', '8', '600');
+
+    T(645, 210, 'CIA', '#e2e8f0', '13', '800');
+
+    T(410, 384, 'No single wall is trusted — assume each will be breached, so build more than one.', '#cbd5e1', '9.5', '700');
+  }
+
+  // Tools diagram: the three cryptographic primitives side by side.
+  function drawToolsDiagram() {
+    var svg = document.getElementById('tools-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 22, 'Three tools, three jobs — don’t confuse them', '#e2e8f0', '13', '700');
+
+    // ── Panel 1: Encryption (reversible) ──
+    svg.appendChild(rs.rectangle(24, 44, 250, 262, { stroke:'#818cf8', strokeWidth:1.4, roughness:1, fill:'#818cf808', fillStyle:'solid' }));
+    T(149, 66, '🔒 Encryption', '#a5b4fc', '11', '700');
+    T(149, 82, 'reversible — keeps secrets', '#94a3b8', '8.5', '600');
+    T(149, 118, 'HELLO', '#e2e8f0', '12', '700', true);
+    svg.appendChild(rs.line(149, 128, 149, 150, { stroke:'#818cf8', strokeWidth:1.6, roughness:1 }));
+    T(178, 143, '🔑 key', '#c4b5fd', '8', '700');
+    T(149, 172, 'x9#@!kQ', '#86efac', '12', '700', true);
+    svg.appendChild(rs.line(149, 182, 149, 204, { stroke:'#818cf8', strokeWidth:1.6, roughness:1 }));
+    T(178, 197, '🔑 key', '#c4b5fd', '8', '700');
+    T(149, 226, 'HELLO', '#e2e8f0', '12', '700', true);
+    T(149, 262, 'encrypt ↔ decrypt', '#c4b5fd', '9', '700');
+    T(149, 282, 'get the original back', '#94a3b8', '8', '600');
+
+    // ── Panel 2: Hashing (one-way) ──
+    svg.appendChild(rs.rectangle(286, 44, 250, 262, { stroke:'#fbbf24', strokeWidth:1.4, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(411, 66, '#️⃣ Hashing', '#fde68a', '11', '700');
+    T(411, 82, 'one-way — a fingerprint', '#94a3b8', '8.5', '600');
+    T(411, 122, 'hunter2', '#e2e8f0', '12', '700', true);
+    svg.appendChild(rs.line(411, 132, 411, 158, { stroke:'#fbbf24', strokeWidth:1.6, roughness:1 }));
+    T(411, 150, 'hash ▼', '#fde68a', '8', '700');
+    T(411, 180, 'ef92a1b7c4…', '#86efac', '11', '700', true);
+    // no-way-back arrow
+    svg.appendChild(rs.line(340, 210, 340, 184, { stroke:'#ef4444', strokeWidth:1.4, roughness:1, strokeLineDash:[4,3] }));
+    T(340, 224, '✖ no way back', '#fca5a5', '8', '700');
+    T(411, 250, 'tiny change →', '#94a3b8', '8', '600');
+    T(411, 264, 'totally different digest', '#94a3b8', '8', '600');
+    T(411, 288, 'store passwords · verify integrity', '#fde68a', '8.5', '700');
+
+    // ── Panel 3: Signatures ──
+    svg.appendChild(rs.rectangle(548, 44, 248, 262, { stroke:'#22c55e', strokeWidth:1.4, roughness:1, fill:'#22c55e08', fillStyle:'solid' }));
+    T(672, 66, '✍️ Signatures', '#86efac', '11', '700');
+    T(672, 82, 'who + unaltered', '#94a3b8', '8.5', '600');
+    T(672, 116, 'message', '#e2e8f0', '11', '700', true);
+    svg.appendChild(rs.line(672, 126, 672, 148, { stroke:'#22c55e', strokeWidth:1.6, roughness:1 }));
+    T(672, 141, '🔐 sign w/ PRIVATE key', '#bbf7d0', '7.5', '700');
+    svg.appendChild(rs.rectangle(618, 156, 108, 30, { stroke:'#22c55e', strokeWidth:1.4, roughness:1, fill:'#22c55e14', fillStyle:'solid' }));
+    T(672, 175, '✍️ signature', '#86efac', '9', '700');
+    svg.appendChild(rs.line(672, 186, 672, 208, { stroke:'#22c55e', strokeWidth:1.6, roughness:1 }));
+    T(672, 201, '🔓 verify w/ PUBLIC key', '#bbf7d0', '7.5', '700');
+    T(672, 230, '✅ authentic', '#86efac', '10', '700');
+    T(672, 246, '✅ untampered', '#86efac', '10', '700');
+    T(672, 286, 'certificates · signed tokens (JWT)', '#86efac', '8.5', '700');
+
+    T(410, 322, 'Encrypt to keep secrets you’ll need back · hash to verify without storing · sign to prove who & unaltered', '#cbd5e1', '9', '700');
+  }
+
+  function drawAll() { drawAnchorDiagram(); drawToolsDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
