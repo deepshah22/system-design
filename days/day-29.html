@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 29: Authentication — OAuth 2.0 &amp; JWT | System Design Mastery</title>
+  <meta name="description" content="Yesterday's castle guard asked one question at the gate: who are you? Today we answer it at internet scale. Learn why we moved from server-stored sessions to self-contained tokens, how a JWT really works (its header.payload.signature anatomy, why the signature — yesterday's digital signature — makes it tamper-evident, why the payload is readable not secret, and why verifying it needs no database lookup), the access-token / refresh-token split and the revocation problem it creates, and then OAuth 2.0: the valet-key idea of delegated authorization that lets an app act on your behalf without ever seeing your password. Walk the Authorization Code flow with PKCE step by step, see how OpenID Connect adds a real 'who are you' identity layer (the ID token) on top of OAuth's 'what may you access', and learn the hard parts — token storage (XSS vs CSRF), the alg=none attack, stateless vs stateful tradeoffs. Taught with a festival-wristband-and-valet-key anchor, a live JWT verification simulator, Excalidraw-style diagrams of JWT anatomy and the OAuth flow, tradeoffs, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* role / concept cards — colored left bar */
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card .answers { font-size:.8rem; font-weight:700; color:var(--text-primary); margin:.35rem 0; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    .pillar-card .eg { font-size:.75rem; color:var(--text-muted); margin-top:.45rem; }
+    /* numbered accent cards */
+    .signal-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .signal-card { background: var(--bg-card); border:1px solid var(--border); border-left:4px solid #fb7185; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .signal-card .snum { font-size:.7rem; font-weight:800; color:#fb7185; letter-spacing:.05em; }
+    .signal-card h4 { margin:.15rem 0 .35rem; font-size:.95rem; color:#fecdd3; }
+    .signal-card p { margin:0; font-size:.82rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* JWT three-segment display */
+    .jwt-wrap { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin:.75rem 0; font-family:'JetBrains Mono',monospace; font-size:.8rem; line-height:1.5; word-break:break-all; }
+    .jwt-wrap .seg-h { color:#7dd3fc; } .jwt-wrap .seg-p { color:#c4b5fd; } .jwt-wrap .seg-s { color:#86efac; } .jwt-wrap .dot { color:#64748b; }
+    .jwt-legend { display:flex; gap:1rem; flex-wrap:wrap; font-size:.72rem; margin-top:.6rem; }
+    .jwt-legend span { display:inline-flex; align-items:center; gap:.35rem; }
+    .jwt-legend i { width:11px; height:11px; border-radius:3px; display:inline-block; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .mode-toggle.tamper-toggle button.active { background:#a855f7; } .mode-toggle.clock-toggle button.active { background:#0ea5e9; } .mode-toggle.alg-toggle button.active { background:#ef4444; }
+    .toggle-row { display:flex; gap:1.25rem; flex-wrap:wrap; align-items:center; margin-bottom:.4rem; }
+    .toggle-row .tog-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; }
+    .prop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.75rem; margin:1rem 0; }
+    .prop-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.8rem 1rem; text-align:center; }
+    .prop-card .val { font-size:1.05rem; font-weight:800; line-height:1.3; }
+    .prop-card .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .prop-card .val.good { color:#22c55e; } .prop-card .val.bad { color:#fb7185; } .prop-card .val.warn { color:#fbbf24; } .prop-card .val.muted2 { color:#94a3b8; } .prop-card .val.blue { color:#7dd3fc; }
+    .q-status { text-align:center; font-weight:800; font-size:.92rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; line-height:1.5; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 29</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 29 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🗂 Week 4 — Reliability &amp; Security</span>
+    </div>
+    <h1>Authentication: OAuth 2.0 &amp; JWT<br><span style="color:var(--accent)">Answering "Who Are You?" at Internet Scale</span></h1>
+    <p class="lead">
+      Yesterday's castle guard asked one question at the gate: <em>who are you?</em> Today we answer it — for millions of users,
+      across dozens of services, without a database lookup on every request, and without ever asking you to hand a stranger your
+      password. First we'll see <em>why</em> the old way (the server remembering your session) buckles at scale, and how a
+      <strong>JWT</strong> — a tamper-evident token you carry yourself, sealed with <em>yesterday's</em> digital signature —
+      fixes it. We'll crack a JWT open to see its three parts, learn why the payload is <em>readable, not secret</em>, and why
+      any service can verify it with <em>no</em> central lookup (the whole reason it scales). Then we'll meet the
+      <strong>access/refresh token</strong> split and the revocation headache it creates. Finally, <strong>OAuth 2.0</strong>:
+      the <em>valet-key</em> idea that lets "Log in with Google" and "let this app see your calendar" work — giving an app
+      <em>limited, delegated</em> access without ever revealing your password. We'll walk the real Authorization Code flow step
+      by step, see how <strong>OpenID Connect</strong> turns OAuth's "what may you access" into a true "who are you," and hit the
+      sharp edges: where to store tokens, the <code>alg=none</code> attack, and the stateless-vs-stateful tradeoff.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#sessions">Sessions vs Tokens</a>
+        <a href="#jwt">Anatomy of a JWT</a>
+        <a href="#tokens">Access &amp; Refresh Tokens</a>
+        <a href="#oauth">OAuth 2.0 — The Valet Key</a>
+        <a href="#flow">The Authorization Code Flow</a>
+        <a href="#oidc">OAuth vs OpenID Connect</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🎟️ 🎵 🗝️</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Picture a huge <strong>music festival</strong>. At the front gate there's a single <strong>box office</strong>.
+            You show your real passport there <em>once</em> — that's <strong>logging in</strong> (authentication, yesterday's
+            "who are you?"). The box office doesn't make you re-show your passport at every stage. Instead, it snaps a
+            <strong>tamper-evident wristband</strong> onto you — that's a <strong>JWT</strong>. Printed right on the band, in
+            plain view, is <em>your name, which stages you may enter, and "valid until 11&nbsp;PM."</em> None of that is a secret —
+            anyone can read it. What makes it trustworthy is that the band is <strong>heat-sealed with an un-forgeable
+            hologram</strong> — that hologram is <em>yesterday's digital signature</em>. Now every stage has its own guard, and
+            each guard just <strong>glances at the band and checks the hologram</strong>. No guard ever phones the box office —
+            the band proves itself. That's <strong>stateless verification</strong>, and it's the entire reason this scales: fifty
+            stages, zero central lookups. The catch? Once the band is on, it's hard to <em>un-issue</em> before 11&nbsp;PM — if
+            someone steals your wristband, it works until it expires. So the bands are made short-lived, and you quietly swap for
+            a fresh one at the box office (that's a <strong>refresh token</strong>).</p>
+            <p>Now a second scene, right beside the first. A <strong>food truck's app</strong> wants to charge your festival tab.
+            You do <em>not</em> hand it your wristband, and you certainly don't hand it your <em>bank card</em>. Instead, the box
+            office issues the truck a <strong>valet key</strong>: "this vendor may charge up to&nbsp;\$20, nothing else, expires
+            tonight." The truck can do that one thing on your behalf and <em>nothing more</em> — and never once saw your card.
+            That limited, delegated, revocable key is <strong>OAuth&nbsp;2.0</strong>. Burn in the two images:
+            <em>log in once and wear a sealed wristband (JWT) that every guard can check without a phone call; and when an app
+            needs to act for you, hand it a valet key (OAuth) — never your master key.</em></p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="820" height="400" viewBox="0 0 820 400"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Session Sam</span> ran a photo-sharing app, and in the early days login was simple. When
+            you signed in, his server generated a random <strong>session ID</strong>, stored "<code>session abc123 → user
+            Sam</code>" in its memory, and mailed you back a cookie with <code>abc123</code>. Every later request carried the
+            cookie; the server looked <code>abc123</code> up in its memory and knew it was you. Clean, and it worked perfectly —
+            on <em>one</em> server.
+          </p>
+          <p>
+            Then the app grew and Sam added a second server behind a load balancer (Day 5). Now the trouble started: you logged in
+            on server&nbsp;A, which remembered your session — but your next request landed on server&nbsp;B, which had never heard
+            of <code>abc123</code> and logged you straight out. The state lived in <em>one</em> server's memory, and the fleet
+            didn't share it. Sam's first fix was a shared <strong>session store</strong> (a Redis from Day 7) that every server
+            could query. It worked, but now <em>every single request</em> made a round-trip to that store just to answer "who is
+            this?" — and that store became a bottleneck and a single point of failure. Authentication had quietly become the
+            hottest path in the system.
+          </p>
+          <p>
+            A mentor asked Sam a sharp question: <em>"Why are you storing who the user is at all? Why not let the user carry a
+            note that proves who they are — a note nobody can forge?"</em> That reframed everything. Instead of handing out a
+            meaningless ticket number and remembering the match, Sam handed out a <strong>self-contained token</strong>: a little
+            document that <em>says</em> "this is Sam, expires at 11&nbsp;PM," <strong>signed</strong> with a key only his servers
+            hold. Any server — or any of the microservices he'd eventually split into — could verify the signature locally and
+            trust the contents, with <em>no lookup at all</em>. The signature (yesterday's lesson!) made forgery impossible; the
+            expiry kept a stolen token from living forever. The bottleneck vanished. This is a <strong>JWT</strong>.
+          </p>
+          <p>
+            Months later Sam hit a different wall. A new printing startup wanted to let users import their photos from Sam's app.
+            The startup's first idea was horrifying: "just have users type their Sam username and password into <em>our</em> form,
+            and we'll log in as them." That would hand a third party the master key to the entire account, forever, with no limits.
+            Sam refused — and reached for <strong>OAuth&nbsp;2.0</strong>. Now the user clicks "Connect to PhotoApp," gets bounced
+            to <em>Sam's own</em> login screen, approves a narrow request ("PhotoPrint may <em>read your photos</em> — nothing
+            else"), and the printing app receives a <strong>scoped, expiring token</strong> — never the password. The user can
+            revoke it any time. The password never left Sam's house.
+          </p>
+          <p>
+            Sam emerged with the realization every senior engineer reaches about identity: <strong>don't make the server remember
+            everyone — give each user a signed token they carry themselves (JWT); and when another app needs to act for a user,
+            give it a limited, revocable key, never the password (OAuth).</strong>
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">There are two separate jobs here. <strong>(1) Proving who a user is on each request</strong>
+          and <strong>(2) letting one app act on a user's behalf in another.</strong> <strong>JWT (JSON Web Token)</strong> solves
+          the first: a <em>self-contained, signed</em> token the client carries. It has three dot-separated parts —
+          <strong>header.payload.signature</strong> — all Base64URL-encoded. The <strong>payload</strong> holds
+          <em>claims</em> (who you are, when it expires) and is <em>readable by anyone</em> (it is <strong>not</strong> encrypted —
+          never put secrets in it). The <strong>signature</strong> is the tamper-evident seal from Day 28: the server signs the
+          header+payload with a secret (HMAC) or a private key (RSA), so any change breaks the signature and <em>any</em> service
+          can verify it <strong>without a database lookup</strong> — that statelessness is why JWTs scale across a fleet and across
+          microservices. Because a signed token can't be un-issued before it expires, we split into a short-lived
+          <strong>access token</strong> (sent on every request) and a long-lived <strong>refresh token</strong> (used only to get
+          a new access token) — trading a little revocation lag for huge scalability. <strong>OAuth&nbsp;2.0</strong> solves the
+          second: <em>delegated authorization</em> — the "valet key." Four roles — <strong>Resource Owner</strong> (you),
+          <strong>Client</strong> (the app wanting access), <strong>Authorization Server</strong> (issues tokens after you log in
+          &amp; consent), <strong>Resource Server</strong> (holds the data). The app gets a <em>scoped, expiring</em> access token,
+          <em>never your password</em>. OAuth is about <em>authorization</em> (what may this app access); when you need true
+          <em>authentication</em> ("who is this user" — the "Log in with Google" button), you add <strong>OpenID Connect</strong>
+          on top, which issues an <strong>ID token</strong> (itself a JWT) describing the user. One-line test for any design:
+          <em>is the client carrying a signed, expiring token I can verify locally — and when a third party is involved, did I give
+          it a scoped key instead of the password?</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — The JWT Checkpoint</h2>
+        <div class="sim-box">
+          <p>A client shows up at a stage guard carrying a JWT. You are the guard's verification code. The real token below says
+          <code>role: user</code>, expires in the future, and is correctly signed. Now flip the switches to see what an attacker
+          might try — and watch the guard <strong>accept</strong> or <strong>reject</strong>, and <em>why</em>. The lesson:
+          <em>the signature catches tampering, the expiry is always checked, and a server must never trust the token's own claim
+          about how it was signed.</em></p>
+
+          <div class="toggle-row"><span class="tog-label">✏️ Tamper: change <code>role: user</code> → <code>role: admin</code> in the payload</span></div>
+          <div class="mode-toggle tamper-toggle" id="tamper-toggle">
+            <button data-on="false" class="active">✖ Leave it</button>
+            <button data-on="true">✏️ Tamper</button>
+          </div>
+
+          <div class="toggle-row"><span class="tog-label">⏰ Clock: is the token still within its <code>exp</code> time?</span></div>
+          <div class="mode-toggle clock-toggle" id="clock-toggle">
+            <button data-on="false" class="active">🟢 Fresh</button>
+            <button data-on="true">⌛ Expired</button>
+          </div>
+
+          <div class="toggle-row"><span class="tog-label">💣 Attack: strip the signature &amp; set <code>alg: none</code></span></div>
+          <div class="mode-toggle alg-toggle" id="alg-toggle">
+            <button data-on="false" class="active">🔏 Signed</button>
+            <button data-on="true">💣 alg=none</button>
+          </div>
+
+          <div class="jwt-wrap" id="jwt-string"></div>
+          <div class="jwt-legend">
+            <span><i style="background:#38bdf8"></i> header — which algorithm</span>
+            <span><i style="background:#a78bfa"></i> payload — the claims (readable!)</span>
+            <span><i style="background:#22c55e"></i> signature — the tamper seal</span>
+          </div>
+
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val" id="m-sig">—</div><div class="lbl">Signature check</div></div>
+            <div class="prop-card"><div class="val" id="m-exp">—</div><div class="lbl">Expiry check</div></div>
+            <div class="prop-card"><div class="val" id="m-role">—</div><div class="lbl">Claimed role</div></div>
+          </div>
+
+          <div class="q-status ok" id="sim-status">—</div>
+
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: with everything at its safe default, the
+          guard <strong>accepts</strong> the token and reads <code>role: user</code> from a payload it <em>trusts</em> because the
+          signature checks out. Now hit <strong>✏️ Tamper</strong> to promote yourself to admin: the payload changed but you can't
+          re-sign it without the server's secret, so the signature no longer matches — <strong>rejected</strong>. Set the clock to
+          <strong>⌛ Expired</strong>: even a perfectly signed token is refused once <code>exp</code> has passed — that's what keeps
+          a stolen token from living forever. Finally try <strong>💣 alg=none</strong>: a naïve server that <em>believes the
+          token's own header</em> ("no signature needed!") would be fooled — a correct server pins the algorithm and rejects it.</p>
+        </div>
+      </section>
+
+      <section id="sessions">
+        <h2>Sessions vs Tokens — Why We Changed Approach</h2>
+        <p>Before JWTs make sense, you need the problem they solve. HTTP is <strong>stateless</strong> — each request stands alone,
+        with no memory of the last. So after you log in, how does request #2 know it's still you? There are two answers, and the
+        shift from the first to the second is one of the quiet revolutions of web architecture.</p>
+
+        <div class="pillar-grid">
+          <div class="pillar-card conf">
+            <h4>🎫 Stateful sessions (the old way)</h4>
+            <div class="answers">The server remembers you.</div>
+            <p>On login the server stores a <strong>session record</strong> and gives you a cookie holding only a meaningless
+            <strong>session ID</strong>. Every request, the server looks that ID up to recover who you are.</p>
+            <div class="eg">✔ Easy to revoke (delete the record). ✖ Every request needs a lookup; the session store must be
+            shared across the whole fleet, becoming a bottleneck and a single point of failure.</div>
+          </div>
+          <div class="pillar-card integ">
+            <h4>🎟️ Stateless tokens (the JWT way)</h4>
+            <div class="answers">The user carries the proof.</div>
+            <p>On login the server gives you a <strong>signed token</strong> that <em>contains</em> who you are and when it
+            expires. Every request carries it; any server verifies the <strong>signature</strong> locally — no lookup.</p>
+            <div class="eg">✔ No central lookup → scales across servers &amp; microservices effortlessly. ✖ Hard to revoke before
+            it expires; the token travels on every request.</div>
+          </div>
+        </div>
+
+        <p>The crux is the word <strong>stateless</strong>. With sessions, the <em>server</em> holds the state (the ID→user map),
+        so every server must reach the same store. With tokens, the <em>client</em> holds the state, cryptographically sealed, so
+        any server can trust it alone. That's the trade at the heart of today's lesson: you give up easy instant revocation and you
+        pay a few hundred bytes on every request, and in return you get an auth system that doesn't buckle when you go from one
+        server to a thousand. Sessions aren't "wrong" — for a single app with a modest user base they're simpler and revocation is
+        trivial — but at distributed-systems scale, the self-contained token wins, which is why it dominates modern APIs and
+        microservices.</p>
+      </section>
+
+      <section id="jwt">
+        <h2>Anatomy of a JWT — Three Parts, One Seal</h2>
+        <p>A JWT (pronounced "jot") looks like a long, ugly string with two dots in it: <code>xxxxx.yyyyy.zzzzz</code>. Those dots
+        split it into three <strong>Base64URL-encoded</strong> parts. Base64URL is just a reversible <em>encoding</em> (so the
+        bytes survive travel in a URL or header) — it is <strong>not encryption</strong>. That single fact clears up the biggest
+        misconception about JWTs, so say it out loud: <em>anyone can decode and read the payload.</em></p>
+
+        <div class="diagram-box">
+          <svg id="jwt-diagram" width="820" height="420" viewBox="0 0 820 420"></svg>
+        </div>
+
+        <div class="pillar-grid">
+          <div class="pillar-card conf">
+            <h4>① Header</h4>
+            <div class="answers">Metadata: which algorithm signed this.</div>
+            <p>A tiny JSON like <code>{"alg":"HS256","typ":"JWT"}</code>. It names the signing algorithm so the verifier knows how
+            to check the seal. (As we'll see, the server must <em>pin</em> the expected algorithm, not blindly obey this field.)</p>
+          </div>
+          <div class="pillar-card integ">
+            <h4>② Payload</h4>
+            <div class="answers">The claims — readable, not secret.</div>
+            <p>JSON of <strong>claims</strong> about the user and token. Standard ones: <code>sub</code> (subject = user id),
+            <code>exp</code> (expiry time), <code>iat</code> (issued-at), <code>iss</code> (issuer), <code>aud</code> (audience).
+            Plus your own, e.g. <code>role</code>. <strong>Never put a password or secret here</strong> — it's plainly readable.</p>
+          </div>
+          <div class="pillar-card avail">
+            <h4>③ Signature</h4>
+            <div class="answers">The tamper-evident seal (Day 28).</div>
+            <p><code>sign(base64(header) + "." + base64(payload), key)</code>. With <strong>HMAC</strong> the key is a shared
+            secret; with <strong>RSA/ECDSA</strong> the server signs with a <em>private</em> key and anyone verifies with the
+            matching <em>public</em> key. Change one byte of header or payload and the signature no longer matches.</p>
+          </div>
+        </div>
+
+        <div class="code-label">Decoding a real token (nothing secret is revealed)</div>
+        <div class="code-panel"><span class="muted"># The token on the wire — three Base64URL parts</span>
+eyJhbGciOiJIUzI1NiJ9<span class="muted">.</span>eyJzdWIiOiJ1XzQyIiwicm9sZSI6InVzZXIiLCJleHAiOjE3OTk5OTk5OTl9<span class="muted">.</span>K3nR...9aQ
+
+<span class="muted"># base64-decode part 1 → the HEADER</span>
+{ <span class="f">"alg"</span>: <span class="s">"HS256"</span>, <span class="f">"typ"</span>: <span class="s">"JWT"</span> }
+
+<span class="muted"># base64-decode part 2 → the PAYLOAD (claims). Readable by ANYONE — not a secret.</span>
+{ <span class="f">"sub"</span>: <span class="s">"u_42"</span>, <span class="f">"role"</span>: <span class="s">"user"</span>, <span class="f">"exp"</span>: <span class="n">1799999999</span> }
+
+<span class="muted"># part 3 is the signature. You can't forge it without the server's key —</span>
+<span class="muted"># and that's what makes the readable payload above TRUSTWORTHY.</span></div>
+
+        <h3>Why the readable payload is still safe to trust</h3>
+        <p>Newcomers panic: "if anyone can read and even <em>rewrite</em> the payload, how is this secure?" Because trust doesn't
+        come from hiding the data — it comes from the <strong>signature</strong>. An attacker can absolutely decode the token and
+        change <code>role</code> to <code>admin</code>. But to make the server <em>accept</em> that change, they'd have to produce
+        a matching signature, which requires the signing key they don't have. So their forged token fails verification and is
+        thrown out. This is exactly Day 28's integrity guarantee: you don't need to hide the message to protect it from tampering —
+        you need to <em>detect</em> tampering. (If you genuinely need the contents hidden too, there's a separate encrypted variant,
+        JWE — but the everyday JWT is <em>signed, not encrypted</em>.)</p>
+      </section>
+
+      <section id="tokens">
+        <h2>Access &amp; Refresh Tokens — Living With "Can't Un-Issue It"</h2>
+        <p>Statelessness gives us scale but takes away easy revocation: once a signed token is out there, every server will honor
+        it until <code>exp</code>. If a token is stolen, you can't instantly kill it the way you'd delete a session row. The
+        industry's answer is a two-token split that turns this from a disaster into a bounded, manageable risk.</p>
+
+        <div class="pillar-grid">
+          <div class="pillar-card conf">
+            <h4>🎟️ Access token</h4>
+            <div class="answers">Short-lived. Sent on every request.</div>
+            <p>A JWT with a <strong>short expiry</strong> (minutes). It's what the Resource Server checks on each call. Because it's
+            short-lived, a stolen one is only useful for a small window — revocation lag is capped at the expiry time.</p>
+          </div>
+          <div class="pillar-card amber">
+            <h4>🔑 Refresh token</h4>
+            <div class="answers">Long-lived. Used rarely, kept safe.</div>
+            <p>A longer-lived credential sent <em>only</em> to the Authorization Server to mint a fresh access token when the old
+            one expires. It's stored carefully and <strong>can be revoked server-side</strong> — killing a refresh token stops new
+            access tokens being issued.</p>
+          </div>
+        </div>
+
+        <p>The pattern: the access token is the disposable day-pass you flash everywhere; the refresh token is the membership card
+        you keep in the safe and only present to the front desk. This gives you the best of both models — <strong>stateless speed
+        on the hot path</strong> (access tokens verified locally, no lookup) and <strong>a revocation lever</strong> (a small,
+        server-side list of valid/blacklisted refresh tokens, consulted rarely). If you need to force-logout a compromised user
+        immediately, you revoke the refresh token and keep access-token lifetimes short, so their access dies within minutes. It's
+        a deliberate trade: perfect instant revocation would mean a lookup on every request (back to stateful sessions); this
+        bounds the risk to a few minutes while keeping the hot path lookup-free.</p>
+      </section>
+
+      <section id="oauth">
+        <h2>OAuth 2.0 — The Valet Key for Delegated Access</h2>
+        <p>Everything so far was <em>your</em> app authenticating <em>your</em> users. OAuth solves a different, famous problem:
+        <strong>how does app A get permission to use your data in app B — without you giving A your B password?</strong> "Let this
+        budgeting app read my bank transactions." "Let this scheduler see my Google Calendar." "Log in to this game with my
+        Discord." Handing over your password would be catastrophic: the app could do <em>anything</em>, forever, and you couldn't
+        take it back without changing your password everywhere. OAuth is the valet key — <strong>limited, delegated, revocable
+        access</strong>.</p>
+
+        <h3>The four roles — learn these names, they're on every diagram</h3>
+        <div class="pillar-grid">
+          <div class="pillar-card conf">
+            <h4>👤 Resource Owner</h4>
+            <div class="answers">You — the user who owns the data.</div>
+            <p>The person who can grant access to their own stuff (your photos, your calendar, your transactions).</p>
+          </div>
+          <div class="pillar-card integ">
+            <h4>📱 Client</h4>
+            <div class="answers">The app that wants access.</div>
+            <p>The third-party application (the printing app, the budgeting app) asking to act on your behalf — with
+            <em>limited</em> permissions.</p>
+          </div>
+          <div class="pillar-card amber">
+            <h4>🏛️ Authorization Server</h4>
+            <div class="answers">Issues the tokens.</div>
+            <p>Where you actually log in and approve the request (Google's, Discord's, your bank's auth server). It — and only it —
+            sees your password, and hands the Client a scoped token.</p>
+          </div>
+          <div class="pillar-card avail">
+            <h4>🗄️ Resource Server</h4>
+            <div class="answers">Holds the data &amp; honors the token.</div>
+            <p>The API that actually serves the photos/calendar/transactions, accepting the access token and checking its scopes.</p>
+          </div>
+        </div>
+
+        <p>The permissions themselves are called <strong>scopes</strong> — the fine print on the valet key. A scope like
+        <code>photos:read</code> or <code>calendar.events.readonly</code> says exactly what the Client may do. When you approve the
+        request, you see the <strong>consent screen</strong> ("PhotoPrint wants to: view your photos") — that's scopes made human.
+        <strong>Least privilege</strong> from Day 28 lives here: a Client should request the narrowest scopes it needs, and you
+        should be suspicious of one asking for more. And because the token is scoped and expiring, the damage a stolen or
+        misbehaving Client can do is bounded to exactly those permissions, for a limited time — and you can revoke it without
+        touching your password.</p>
+      </section>
+
+      <section id="flow">
+        <h2>The Authorization Code Flow — Step by Step</h2>
+        <p>OAuth defines several flows for different situations, but the one you must know — the default for web and mobile apps —
+        is the <strong>Authorization Code flow</strong>. The cleverness is that your password and the final token travel on
+        <em>separate</em> channels, so the Client never touches your password and can't intercept the token from the browser URL.
+        Here it is, following "Connect PhotoPrint to your photos":</p>
+
+        <div class="diagram-box">
+          <svg id="oauth-diagram" width="820" height="440" viewBox="0 0 820 440"></svg>
+        </div>
+
+        <div class="flow-box">
+          <div class="flow-step"><span>①</span><div><strong>Redirect to the Authorization Server.</strong> You click "Connect."
+          PhotoPrint (the Client) sends your browser to <em>Google's</em> auth server, including <em>what</em> it wants
+          (<code>scope=photos:read</code>) and where to return. PhotoPrint never shows you a password box — it hands you off.</div></div>
+          <div class="flow-step"><span>②</span><div><strong>You log in &amp; consent — on Google's domain.</strong> You
+          authenticate directly with Google (where your password lives) and see the consent screen: "PhotoPrint wants to view your
+          photos. Allow?" Your password is only ever seen by the party you already trust with it.</div></div>
+          <div class="flow-step"><span>③</span><div><strong>Back to the Client with a one-time code.</strong> Google redirects
+          your browser back to PhotoPrint carrying a short-lived <strong>authorization code</strong> — not the token. A code
+          glimpsed in a URL is nearly useless on its own, which is the point.</div></div>
+          <div class="flow-step"><span>④</span><div><strong>Client exchanges the code for tokens — server-to-server.</strong>
+          PhotoPrint's <em>backend</em> calls Google directly, presenting the code <em>plus</em> its own client secret, and
+          receives the <strong>access token</strong> (and usually a refresh token). This back-channel call never passes through
+          the browser, so the token is never exposed there.</div></div>
+          <div class="flow-step"><span>⑤</span><div><strong>Use the access token.</strong> PhotoPrint calls the Resource Server
+          (Google Photos API) with the access token; the API checks its signature and scopes and returns <em>only</em> your photos,
+          read-only. When the token expires, step 4 repeats quietly with the refresh token.</div></div>
+        </div>
+
+        <h3>PKCE — the modern must-have</h3>
+        <p>Mobile and single-page apps can't keep a client secret truly secret (it ships inside the app), so an attacker could try
+        to steal the authorization code and redeem it. <strong>PKCE</strong> ("pixy," Proof Key for Code Exchange) closes that
+        hole: at step&nbsp;1 the Client invents a random secret, sends only its <em>hash</em> (Day 28's one-way fingerprint!), and
+        at step&nbsp;4 must present the original secret to prove it's the same app that started the flow. A stolen code is then
+        worthless without that secret. PKCE is now recommended for <em>all</em> clients — know the acronym and the one-line reason.</p>
+      </section>
+
+      <section id="oidc">
+        <h2>OAuth vs OpenID Connect — Access vs Identity</h2>
+        <p>Here's a distinction that trips up even experienced engineers, and nailing it will make you sound senior:
+        <strong>OAuth 2.0 is about authorization, not authentication.</strong> It was designed to answer "<em>what may this app
+        access?</em>" — not "<em>who is this user?</em>" Using raw OAuth to log people in is a classic mistake: an access token
+        says "the bearer may read these photos," which is <em>not</em> a reliable statement of <em>who</em> the user is.</p>
+
+        <div class="pillar-grid">
+          <div class="pillar-card integ">
+            <h4>🗝️ OAuth 2.0</h4>
+            <div class="answers">Authorization — "what may you access?"</div>
+            <p>Issues an <strong>access token</strong> that grants scoped access to resources. It deliberately says nothing
+            standardized about the user's identity. The valet key opens the glovebox; it isn't a passport.</p>
+          </div>
+          <div class="pillar-card conf">
+            <h4>🪪 OpenID Connect (OIDC)</h4>
+            <div class="answers">Authentication — "who are you?"</div>
+            <p>A thin <strong>identity layer on top of OAuth</strong>. Alongside the access token it issues an <strong>ID
+            token</strong> — itself a JWT — with verified claims about the user (<code>sub</code>, name, email). This is what
+            actually powers "Log in with Google."</p>
+          </div>
+        </div>
+
+        <p>So the mental mapping is clean: that ubiquitous <strong>"Log in with Google / Apple / GitHub"</strong> button is
+        <strong>OIDC</strong> (authentication), which rides on OAuth's flow and adds the ID token so your app learns, verifiably,
+        <em>who</em> just logged in. "Let this app access my Google Drive" is plain <strong>OAuth</strong> (authorization). Same
+        handshake, two purposes — and the ID token is, satisfyingly, just another signed JWT, so everything you learned in the
+        first half of today applies directly.</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>Auth looks solved until you ship it. The senior skill is knowing where the sharp edges are and choosing deliberately.</p>
+
+        <h3>Where do you store the token? (XSS vs CSRF)</h3>
+        <p>In a browser you have two bad-ish options. Put the token in <strong>JavaScript-readable storage</strong>
+        (<code>localStorage</code>) and any <strong>XSS</strong> flaw (injected script, Day 28) can read and steal it. Put it in an
+        <strong>httpOnly cookie</strong> (unreadable to JS) and you're safe from XSS theft but now exposed to <strong>CSRF</strong>
+        (the browser auto-attaches the cookie to forged requests) unless you add anti-CSRF defenses. There's no free lunch —
+        httpOnly cookies with <code>SameSite</code> and CSRF tokens is the common, defensible choice, but it's a <em>choice</em>,
+        not a default you can ignore.</p>
+
+        <h3>Revocation really is harder</h3>
+        <p>Be honest in interviews: stateless JWTs genuinely trade away instant revocation. Short access-token lifetimes plus
+        revocable refresh tokens bound the risk, but if your domain needs <em>immediate</em> kill-switch semantics (a banking admin
+        session), you may keep a small server-side allow/deny list — which is partly re-introducing state. Pick the point on the
+        spectrum your threat model demands, rather than pretending JWTs made the problem disappear.</p>
+
+        <h3>Don't trust the token's own <code>alg</code> — and never roll your own</h3>
+        <p>The <code>alg=none</code> attack is real: early libraries read the header, saw <code>"alg":"none"</code>, and skipped
+        signature checking entirely — accepting any forged payload. A correct verifier <strong>pins the expected algorithm
+        server-side</strong> and ignores the attacker-controlled header. The broader rule is Day 28's: <em>never roll your own
+        crypto or token logic</em> — use a vetted library, validate <code>exp</code>, <code>iss</code>, and <code>aud</code>, and
+        keep signing keys in a secret manager.</p>
+
+        <h3>Fat tokens and the "logout" illusion</h3>
+        <p>Because the payload travels on every request, stuffing it with data bloats every call — keep claims lean (an id and a
+        role, not a user's whole profile). And remember that "logging out" a pure JWT client just deletes the token locally; the
+        token itself stays valid until expiry. Real logout means revoking the refresh token and letting the short access token lapse.</p>
+
+        <p style="margin-top:1rem;">The through-line: identity trades <strong>statelessness, scale, and no-password delegation</strong>
+        against <strong>revocation immediacy, token-storage risk, and request overhead.</strong> There is no universally "best"
+        scheme — there's the one that fits your scale, your threat model, and how fast you must be able to say "this session is
+        over, now."</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">🎟️</span><div><strong>The Festival Beyond the Vault Door</strong>
+          — <span>You step out of yesterday's <em>treasure vault</em> through a side door and emerge, blinking, into a roaring
+          <strong>music festival</strong>. At the single <strong>box office</strong> you show your passport once (login) and a
+          clerk snaps a <strong>wristband</strong> onto you — a <em>JWT</em>. You can read everything printed on it — your name,
+          your allowed stages, "expires 11&nbsp;PM" — because the band isn't secret; it's <strong>heat-sealed with a glowing
+          hologram</strong> (the <em>signature</em> you forged in the vault yesterday). You walk up to a stage and the guard just
+          <em>glances</em> at the band and the hologram — <em>no phone call to the box office</em> (stateless). You notice the
+          band is split in two: a flimsy <strong>paper day-pass</strong> you flash everywhere (access token) and a sturdy
+          <strong>member card in your pocket</strong> you only bring back to the box office to get a fresh pass (refresh token).
+          Then, by a food truck, you watch someone hand the vendor's app a small brass <strong>valet key</strong> stamped
+          "charge ≤ \$20, tonight only" instead of their bank card — that's <em>OAuth</em>, delegated access. And taped over the
+          box office window: <em>"Carry a signed band every guard can check without a call; hand apps a valet key, never your
+          master key."</em></span></div></div>
+          <div class="palace-room"><span class="palace-icon">🧮</span><div><strong>The Next Room</strong> — <span>Back-of-Envelope
+          Estimation (Day 30) — the finale of Phase 1. Before you design any system, you have to <em>size</em> it: how many
+          requests per second, how many bytes, how many servers? Tomorrow we learn the quick mental math every engineer uses on a
+          whiteboard to turn "build a URL shortener" into concrete numbers — and close out the fundamentals.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Security Fundamentals (Day 28)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Auth: OAuth 2.0 &amp; JWT (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Back-of-Envelope Estimation (Day 30)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Builds on / enables</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Digital Signatures (Day 28)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">HTTPS / TLS (Day 3)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Load Balancing (Day 5)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Redis session store (Day 7)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">API Gateway (Day 27)</span>
+        </div>
+        <p>Today is Day 28 made concrete. A <strong>JWT is literally a digital signature</strong> wrapped around a few JSON claims —
+        the integrity tool you learned yesterday, put to work proving identity. The reason we abandoned server-stored sessions is
+        the <strong>load balancing</strong> of Day 5: once requests spread across a fleet, state in one server's memory breaks, and
+        a shared <strong>Redis</strong> (Day 7) session store becomes a bottleneck — so we moved the state into a signed token the
+        client carries. That token rides inside the <strong>HTTPS</strong> channel of Day 3 (encryption protects it in transit;
+        the signature protects it from tampering — two different Day-28 promises working together). In production, the
+        <strong>API Gateway</strong> from Day 27 is usually the thing that verifies the JWT at the edge, so your internal services
+        don't each re-implement auth — authentication as a cross-cutting concern, exactly as the gateway pattern promised. And
+        <strong>authorization</strong> — yesterday's "what may you do?" — is encoded as <em>scopes</em> and <em>roles</em> inside
+        the token. Tomorrow's estimation closes Phase 1; everything after it (Phase 2's distributed algorithms) assumes a system
+        that already knows who's calling.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"A JWT is encrypted, so it's safe to put secrets in the payload."</td><td>A standard JWT is <strong>signed, not
+          encrypted</strong>. The payload is Base64URL — anyone can decode and read it. Never put passwords or secrets in it; the
+          signature protects <em>integrity</em>, not confidentiality.</td></tr>
+          <tr><td>"If anyone can edit the payload, JWTs are insecure."</td><td>They can edit it, but they can't produce a valid
+          <strong>signature</strong> without the key, so the tampered token is rejected on verification. Trust comes from the seal,
+          not from hiding the data — straight from Day 28.</td></tr>
+          <tr><td>"JWTs are always better than sessions."</td><td>They trade easy instant <strong>revocation</strong> for
+          statelessness and scale. For a single app, sessions can be simpler and safer. Choose by scale and threat model, not fashion.</td></tr>
+          <tr><td>"Deleting the token on the client logs the user out."</td><td>The token stays valid until <code>exp</code> on any
+          server that sees it. Real logout = revoke the <strong>refresh token</strong> + short access-token lifetimes so access
+          lapses quickly.</td></tr>
+          <tr><td>"OAuth logs users in / tells me who they are."</td><td>OAuth is <strong>authorization</strong> ("what may this
+          app access"). For authentication ("who is this user"), use <strong>OpenID Connect</strong>, which adds an ID token. The
+          "Log in with Google" button is OIDC.</td></tr>
+          <tr><td>"Trust the token's header for how to verify it."</td><td>The <code>alg</code> field is attacker-controlled; the
+          <code>alg=none</code> attack abuses servers that obey it. <strong>Pin the expected algorithm</strong> server-side and
+          validate <code>exp</code>/<code>iss</code>/<code>aud</code>.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ Your API runs on 20 servers behind a load balancer and you're adding "Log in with
+          Google." Walk through: why wouldn't you store login state in one server's memory? What exactly does Google hand your app,
+          and what does your app hand the browser? When a request arrives at any of the 20 servers, how does it verify the user
+          without a database lookup — and what stops an attacker who edits the token to make themselves an admin? (click to reveal)</div>
+          <div class="recall-answer"><strong>Why not in-memory state:</strong> the load balancer (Day 5) sends successive requests
+          to <em>different</em> servers; state in one server's memory isn't shared, so the user gets logged out on the next hop. A
+          shared session store (Redis, Day 7) fixes correctness but adds a lookup and a bottleneck on every request.
+          <strong>What "Log in with Google" does:</strong> that's <strong>OpenID Connect</strong> over OAuth's
+          <strong>Authorization Code flow</strong>. The browser is redirected to Google's <em>Authorization Server</em>, where the
+          user logs in and consents — your app never sees the password. Google returns a one-time <strong>code</strong> to your
+          app's backend, which exchanges it (server-to-server, with its client secret / PKCE) for an <strong>access token</strong>
+          and an <strong>ID token</strong> (a JWT identifying the user). Your app then issues the browser its own short-lived
+          <strong>access token</strong> (plus a refresh token).
+          <strong>Stateless verification:</strong> on each request, <em>any</em> of the 20 servers checks the JWT's
+          <strong>signature</strong> with the shared key (or public key) and reads the claims — <em>no database lookup</em>. That
+          statelessness is the whole point: identity no longer bottlenecks on a shared store.
+          <strong>Why the admin trick fails:</strong> the attacker can decode and rewrite the payload to <code>role: admin</code>,
+          but to be accepted they'd need a matching <strong>signature</strong>, which requires the signing key they don't have — so
+          the forged token fails verification and is rejected (Day 28's integrity guarantee). Bonus: also verify <code>exp</code> so
+          an old token can't be replayed, and pin the algorithm to defeat <code>alg=none</code>.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🔑 "Log in with Google/Apple/GitHub" — OIDC everywhere</div><p>The
+          single sign-on buttons you click daily are <strong>OpenID Connect</strong> over OAuth. They let apps skip storing
+          passwords entirely (less to leak), give users one strong account to protect, and hand the app a signed <strong>ID
+          token</strong> proving who logged in. It's the most-used auth pattern on the consumer web.</p></div>
+          <div class="realworld-card"><div class="rw-company">🏦 Open Banking — OAuth as law</div><p>Regulations (PSD2 in Europe)
+          forced banks to let you share account data with budgeting apps <em>via OAuth</em> instead of handing over your bank
+          password. It's OAuth's founding use-case written into law: <strong>scoped, revocable, password-free</strong> delegated
+          access to your own financial data.</p></div>
+          <div class="realworld-card"><div class="rw-company">⚙️ Microservices &amp; the gateway</div><p>In large systems the
+          <strong>API Gateway</strong> (Day 27) verifies the JWT once at the edge and forwards the trusted identity inward, so
+          dozens of internal services don't each re-implement auth. Stateless tokens are what make this clean — every service can
+          independently trust a signed token without calling back to an auth service.</p></div>
+          <div class="realworld-card"><div class="rw-company">💥 The alg=none lesson</div><p>Around 2015, researchers found many
+          popular JWT libraries would honor <code>"alg":"none"</code> and skip signature verification, accepting forged tokens. The
+          industry-wide fix — <strong>pin the algorithm, never trust the token's header</strong> — is now a standard review-checklist
+          item and a favorite interview question.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What are the three parts of a JWT, and which one makes it trustworthy?</div>
+          <div class="fc-a">A: <strong>header.payload.signature</strong>, all Base64URL-encoded. Header = algorithm metadata;
+          payload = readable claims (<code>sub</code>, <code>exp</code>, role…); <strong>signature</strong> = the tamper-evident
+          seal (Day 28). The signature is what makes the readable payload trustworthy — you can't forge it without the key.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Is a JWT payload secret? Why does stateless verification scale?</div>
+          <div class="fc-a">A: <strong>No — the payload is readable</strong> (Base64URL is encoding, not encryption); never put
+          secrets in it. It scales because <em>any</em> server verifies the signature <strong>locally with no lookup</strong>, so
+          auth doesn't bottleneck on a shared session store across the fleet.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Access token vs refresh token?</div>
+          <div class="fc-a">A: <strong>Access token</strong> = short-lived JWT sent on every request (caps the damage of theft).
+          <strong>Refresh token</strong> = long-lived, sent only to the Authorization Server to mint new access tokens, and
+          <em>revocable server-side</em>. The split buys stateless speed <em>and</em> a revocation lever.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What problem does OAuth 2.0 solve, and name its four roles.</div>
+          <div class="fc-a">A: <strong>Delegated authorization</strong> — letting an app access your data in another service without
+          your password (the valet key). Roles: <strong>Resource Owner</strong> (you), <strong>Client</strong> (the app),
+          <strong>Authorization Server</strong> (issues tokens after login + consent), <strong>Resource Server</strong> (holds the
+          data). Access is limited by <strong>scopes</strong>.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: OAuth vs OpenID Connect?</div>
+          <div class="fc-a">A: <strong>OAuth 2.0 = authorization</strong> ("what may this app access?" → access token).
+          <strong>OIDC = authentication</strong> ("who is this user?"), a layer on top that adds an <strong>ID token</strong> (a
+          JWT). "Log in with Google" is OIDC; "let this app read my Drive" is plain OAuth.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Using the festival image, explain the wristband (JWT) and the valet key (OAuth) and what each one is for.</li>
+          <li>Why did stateful sessions break when the app grew to many servers, and how does a self-contained token fix it?</li>
+          <li>Name the three parts of a JWT. Why is the payload safe to trust even though anyone can read and edit it?</li>
+          <li>Explain the access-token / refresh-token split and exactly which problem it solves.</li>
+          <li>List OAuth's four roles and walk the Authorization Code flow from "click Connect" to "app reads my photos."</li>
+          <li>What does PKCE protect against, and how does it use a one-way hash (Day 28) to do it?</li>
+          <li>Distinguish OAuth from OpenID Connect, and say which one the "Log in with Google" button uses.</li>
+          <li>Describe the <code>alg=none</code> attack and the one-line rule that stops it.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>stop making the server remember everyone — give each user a signed token they
+          carry (JWT); and when an app must act for a user, give it a limited, revocable key, never the password (OAuth).</strong>
+          A <em>JWT</em> is <strong>header.payload.signature</strong>: the payload is <em>readable, not secret</em>, and the
+          <em>signature</em> (yesterday's digital signature) is what lets any server trust it <strong>without a lookup</strong> —
+          the statelessness that makes it scale across a fleet and across microservices. Because a signed token can't be un-issued,
+          we split into a short-lived <em>access token</em> and a revocable <em>refresh token</em> to bound the cost of theft.
+          <em>OAuth&nbsp;2.0</em> is delegated <strong>authorization</strong> — four roles (Resource Owner, Client, Authorization
+          Server, Resource Server), a scoped and expiring token, and the Authorization Code flow (with PKCE) that keeps your
+          password and the token on separate channels. When you need true <strong>authentication</strong> — "who is this user?" —
+          add <em>OpenID Connect</em> and its ID token (the "Log in with Google" button). Mind the sharp edges: where you store the
+          token (XSS vs CSRF), that logout isn't instant, and that you must pin the algorithm so <code>alg=none</code> can't fool
+          you. Tomorrow (Day 30) we close Phase 1 with <strong>back-of-envelope estimation</strong> — the quick math that turns a
+          vague "build X" into real numbers before you design a single box.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-28.html">← Day 28: Security Fundamentals</a>
+        <a href="day-30.html" class="coming-soon-link">Day 30: Back-of-Envelope Estimation →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 29 of 90 — Authentication: OAuth 2.0 &amp; JWT</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── JWT verification simulator ───────────────────────────────────────
+  var state = { tamper:false, expired:false, algnone:false };
+  var els = {
+    tamper: document.getElementById('tamper-toggle'),
+    clock:  document.getElementById('clock-toggle'),
+    alg:    document.getElementById('alg-toggle'),
+    str:    document.getElementById('jwt-string'),
+    mSig:   document.getElementById('m-sig'),
+    mExp:   document.getElementById('m-exp'),
+    mRole:  document.getElementById('m-role'),
+    status: document.getElementById('sim-status')
+  };
+
+  function setCell(el, text, cls) { el.textContent = text; el.className = 'val ' + cls; }
+
+  function render() {
+    var tampered = state.tamper, expired = state.expired, algnone = state.algnone;
+
+    // Build a readable pseudo-token string with colored segments.
+    var header  = algnone ? '{"alg":"none"}' : '{"alg":"HS256"}';
+    var role    = tampered ? 'admin' : 'user';
+    var payload = '{"sub":"u_42","role":"' + role + '","exp":' + (expired ? '(past)' : '(future)') + '}';
+    var sig     = algnone ? '(none — stripped)' : (tampered ? 'K3nR…9aQ (no longer matches!)' : 'K3nR…9aQ');
+    els.str.innerHTML =
+      '<span class="seg-h">b64(' + header + ')</span><span class="dot">.</span>' +
+      '<span class="seg-p">b64(' + payload + ')</span><span class="dot">.</span>' +
+      '<span class="seg-s">' + sig + '</span>';
+
+    // Per-check status cells.
+    // Signature: valid only when NOT tampered AND NOT alg=none.
+    if (algnone)      setCell(els.mSig, '💣 skipped', 'bad');
+    else if (tampered) setCell(els.mSig, '✖ mismatch', 'bad');
+    else               setCell(els.mSig, '✔ valid', 'good');
+    // Expiry.
+    setCell(els.mExp, expired ? '⌛ expired' : '🟢 fresh', expired ? 'bad' : 'good');
+    // Claimed role (what the payload asserts — before we decide to trust it).
+    setCell(els.mRole, role, tampered ? 'warn' : 'blue');
+
+    // Verdict — a CORRECT server's logic, in priority order.
+    var txt, scls;
+    if (algnone) {
+      txt = '💣 REJECTED (and this is the attack to know). The token claims "alg":"none" — "trust me, no signature needed." A naïve library that obeyed the header would accept ANY forged payload. A correct server PINS the expected algorithm (HS256) server-side and refuses a token that isn\'t signed that way.';
+      scls = 'q-status bad';
+    } else if (tampered) {
+      txt = '✖ REJECTED. You changed role → admin, but you can\'t re-sign the new payload without the server\'s secret key, so the signature no longer matches the contents. Tampering is detected and the token is thrown out — Day 28\'s integrity guarantee in action.';
+      scls = 'q-status bad';
+    } else if (expired) {
+      txt = '⌛ REJECTED. The signature is perfectly valid, but exp is in the past. Expiry is always checked — this is exactly what stops a stolen token from working forever, and why access tokens are kept short-lived.';
+      scls = 'q-status bad';
+    } else {
+      txt = '✔ ACCEPTED. The signature checks out, so the server TRUSTS the payload it just read — no database lookup needed — and treats this request as user u_42 with role "user". That lookup-free trust is why JWTs scale across a whole fleet.';
+      scls = 'q-status ok';
+    }
+    els.status.textContent = txt;
+    els.status.className = scls;
+  }
+
+  function wireToggle(container, key) {
+    Array.prototype.forEach.call(container.querySelectorAll('button'), function(btn){
+      btn.addEventListener('click', function(){
+        state[key] = btn.getAttribute('data-on') === 'true';
+        Array.prototype.forEach.call(container.querySelectorAll('button'), function(b){
+          b.classList.toggle('active', b === btn);
+        });
+        render();
+      });
+    });
+  }
+  wireToggle(els.tamper, 'tamper');
+  wireToggle(els.clock, 'expired');
+  wireToggle(els.alg, 'algnone');
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+
+  // Anchor diagram: the festival — box office issues a wristband (JWT) + a valet key (OAuth).
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, '🎵 One login, a sealed wristband every guard checks locally — and a valet key for apps', '#e2e8f0', '13', '700');
+
+    // Box office (center-left)
+    svg.appendChild(rs.rectangle(30, 60, 180, 110, { stroke:'#fbbf24', strokeWidth:1.8, roughness:1.1, fill:'#fbbf2410', fillStyle:'solid' }));
+    T(120, 86, '🏛️ BOX OFFICE', '#fcd34d', '12', '800');
+    T(120, 106, 'Authorization Server', '#94a3b8', '9', '600');
+    T(120, 130, 'show passport ONCE', '#cbd5e1', '9.5', '600');
+    T(120, 148, '(log in)', '#94a3b8', '9', '600');
+
+    // Wristband (JWT) issued — top right
+    svg.appendChild(rs.rectangle(300, 54, 300, 96, { stroke:'#a78bfa', strokeWidth:1.6, roughness:1, fill:'#a78bfa10', fillStyle:'solid' }));
+    T(450, 76, '🎟️ WRISTBAND = JWT', '#c4b5fd', '11.5', '800');
+    T(450, 96, 'name · allowed stages · "expires 11PM"', '#ddd6fe', '9', '600');
+    T(450, 114, '🔏 heat-sealed with a hologram = SIGNATURE', '#86efac', '9', '700');
+    T(450, 132, 'readable, but impossible to forge', '#94a3b8', '8.5', '600');
+    svg.appendChild(rs.line(210, 100, 300, 100, { stroke:'#a78bfa', strokeWidth:1.6, roughness:1 }));
+
+    // Stage guards checking locally — bottom
+    var stages = [ {x:300,l:'🎤 Stage A'}, {x:430,l:'🎸 Stage B'}, {x:560,l:'🥁 Stage C'} ];
+    stages.forEach(function(s){
+      svg.appendChild(rs.rectangle(s.x, 190, 110, 64, { stroke:'#22c55e', strokeWidth:1.5, roughness:1, fill:'#22c55e0c', fillStyle:'solid' }));
+      T(s.x + 55, 214, s.l, '#86efac', '10', '700');
+      T(s.x + 55, 232, 'glance + check', '#cbd5e1', '8.5', '600');
+      T(s.x + 55, 246, 'NO phone call', '#86efac', '8', '700');
+    });
+    T(450, 274, '↑ stateless verification: each guard trusts the hologram alone — scales to 50 stages', '#94a3b8', '9', '600');
+
+    // Valet key (OAuth) — bottom band
+    svg.appendChild(rs.rectangle(30, 300, 760, 80, { stroke:'#38bdf8', strokeWidth:1.6, roughness:1, fill:'#38bdf80c', fillStyle:'solid' }));
+    T(410, 322, '🗝️ VALET KEY = OAuth 2.0 — delegated access for an app', '#7dd3fc', '11', '800');
+    T(410, 344, 'Food-truck app gets: "charge ≤ $20, tonight only" — a scoped, expiring, revocable token.', '#cbd5e1', '9.5', '600');
+    T(410, 362, 'The app acts on your behalf and NEVER sees your password (your master key).', '#86efac', '9', '700');
+  }
+
+  // JWT anatomy diagram: three segments + how verification works.
+  function drawJwtDiagram() {
+    var svg = document.getElementById('jwt-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 22, 'A JWT = header . payload . signature  (all Base64URL — encoded, NOT encrypted)', '#e2e8f0', '12.5', '700');
+
+    // Three segments across the top
+    var segs = [
+      { x:30,  w:230, stroke:'#38bdf8', fill:'#38bdf810', label:'① HEADER', c:'#7dd3fc',
+        rows:['{ "alg":"HS256",', '  "typ":"JWT" }', 'which algorithm'] },
+      { x:295, w:230, stroke:'#a78bfa', fill:'#a78bfa12', label:'② PAYLOAD', c:'#c4b5fd',
+        rows:['{ "sub":"u_42",', '  "role":"user",', '  "exp":1799999999 }'] },
+      { x:560, w:230, stroke:'#22c55e', fill:'#22c55e10', label:'③ SIGNATURE', c:'#86efac',
+        rows:['sign( h + "." + p,', '      key )', 'the tamper seal'] }
+    ];
+    segs.forEach(function(s){
+      svg.appendChild(rs.rectangle(s.x, 46, s.w, 120, { stroke:s.stroke, strokeWidth:1.7, roughness:1, fill:s.fill, fillStyle:'solid' }));
+      T(s.x + s.w/2, 70, s.label, s.c, '11.5', '800');
+      s.rows.forEach(function(r, i){ T(s.x + s.w/2, 96 + i*20, r, '#cbd5e1', '9.5', i===2?'600':'500', true); });
+    });
+    T(145, 182, 'anyone can decode →', '#94a3b8', '8.5', '600');
+    T(410, 182, 'readable claims (NOT secret!)', '#fca5a5', '9', '700');
+    T(675, 182, '← needs the key', '#94a3b8', '8.5', '600');
+
+    // Verification box (bottom)
+    svg.appendChild(rs.rectangle(60, 212, 700, 180, { stroke:'#fbbf24', strokeWidth:1.6, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(410, 236, '🔎 How a server VERIFIES it (no database lookup)', '#fcd34d', '11.5', '800');
+
+    T(150, 272, '💻 client sends', '#cbd5e1', '10', '700');
+    T(150, 290, 'header.payload.sig', '#94a3b8', '8.5', '600', true);
+
+    svg.appendChild(rs.line(250, 282, 330, 282, { stroke:'#fbbf24', strokeWidth:1.6, roughness:1 }));
+
+    T(470, 266, '1. re-sign header+payload with the key', '#cbd5e1', '9.5', '600');
+    T(470, 286, '2. does it match the signature on the token?', '#cbd5e1', '9.5', '600');
+    T(470, 306, '3. is exp still in the future?', '#cbd5e1', '9.5', '600');
+
+    svg.appendChild(rs.rectangle(300, 330, 230, 44, { stroke:'#22c55e', strokeWidth:1.6, roughness:1, fill:'#22c55e12', fillStyle:'solid' }));
+    T(415, 350, '✔ match + not expired → TRUST', '#86efac', '10', '800');
+    T(415, 366, 'read the claims, no lookup needed', '#94a3b8', '8.5', '600');
+
+    T(410, 388, 'Tamper the payload and the signature stops matching → rejected. That is why readable is still safe.', '#94a3b8', '8.5', '600');
+  }
+
+  // OAuth Authorization Code flow diagram.
+  function drawOauthDiagram() {
+    var svg = document.getElementById('oauth-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 22, 'OAuth Authorization Code flow — password & token never meet the Client directly', '#e2e8f0', '12.5', '700');
+
+    // Four actors as columns
+    var actors = [
+      { x:40,  icon:'👤', name:'You', sub:'Resource Owner', stroke:'#38bdf8' },
+      { x:250, icon:'📱', name:'PhotoPrint', sub:'Client', stroke:'#a78bfa' },
+      { x:460, icon:'🏛️', name:'Google Auth', sub:'Authorization Server', stroke:'#fbbf24' },
+      { x:650, icon:'🗄️', name:'Photos API', sub:'Resource Server', stroke:'#22c55e' }
+    ];
+    actors.forEach(function(a){
+      svg.appendChild(rs.rectangle(a.x, 48, 130, 54, { stroke:a.stroke, strokeWidth:1.6, roughness:1, fill:a.stroke+'10', fillStyle:'solid' }));
+      T(a.x + 65, 70, a.icon + ' ' + a.name, '#e2e8f0', '10', '800');
+      T(a.x + 65, 88, a.sub, '#94a3b8', '8', '600');
+    });
+
+    // Numbered steps as arrows down the page
+    function step(y, x1, x2, color, label, dashed) {
+      var opts = { stroke:color, strokeWidth:1.7, roughness:1 };
+      if (dashed) opts.strokeLineDash = [5,4];
+      svg.appendChild(rs.line(x1, y, x2, y, opts));
+      // arrowhead
+      var dir = x2 > x1 ? -1 : 1;
+      svg.appendChild(rs.line(x2, y, x2 + dir*8, y - 4, opts));
+      svg.appendChild(rs.line(x2, y, x2 + dir*8, y + 4, opts));
+    }
+
+    T(410, 128, '①  "Connect" → Client redirects your browser to the Auth Server (scope=photos:read)', '#c4b5fd', '9.5', '700');
+    step(140, 315, 525, '#a78bfa');
+
+    T(410, 170, '②  You log in & consent — ON GOOGLE’S domain. Your password never touches the Client.', '#fcd34d', '9.5', '700');
+    step(182, 105, 525, '#fbbf24', null, true);
+
+    T(410, 212, '③  Auth Server redirects back to the Client with a one-time CODE (not the token)', '#fcd34d', '9.5', '700');
+    step(224, 525, 315, '#fbbf24');
+
+    T(410, 256, '④  Client backend exchanges CODE + secret (+PKCE) for the ACCESS TOKEN — server-to-server', '#c4b5fd', '9.5', '700');
+    step(268, 315, 525, '#a78bfa');
+
+    T(410, 300, '⑤  Client calls the API with the access token → gets ONLY your photos, read-only', '#86efac', '9.5', '700');
+    step(312, 315, 715, '#22c55e');
+
+    // Takeaway band
+    svg.appendChild(rs.rectangle(60, 342, 700, 72, { stroke:'#38bdf8', strokeWidth:1.5, roughness:1, fill:'#38bdf80a', fillStyle:'solid' }));
+    T(410, 366, 'Two separate channels: your PASSWORD only ever meets the Auth Server (step ②),', '#cbd5e1', '9.5', '700');
+    T(410, 384, 'and the TOKEN is fetched back-channel (step ④) — so the Client sees neither your password nor', '#cbd5e1', '9.5', '700');
+    T(410, 400, 'the token in the browser URL. The result is a scoped, expiring, revocable key — the valet key.', '#86efac', '9', '700');
+  }
+
+  function drawAll() { drawAnchorDiagram(); drawJwtDiagram(); drawOauthDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>

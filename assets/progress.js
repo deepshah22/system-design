@@ -128,10 +128,15 @@ function updateProgressRing(pct) {
 }
 
 /* ─── INITIALIZE DAY PAGE ─────────────────────────────────── */
+let _dayPageInitialized = false;
 function initDayPage(dayNum) {
+  // Idempotent: guard against double-init (some early pages call this inline
+  // AND the auto-init below fires) so the click listener is never wired twice.
+  if (_dayPageInitialized) return;
   const done = isCompleted(dayNum);
   const btn = document.getElementById('mark-complete-btn');
   if (!btn) return;
+  _dayPageInitialized = true;
 
   updateMarkBtn(btn, done);
 
@@ -188,3 +193,16 @@ function updateMarkBtn(btn, done) {
     btn.style.color = '';
   }
 }
+
+/* ─── AUTO-INIT ───────────────────────────────────────────────
+   Detect whether we're on a lesson page (it has #mark-complete-btn)
+   and, if so, derive the day number from the filename (day-NN.html)
+   and wire up progress tracking. This makes every lesson's
+   "Mark as Complete" button work without each page needing its own
+   inline initDayPage() call. initDayPage is idempotent, so pages that
+   still call it explicitly (e.g. day-01) are unaffected. */
+document.addEventListener('DOMContentLoaded', () => {
+  if (!document.getElementById('mark-complete-btn')) return;
+  const m = window.location.pathname.match(/day-(\d+)\.html/i);
+  if (m) initDayPage(parseInt(m[1], 10));
+});
