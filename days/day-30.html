@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 30: Back-of-Envelope Estimation | System Design Mastery</title>
+  <meta name="description" content="The finale of Phase 1. Before you design a single box, you have to size the system: how many requests per second, how many bytes, how many servers? Learn the quick mental math every engineer does on a whiteboard — turning a vague 'build Twitter' into concrete numbers. Master the estimation pipeline (assumptions → QPS → storage → bandwidth → servers), the handful of numbers worth memorizing (powers of ten, the ~100,000 seconds in a day, latency numbers, read-heavy ratios), the art of rounding to a single order of magnitude, and why the numbers — not taste — decide whether a system fits on one box or forces sharding, caching and a CDN. Taught with a wedding-caterer-on-a-napkin anchor, a live estimation calculator you can drive, Excalidraw-style diagrams of the estimation funnel and the scale ruler, a full worked Twitter-feed example, tradeoffs, common mistakes, and active recall." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; gap:1rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* concept cards — colored left bar */
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card .answers { font-size:.8rem; font-weight:700; color:var(--text-primary); margin:.35rem 0; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    .pillar-card .eg { font-size:.75rem; color:var(--text-muted); margin-top:.45rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* estimation calculator */
+    .est-controls { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:1rem 1.75rem; margin:1rem 0 1.25rem; }
+    .est-row label { display:flex; justify-content:space-between; align-items:baseline; font-size:.8rem; font-weight:700; color:var(--text-secondary); margin-bottom:.3rem; }
+    .est-row label .est-val { color:var(--accent-light); font-family:'JetBrains Mono',monospace; font-size:.85rem; }
+    .est-row input[type=range] { width:100%; accent-color: var(--accent); cursor:pointer; }
+    .est-row .hint { font-size:.68rem; color:var(--text-muted); margin-top:.15rem; }
+    .prop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:.75rem; margin:1rem 0; }
+    .prop-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.8rem 1rem; text-align:center; }
+    .prop-card .val { font-size:1.1rem; font-weight:800; line-height:1.3; }
+    .prop-card .lbl { font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); margin-top:.25rem; }
+    .prop-card .val.good { color:#22c55e; } .prop-card .val.bad { color:#fb7185; } .prop-card .val.warn { color:#fbbf24; } .prop-card .val.blue { color:#7dd3fc; } .prop-card .val.purple { color:#c4b5fd; }
+    .q-status { text-align:center; font-weight:700; font-size:.9rem; padding:.65rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; line-height:1.6; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase1">Phase 1: Fundamentals</a><span class="breadcrumb-sep">/</span>
+      <span>Day 30</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 30 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📘 Phase 1 — Fundamentals</span>
+      <span class="meta-pill">🏁 Phase 1 Finale</span>
+    </div>
+    <h1>Back-of-Envelope Estimation<br><span style="color:var(--accent)">Turning "Build Twitter" Into Real Numbers</span></h1>
+    <p class="lead">
+      For 29 days we've collected the <em>parts</em> — load balancers, caches, databases, queues, replicas, gateways. Today we
+      learn the one skill that tells you <strong>how many of each you actually need</strong>. Before you draw a single box, a good
+      engineer does ninety seconds of quick math: <em>how many requests per second? how many bytes stored? how much bandwidth? how
+      many servers?</em> That math is <strong>back-of-envelope estimation</strong>, and it's the difference between an architecture
+      you <em>guessed</em> and one the <em>numbers demanded</em>. You'll learn the estimation pipeline (a few assumptions flow into
+      QPS, storage, bandwidth and server count), the tiny set of numbers worth memorizing, the art of rounding so aggressively that
+      the answer takes seconds — and why these numbers, not taste, decide whether your system fits on one laptop or forces sharding,
+      caching and a CDN. This closes Phase 1; tomorrow we open Phase 2 with the hard distributed algorithms that big numbers force on us.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#why">Why Estimate At All</a>
+        <a href="#pipeline">The Estimation Pipeline</a>
+        <a href="#numbers">Numbers Worth Memorizing</a>
+        <a href="#rounding">The Art of Rounding</a>
+        <a href="#worked">A Worked Example</a>
+        <a href="#rules">Rules of Thumb</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">💒 🧮 🍽️</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Picture a <strong>wedding caterer</strong> who has just been handed a job. Before she buys a single ingredient, she
+            flips over a <strong>napkin</strong> and does thirty seconds of math. <em>"500 guests. Each eats about 3 plates over
+            the evening — call it 1,500 plates. But they don't eat evenly: everyone hits the buffet in the same 30-minute
+            <strong>dinner rush</strong>, so I must cook for the <strong>peak</strong>, not the average — size the kitchen for
+            maybe 3× the steady rate. Each plate needs a fridge shelf's worth of ingredients, held for the three days before the
+            event — that's my <strong>storage</strong>. The serving line can only push so many plates per minute through one
+            doorway — that's my <strong>throughput</strong>. And one waiter can carry maybe 20 plates an hour, so for the rush I
+            need this many <strong>waiters</strong>."</em></p>
+            <p>She never computes anything exactly. 500 guests might be 480 or 530 — she doesn't care, because her answer
+            ("rent the big kitchen, hire eight waiters, book two fridges") doesn't change. That's the whole art: <strong>a few
+            rough assumptions, multiplied together, rounded hard, give you the <em>size</em> of the thing before you build it.</strong>
+            Now map it onto a software system and it's <em>exactly</em> the same picture: <strong>guests = users</strong>,
+            <strong>plates per guest = requests per user</strong>, <strong>the dinner rush = peak QPS</strong>,
+            <strong>the fridges = storage</strong>, <strong>the serving-line doorway = bandwidth</strong>, and
+            <strong>the waiters = servers</strong>. Burn in the image of the caterer and her napkin: <em>you size the kitchen
+            before the wedding — never during the dinner rush.</em></p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="820" height="400" viewBox="0 0 820 400"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Guessing Gaurav</span> was in his first serious system-design interview. "Design a photo-
+            sharing service," the interviewer said. Gaurav dove straight for the fun part — microservices here, a message queue
+            there, a sprinkle of Kafka — drawing boxes and arrows with real confidence. Ten minutes in, the interviewer asked a
+            quiet question that stopped him cold: <em>"How much storage will this actually need in a year?"</em> Gaurav had no idea.
+            He'd designed an elaborate machine without knowing if it was handling a thousand users or a billion. The whole design
+            was floating in the air, attached to nothing.
+          </p>
+          <p>
+            He tried again a week later, and this time he started differently. Before a single box, he said: <em>"Let me size this
+            first."</em> He wrote down three guesses on the whiteboard. <strong>100 million daily users.</strong> Each uploads about
+            <strong>2 photos a day</strong> and scrolls a feed <strong>20 times a day.</strong> That's it — three numbers. Then he
+            turned the crank. 100M × 2 = <strong>200M uploads/day</strong>; divide by the ~<strong>100,000 seconds in a day</strong>
+            and that's <strong>~2,000 uploads/second</strong> on average, maybe <strong>~6,000 at peak</strong>. Reads: 100M × 20 =
+            <strong>2 billion/day</strong> ≈ <strong>20,000 reads/second</strong>, peaking near <strong>60,000.</strong> A
+            <strong>100:1 read-to-write ratio</strong> jumped off the napkin — "this is a <em>read-heavy</em> system, so caching and
+            CDNs will matter enormously." Each photo ~<strong>1 MB</strong>: 200M × 1 MB = <strong>200 TB of new photos
+            <em>every day</em></strong>, ~<strong>73 PB/year.</strong> He didn't even finish the sentence before the realization
+            landed: <em>"there's no way this fits on one database — the storage number alone forces sharding and object storage."</em>
+          </p>
+          <p>
+            The interviewer leaned in. Gaurav hadn't drawn a single box yet, but he'd already <em>justified</em> three of the
+            biggest architectural decisions — a CDN, aggressive caching, and sharded object storage — purely from the numbers.
+            Every box he drew after that had a <em>reason</em>. "We need roughly 60 app servers at peak if each handles ~1,000
+            requests a second; let's round to a fleet behind a load balancer." The design was no longer floating. It was
+            <strong>anchored to reality</strong>, and he could defend every part of it.
+          </p>
+          <p>
+            Gaurav walked out with the lesson every senior engineer eventually internalizes: <strong>don't design first and size
+            later — size first, and let the numbers tell you what to design.</strong> The math took ninety seconds and was never
+            more precise than "about." That roughness wasn't sloppiness; it was the <em>point</em>. He only needed to know the
+            answer to the nearest factor of ten — and that was enough to make every real decision.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">Estimation is a <strong>pipeline</strong>: a handful of <em>assumptions</em> flow, by
+          multiplication, into the four numbers that actually drive a design — <strong>QPS, storage, bandwidth, and server
+          count</strong>. Start from <em>users × actions-per-user</em> to get requests per day; divide by the
+          <strong>~100,000 seconds in a day</strong> to get <strong>average QPS</strong>; multiply by a <strong>peak factor</strong>
+          (2–3×) because traffic clumps. Split reads from writes — most systems are <strong>read-heavy</strong> (often 100:1), and
+          that single ratio tells you how much caching and how many replicas you'll want. <strong>Storage</strong> = writes/day ×
+          object size × retention. <strong>Bandwidth</strong> = QPS × object size. <strong>Servers</strong> = peak QPS ÷
+          per-server capacity. The craft is in <strong>rounding ruthlessly</strong> — round every input to a nice power of ten, keep
+          the answer accurate only to the nearest <em>order of magnitude</em>, and you'll finish in under two minutes. The purpose is
+          never a precise bill; it's a <strong>sanity check that picks the architecture</strong>: these numbers tell you whether the
+          thing fits on one box or demands sharding, caching, and a CDN. One-line test for any design: <em>before you draw a box,
+          can you say — to the nearest factor of ten — how many requests per second and how many terabytes this handles?</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — The Estimation Napkin</h2>
+        <div class="sim-box">
+          <p>Here is the caterer's napkin as a live calculator. Set four rough assumptions and watch the whole design <em>size
+          itself</em> — the average and peak request rates, the write rate, five years of storage, the egress bandwidth, and how
+          many servers the peak demands. Notice two things as you play: <strong>small changes in assumptions swing the answer by
+          orders of magnitude</strong> (that's why we round), and the verdict at the bottom flips from <em>"fits on one box"</em> to
+          <em>"you must shard and cache"</em> — the numbers, not your taste, are choosing the architecture.</p>
+
+          <div class="est-controls">
+            <div class="est-row">
+              <label for="s-dau">👥 Daily active users <span class="est-val" id="v-dau">100M</span></label>
+              <input type="range" id="s-dau" min="0" max="5" step="1" value="3" />
+              <div class="hint">How many people use it each day.</div>
+            </div>
+            <div class="est-row">
+              <label for="s-req">🔁 Requests / user / day <span class="est-val" id="v-req">10</span></label>
+              <input type="range" id="s-req" min="0" max="4" step="1" value="2" />
+              <div class="hint">Opens, scrolls, posts — total actions each day.</div>
+            </div>
+            <div class="est-row">
+              <label for="s-ratio">📖 Read : write ratio <span class="est-val" id="v-ratio">100 : 1</span></label>
+              <input type="range" id="s-ratio" min="0" max="3" step="1" value="2" />
+              <div class="hint">Most systems read far more than they write.</div>
+            </div>
+            <div class="est-row">
+              <label for="s-size">📦 Avg object size <span class="est-val" id="v-size">1 KB</span></label>
+              <input type="range" id="s-size" min="0" max="4" step="1" value="2" />
+              <div class="hint">Bytes stored per write / sent per read.</div>
+            </div>
+            <div class="est-row">
+              <label for="s-peak">📈 Peak factor <span class="est-val" id="v-peak">3×</span></label>
+              <input type="range" id="s-peak" min="0" max="3" step="1" value="2" />
+              <div class="hint">Peak traffic ÷ average traffic.</div>
+            </div>
+            <div class="est-row">
+              <label for="s-ret">🗄️ Retention <span class="est-val" id="v-ret">5 yr</span></label>
+              <input type="range" id="s-ret" min="0" max="3" step="1" value="2" />
+              <div class="hint">How long you keep the data.</div>
+            </div>
+          </div>
+
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val blue" id="m-avg">—</div><div class="lbl">Avg QPS</div></div>
+            <div class="prop-card"><div class="val warn" id="m-peak">—</div><div class="lbl">Peak QPS</div></div>
+            <div class="prop-card"><div class="val purple" id="m-write">—</div><div class="lbl">Write QPS</div></div>
+            <div class="prop-card"><div class="val good" id="m-store">—</div><div class="lbl">Storage (retention)</div></div>
+            <div class="prop-card"><div class="val blue" id="m-bw">—</div><div class="lbl">Read egress</div></div>
+            <div class="prop-card"><div class="val warn" id="m-srv">—</div><div class="lbl">Servers @1k QPS</div></div>
+          </div>
+
+          <div class="q-status ok" id="sim-status">—</div>
+
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: leave it at the defaults (100M users,
+          10 actions each) and you get a <em>medium</em> system — tens of thousands of QPS, tens of terabytes — the classic
+          load-balanced-fleet-plus-cache shape from this whole phase. Now drag <strong>object size</strong> up to
+          <strong>1 MB</strong> (you're storing photos, not text): storage explodes into petabytes and the verdict flips to
+          <em>"shard it, and put it behind a CDN."</em> Drop <strong>users</strong> to <strong>1M</strong> and <strong>size</strong>
+          back to <strong>1 KB</strong>: suddenly it all fits on a single beefy box — and the right move is to <em>not</em>
+          over-engineer. Same pipeline, wildly different architectures, chosen entirely by the numbers.</p>
+        </div>
+      </section>
+
+      <section id="why">
+        <h2>Why Estimate At All?</h2>
+        <p>It's tempting to skip the math and jump to the diagram — the boxes are the fun part. But estimation isn't busywork; it's
+        the step that makes every later decision <em>defensible</em>. Three reasons it earns its ninety seconds:</p>
+
+        <div class="pillar-grid">
+          <div class="pillar-card conf">
+            <h4>🧭 It picks the architecture</h4>
+            <div class="answers">Numbers choose, not taste.</div>
+            <p>"2,000 writes/sec and 73 PB/year" instantly rules out a single database and demands sharding + object storage.
+            "50 QPS and 10 GB" rules out all that complexity — one box is correct. You can't choose the design until you know the size.</p>
+          </div>
+          <div class="pillar-card integ">
+            <h4>🚦 It catches the impossible early</h4>
+            <div class="answers">Fail on the napkin, not in production.</div>
+            <p>If your estimate says a single component must handle 10 million writes/second to one disk, you've found a wall
+            <em>before</em> building. Estimation surfaces the bottleneck while it still costs nothing to move.</p>
+          </div>
+          <div class="pillar-card amber">
+            <h4>🗣️ It makes you credible</h4>
+            <div class="answers">Reason out loud, in numbers.</div>
+            <p>In interviews and design reviews alike, "we need ~60 servers because peak is ~60k QPS at ~1k each" signals a senior
+            engineer. Hand-waving "it'll scale" signals the opposite. The math is how you <em>justify</em> every box you draw.</p>
+          </div>
+        </div>
+
+        <p>Notice what estimation is <strong>not</strong>: it is not capacity planning for a real budget (that's Day 82, and it uses
+        measured data, not guesses), and it is not an exact answer. It's a <strong>fast feasibility and sizing sketch</strong> whose
+        only job is to be right to the nearest order of magnitude — because that's all you need to make the big calls.</p>
+      </section>
+
+      <section id="pipeline">
+        <h2>The Estimation Pipeline</h2>
+        <p>Every estimate follows the same assembly line. You feed in a few assumptions at the top, and each stage multiplies them
+        into one of the numbers that drives a real decision. Learn the five stations and you can size <em>anything</em>.</p>
+
+        <div class="diagram-box">
+          <svg id="funnel-diagram" width="820" height="470" viewBox="0 0 820 470"></svg>
+        </div>
+
+        <div class="flow-box">
+          <div class="flow-step"><span>①</span><div><strong>Assumptions.</strong> State them out loud and write them down:
+          <em>daily active users</em>, <em>actions per user per day</em>, the <em>read:write ratio</em>, the <em>average object
+          size</em>, and a <em>peak factor</em>. These are guesses — pick round numbers. Everything downstream is just these,
+          multiplied.</div></div>
+          <div class="flow-step"><span>②</span><div><strong>QPS (requests/second).</strong> <code>users × actions = requests/day</code>,
+          then <code>÷ 86,400</code> (the seconds in a day, which we round to <strong>~100,000</strong>). Multiply by the peak
+          factor for <strong>peak QPS</strong>. Split off writes using the ratio: <code>writes = requests ÷ (ratio + 1)</code>. This
+          single number — QPS — sizes your compute.</div></div>
+          <div class="flow-step"><span>③</span><div><strong>Storage.</strong> <code>writes/day × object size × retention</code>. Only
+          <em>writes</em> add data; reads don't. Multiply by days of retention (a year ≈ 365 days; five years ≈ 1,800). This tells
+          you whether one disk, one database, or a sharded cluster is in your future.</div></div>
+          <div class="flow-step"><span>④</span><div><strong>Bandwidth.</strong> <code>QPS × object size</code> = bytes/second on the
+          wire. Reads usually dominate egress (data flowing <em>out</em>); writes dominate ingress. Big objects (video, images) make
+          bandwidth — and therefore a <strong>CDN</strong> — the headline concern.</div></div>
+          <div class="flow-step"><span>⑤</span><div><strong>Servers &amp; memory.</strong> <code>peak QPS ÷ per-server capacity</code>
+          (assume a round number like ~1,000 QPS/server) = how many app servers behind the load balancer. For cache memory, size the
+          <strong>hot working set</strong> — often the <em>80/20 rule</em>: ~20% of the data serves ~80% of the reads, so cache that
+          20%.</div></div>
+        </div>
+
+        <p>That's the entire method. The beauty is that it's <em>compositional</em>: change one assumption at the top (say, objects
+        are 1 MB not 1 KB) and you re-run the line in seconds to see every downstream number move. That is exactly what the
+        calculator above is doing.</p>
+      </section>
+
+      <section id="numbers">
+        <h2>Numbers Worth Memorizing</h2>
+        <p>You can't do fast math if you have to derive every constant. There's a small, famous set of numbers that senior engineers
+        keep in their heads. Memorize these three little tables and estimation becomes almost free.</p>
+
+        <h3>① Powers of ten — the data-size ladder</h3>
+        <p>Data sizes climb by factors of 1,000. Attaching a <em>feeling</em> to each rung — "does it fit in RAM? on one disk? only
+        in a cluster?" — is what makes the storage number meaningful.</p>
+        <table class="algo-table">
+          <tr><th>Amount</th><th>Name</th><th>Short</th><th>Rough feel</th></tr>
+          <tr><td>10<sup>3</sup> = 1 thousand bytes</td><td>Kilobyte</td><td>KB</td><td>a paragraph of text; one small API response</td></tr>
+          <tr><td>10<sup>6</sup> = 1 million</td><td>Megabyte</td><td>MB</td><td>a photo, an MP3 minute — fits in RAM trivially</td></tr>
+          <tr><td>10<sup>9</sup> = 1 billion</td><td>Gigabyte</td><td>GB</td><td>a movie; a day's logs — one server's RAM</td></tr>
+          <tr><td>10<sup>12</sup> = 1 trillion</td><td>Terabyte</td><td>TB</td><td>fits on one big disk; one database is still OK</td></tr>
+          <tr><td>10<sup>15</sup></td><td>Petabyte</td><td>PB</td><td>needs a <strong>cluster</strong> — you are sharding now</td></tr>
+          <tr><td>10<sup>18</sup></td><td>Exabyte</td><td>EB</td><td>hyperscaler territory (all of a giant's data)</td></tr>
+        </table>
+        <p style="font-size:.82rem;color:var(--text-muted);">(Engineers often blur the 2<sup>10</sup>=1,024 vs 10<sup>3</sup>=1,000
+        distinction on purpose — for a rough estimate, a KB is "about a thousand bytes" and that's close enough. Precision here would
+        be false precision.)</p>
+
+        <h3>② Time — the numbers that make QPS instant</h3>
+        <table class="algo-table">
+          <tr><th>Interval</th><th>Seconds</th><th>Round to</th></tr>
+          <tr><td>1 day</td><td>86,400</td><td><strong>~100,000</strong> (10<sup>5</sup>)</td></tr>
+          <tr><td>1 month</td><td>~2,600,000</td><td>~2.5 million</td></tr>
+          <tr><td>1 year</td><td>~31,500,000</td><td>~30 million; or just <strong>365 days</strong></td></tr>
+        </table>
+        <p>The single most useful trick in all of estimation: <strong>1 million requests/day ÷ 100,000 s ≈ 10 requests/second.</strong>
+        So <em>1 request/sec ≈ 100,000/day ≈ ~3 million/month</em>. Once that mapping is reflexive, you convert between "per day" and
+        "per second" in your head without pausing.</p>
+
+        <h3>③ Latency — "numbers every engineer should know" (orders of magnitude)</h3>
+        <p>You won't use these for QPS math, but they tell you <em>where time goes</em>, which shapes caching and placement decisions.
+        The exact figures don't matter; the <em>ratios</em> do — memory is ~100× faster than SSD, which is ~100× faster than a disk
+        seek, and crossing the planet dwarfs them all.</p>
+        <table class="algo-table">
+          <tr><th>Operation</th><th>Rough latency</th><th>In human terms</th></tr>
+          <tr><td>Read from RAM</td><td>~100 ns</td><td>the baseline — "instant"</td></tr>
+          <tr><td>Read 1 MB from memory</td><td>~10 µs</td><td>very fast</td></tr>
+          <tr><td>SSD random read</td><td>~100 µs</td><td>~1,000× slower than RAM</td></tr>
+          <tr><td>Network round trip <em>within</em> a datacenter</td><td>~0.5 ms</td><td>cheap — same building</td></tr>
+          <tr><td>Disk (HDD) seek</td><td>~10 ms</td><td>avoid on the hot path</td></tr>
+          <tr><td>Round trip across the world</td><td>~150 ms</td><td>why we put CDNs near users</td></tr>
+        </table>
+        <p>The takeaway you carry forward: <strong>serve from memory when you can, from the same datacenter when you must, and from
+        across the planet only when you have no choice</strong> — the exact reasoning behind caches (Day 6), replicas (Day 12) and
+        CDNs (Day 4).</p>
+      </section>
+
+      <section id="rounding">
+        <h2>The Art of Rounding</h2>
+        <p>Beginners think estimation is about getting a <em>precise</em> number. It's the opposite. The skill is throwing away
+        precision <em>aggressively</em> so the math stays doable in your head, while the answer stays trustworthy to the nearest
+        factor of ten. A few habits make this automatic:</p>
+
+        <div class="pillar-grid">
+          <div class="pillar-card conf">
+            <h4>🔟 Round inputs to powers of ten</h4>
+            <p>87 million users becomes "100 million." 2.3 KB becomes "a couple KB." You're going to be off by less than 2×, and your
+            final answer only needs to be right to ~10×, so this is free accuracy you don't need — spend it on speed.</p>
+          </div>
+          <div class="pillar-card integ">
+            <h4>➗ Cancel zeros, don't multiply them</h4>
+            <p>Work in powers of ten: 10<sup>8</sup> users × 10<sup>1</sup> actions = 10<sup>9</sup>/day; ÷ 10<sup>5</sup> s =
+            10<sup>4</sup> = 10,000 QPS. You're adding and subtracting <em>exponents</em>, never doing long multiplication.</p>
+          </div>
+          <div class="pillar-card amber">
+            <h4>🎯 Stop at one significant figure</h4>
+            <p>"About 20,000 QPS," not "19,340 QPS." "Tens of terabytes," not "47.2 TB." One significant figure is all a sizing
+            decision can use; more digits are a false sense of precision that slows you down and fools you.</p>
+          </div>
+          <div class="pillar-card avail">
+            <h4>🧪 Sanity-check the magnitude</h4>
+            <p>Glance at the answer: does it <em>feel</em> right? If "a personal blog" came out needing 500 servers, you slipped a
+            factor of 1,000 somewhere. The rough answer's job is to be obviously in the right ballpark.</p>
+          </div>
+        </div>
+
+        <div class="code-label">The same estimate, done in exponents (≈90 seconds, in your head)</div>
+        <div class="code-panel"><span class="muted"># Assumptions (rounded hard)</span>
+users       = 100,000,000   <span class="muted"># 10^8  daily active users</span>
+reads/user  = 20            <span class="muted"># ~10^1.3, call it 2 × 10^1</span>
+photo size  = 1 MB          <span class="muted"># 10^6 bytes</span>
+
+<span class="muted"># QPS: add the exponents, divide by seconds/day (~10^5)</span>
+reads/day   = 10^8 × (2×10^1)  = 2 × 10^9        <span class="muted"># 2 billion/day</span>
+avg read QPS = 2×10^9 ÷ 10^5   = 2 × 10^4        <span class="s"># ~20,000 /s</span>
+peak (×3)                       ≈ 6 × 10^4        <span class="s"># ~60,000 /s</span>
+
+<span class="muted"># Storage of a day of uploads (writes), photos at 10^6 B</span>
+uploads/day ≈ 2 × 10^8        <span class="muted"># 100M users × ~2 each</span>
+bytes/day   = 2×10^8 × 10^6 = 2 × 10^14          <span class="s"># ~200 TB / DAY</span>
+per year    ≈ 2×10^14 × 365 ≈ 7 × 10^16          <span class="b"># ~73 PB → must shard + CDN</span></div>
+        <p>No calculator, no long multiplication — just exponents added and a couple of roundings. The answer ("tens of thousands of
+        QPS, petabytes a year") is everything you need to start choosing boxes.</p>
+      </section>
+
+      <section id="worked">
+        <h2>A Worked Example — Sizing a Twitter-like Feed</h2>
+        <p>Let's run the whole pipeline end to end on a system we'll actually design later (Day 46). The point isn't the specific
+        numbers — it's watching assumptions turn into architectural decisions, one stage at a time.</p>
+
+        <div class="diagram-box">
+          <svg id="scale-diagram" width="820" height="360" viewBox="0 0 820 360"></svg>
+        </div>
+
+        <div class="flow-box">
+          <div class="flow-step"><span>①</span><div><strong>Assumptions.</strong> 300M daily active users. Each reads their feed
+          <strong>10×/day</strong> and posts <strong>~0.3 tweets/day</strong> (most people lurk). A tweet is text + metadata ≈
+          <strong>300 bytes</strong>. Peak factor <strong>2×</strong>.</div></div>
+          <div class="flow-step"><span>②</span><div><strong>QPS.</strong> Reads: 300M × 10 = <strong>3 billion/day</strong> ÷ 100,000 ≈
+          <strong>30,000 reads/s</strong>, peak <strong>~60,000</strong>. Writes: 300M × 0.3 ≈ 90M/day ≈ <strong>~1,000
+          writes/s</strong>, peak ~2,000. The <strong>read:write ratio is ~30:1</strong> — read-heavy, so caching and read replicas
+          are going to matter.</div></div>
+          <div class="flow-step"><span>③</span><div><strong>Storage.</strong> 90M tweets/day × 300 B ≈ <strong>27 GB/day</strong> of
+          text. Over 5 years: 27 GB × 1,800 days ≈ <strong>~50 TB</strong>. Text is small! That fits in one sharded database
+          comfortably — <em>but</em> add images/video and the number would jump by 1,000× into petabytes, which is why media lives in
+          separate object storage behind a CDN.</div></div>
+          <div class="flow-step"><span>④</span><div><strong>Bandwidth.</strong> The expensive part is <em>building</em> each feed
+          (dozens of tweets per read). Even at a modest few KB per feed response, 60,000 peak reads/s × a few KB ≈ hundreds of MB/s
+          of egress — enough that you cache assembled feeds rather than rebuild them every time.</div></div>
+          <div class="flow-step"><span>⑤</span><div><strong>Servers &amp; cache.</strong> 60,000 peak QPS ÷ ~1,000 QPS/server ≈
+          <strong>~60 app servers</strong> behind a load balancer. For cache: active users' recent feeds are the hot set — cache a few
+          days of tweets (tens of GB) in Redis and most reads never touch the database. The 30:1 read ratio just paid for itself.</div></div>
+        </div>
+
+        <p>Look at what fell out of three guesses: <strong>a load-balanced fleet of ~60 servers, read replicas, a heavy Redis cache,
+        a sharded database for text, and object storage + CDN for media.</strong> Every one of those is a Phase-1 concept you now
+        own — and the estimate is what told you which to reach for. That is the entire reason estimation closes this phase: it's the
+        glue that turns a <em>pile of components</em> into a <em>sized system</em>.</p>
+      </section>
+
+      <section id="rules">
+        <h2>Rules of Thumb</h2>
+        <p>A field guide of defaults to reach for when you have no better information. Each is a "good enough" starting assumption you
+        can state and then refine.</p>
+        <div class="family-grid">
+          <div class="family-card"><h4>⏱ Seconds in a day ≈ 100,000</h4><p>The master conversion. 1 req/s ≈ 100k/day ≈ ~3M/month.</p><div class="eg">86,400 rounded to 10<sup>5</sup>.</div></div>
+          <div class="family-card"><h4>📖 Assume read-heavy</h4><p>Most consumer systems read far more than they write — 10:1 to 1000:1. Drives caching + replicas.</p><div class="eg">Feeds, timelines, product pages.</div></div>
+          <div class="family-card"><h4>📈 Peak ≈ 2–3× average</h4><p>Traffic clumps around waking hours and events. Size compute for the peak, not the mean.</p><div class="eg">More for spiky events (sales, launches).</div></div>
+          <div class="family-card"><h4>🖥️ ~1,000 QPS per server</h4><p>A rough stand-in for a commodity app server. Divide peak QPS by it to count servers.</p><div class="eg">Real number varies 10×; good for a sketch.</div></div>
+          <div class="family-card"><h4>🎯 80/20 for caching</h4><p>~20% of the data serves ~80% of the reads. Cache that hot slice; it's usually small enough for RAM.</p><div class="eg">Sizes your Redis/Memcached tier.</div></div>
+          <div class="family-card"><h4>📦 Object-size anchors</h4><p>Text/metadata ~hundreds of bytes; a photo ~1 MB; a minute of video ~10 MB. Media dwarfs text by 1,000×.</p><div class="eg">Media → object storage + CDN.</div></div>
+          <div class="family-card"><h4>➕ Headroom &amp; growth</h4><p>Size for a few years and leave slack. Doubling your estimate for safety is cheaper than an outage.</p><div class="eg">Plan for 2–3× current load.</div></div>
+          <div class="family-card"><h4>🔟 One significant figure</h4><p>Round everything to a power of ten; keep one digit. Precision beyond that is fiction at this stage.</p><div class="eg">"~20k QPS," not "19,340."</div></div>
+        </div>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>Estimation looks trivial until you lean on it too hard or too little. The senior skill is knowing exactly how much weight
+        it can bear.</p>
+
+        <h3>Garbage in, garbage out — the assumptions are everything</h3>
+        <p>The whole estimate is only as good as the guesses at the top. If you assume 2 photos/day but users really post 20, every
+        downstream number is 10× wrong. So <strong>state your assumptions out loud</strong>, make them reasonable, and — crucially —
+        know <em>which one your answer is most sensitive to</em>. Usually one assumption dominates (object size for a media app,
+        actions/user for a social app); get that one roughly right and the rest can be sloppy.</p>
+
+        <h3>Average hides the peak — and the peak is what breaks you</h3>
+        <p>"20,000 QPS average" sounds survivable; the 3 a.m. batch job or the Super Bowl ad that briefly drives 200,000 QPS is what
+        actually takes you down. Estimation must always carry a <strong>peak factor</strong>, and for spiky, event-driven systems
+        that factor can be 10× or more, not 2–3×. Sizing for the average is one of the most common and most dangerous mistakes.</p>
+
+        <h3>Don't confuse a sketch with a budget</h3>
+        <p>Back-of-envelope math is for <em>choosing an architecture</em>, not for provisioning a real cluster or forecasting a cloud
+        bill. Those need <strong>measured</strong> numbers from load tests and production telemetry — real capacity planning, which is
+        Day 82. Treating a 90-second guess as a procurement plan is how teams end up wildly over- or under-provisioned.</p>
+
+        <h3>False precision is a red flag</h3>
+        <p>If someone presents "47,293 QPS and 182.4 TB" from assumptions that were themselves guesses, the extra digits are
+        theater — they imply a certainty the inputs can't support. A confident "<em>tens of thousands of QPS, tens of terabytes</em>"
+        is both more honest and more useful. <strong>The goal is the right order of magnitude, stated plainly.</strong></p>
+
+        <p style="margin-top:1rem;">The through-line: estimation trades <strong>precision for speed and insight</strong>. It will never
+        tell you the exact size of anything — and that's fine, because its real job is to make the <em>big</em> decisions
+        (shard or not? cache or not? one box or a fleet?) obvious in the time it takes to write six numbers on a napkin.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through. This is the
+        last room of the ground floor — the Fundamentals wing is now complete.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">🧮</span><div><strong>The Caterer's Kitchen</strong>
+          — <span>You leave the roaring <em>festival</em> of yesterday through the back door and step into a huge
+          <strong>catering kitchen</strong>. On a steel prep table sits a single crumpled <strong>napkin</strong> covered in
+          quick math. A caterer taps it: <em>"500 guests, 3 plates each, all eating in one dinner rush"</em> — and from those three
+          numbers she's already decided the size of the kitchen (<strong>servers</strong>), how many <strong>fridges</strong>
+          (storage), how wide the <strong>serving line</strong> (bandwidth), and how many <strong>waiters</strong> for the peak. Over
+          the door, a sign: <em>"Size the kitchen before the wedding — never during the dinner rush."</em> You realize every room
+          you've walked through — the load balancers, the caches, the databases, the queues — was an <em>ingredient</em>, and this
+          napkin is how you finally know <strong>how much of each to buy.</strong></span></div></div>
+          <div class="palace-room"><span class="palace-icon">🏛️</span><div><strong>The Stairs Up to Phase 2</strong> —
+          <span>At the far end of the kitchen, a staircase leads <em>up</em>. Phase 1 (the Fundamentals wing) is finished — you now
+          have the parts <em>and</em> the napkin to size them. Tomorrow (Day 31) we climb into <strong>Phase 2</strong> and the
+          distributed algorithms that big numbers force on us, starting with <strong>Consensus: the Paxos algorithm</strong> — how a
+          cluster of machines agrees on a single truth when any of them can fail. The hard, beautiful core of distributed systems
+          begins up those stairs.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Auth: OAuth 2.0 &amp; JWT (Day 29)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Back-of-Envelope Estimation (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Consensus: Paxos (Day 31)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Sizes / justifies</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">CDNs (Day 4)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Load Balancing (Day 5)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Caching (Day 6)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Replication (Day 12)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Sharding (Day 13)</span>
+        </div>
+        <p>Today is the <strong>capstone of Phase 1</strong> — the lesson that ties the other 29 together. Estimation is how you
+        decide <em>when</em> to reach for each tool you've learned: a big <strong>read:write ratio</strong> justifies
+        <strong>caching</strong> (Day 6) and <strong>read replicas</strong> (Day 12); a large <strong>storage</strong> number forces
+        <strong>partitioning / sharding</strong> (Day 13); heavy <strong>bandwidth</strong> on big objects demands a
+        <strong>CDN</strong> (Day 4); a high <strong>peak QPS</strong> demands a <strong>load-balanced fleet</strong> (Day 5) and
+        drives <strong>rate limiting</strong> (Day 24) and <strong>autoscaling</strong> for the peak-vs-average gap. The
+        <strong>latency numbers</strong> explain <em>why</em> caches and CDNs exist at all (memory ≫ disk ≫ cross-planet). And it
+        points forward: the moment your numbers say "one machine can't hold this truth," you need machines to <em>agree</em> — which
+        is exactly where Phase 2 begins tomorrow with <strong>consensus</strong>. Estimation is the bridge from "here are the parts"
+        to "here is the right system."</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"I'll design the boxes first and figure out the numbers later."</td><td>Backwards. The numbers <strong>choose</strong>
+          the boxes. Size first; a design not anchored to a scale is floating — you can't tell if it's right.</td></tr>
+          <tr><td>"Estimation means getting a precise answer."</td><td>It means getting the right <strong>order of magnitude</strong>,
+          fast. Round every input to a power of ten and keep one significant figure. Precision here is false precision.</td></tr>
+          <tr><td>"Size for the average load."</td><td>Size compute for the <strong>peak</strong> (2–3×, or 10×+ for spiky systems).
+          The average is survivable; the peak is what takes you down.</td></tr>
+          <tr><td>"Reads and writes are about equal."</td><td>Most systems are heavily <strong>read-heavy</strong> (often 100:1).
+          That one ratio is what justifies your caches and read replicas — always compute it.</td></tr>
+          <tr><td>"Reads add to storage too."</td><td>Only <strong>writes</strong> add data. Storage = writes/day × size × retention.
+          Reads consume <em>bandwidth</em>, not storage.</td></tr>
+          <tr><td>"A back-of-envelope estimate is a capacity plan."</td><td>No — a sketch for choosing architecture uses guesses; a
+          real capacity/cost plan (Day 82) uses <strong>measured</strong> data from load tests and telemetry. Don't confuse them.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ An interviewer says: "Design a service where <strong>200 million</strong> people
+          each watch <strong>5 short videos a day</strong>, and each video averages <strong>5 MB</strong>." Before drawing anything,
+          estimate the <em>peak read QPS</em>, the <em>egress bandwidth</em>, and the <em>storage per year</em> if 1% of those views
+          are new uploads — and say which architectural decisions the numbers force. (click to reveal)</div>
+          <div class="recall-answer"><strong>QPS:</strong> reads/day = 200M × 5 = <strong>1 billion/day</strong>. ÷ 100,000 s ≈
+          <strong>10,000 reads/s</strong> average; at a 2× peak ≈ <strong>~20,000 reads/s</strong>.
+          <strong>Bandwidth (the headline):</strong> 20,000 peak reads/s × 5 MB ≈ <strong>100,000 MB/s ≈ ~100 GB/s</strong> of egress.
+          That is enormous — <em>no origin fleet can serve that directly</em>, so the numbers <strong>force a CDN</strong> (Day 4):
+          the videos must be served from edge caches near users, not from your servers.
+          <strong>Storage:</strong> if 1% of 1B views/day are uploads, that's <strong>10M new videos/day</strong> × 5 MB ≈
+          <strong>50 TB/day</strong> → × 365 ≈ <strong>~18 PB/year</strong>. Petabytes <strong>force sharding and object
+          storage</strong> (Day 13) — one database is out of the question.
+          <strong>What the numbers decided for you:</strong> a CDN for egress, object storage + sharding for the petabytes, and a
+          read-heavy architecture (reads ≫ uploads) that leans on caching. You justified three major decisions in under two minutes,
+          and you haven't drawn a single box yet — exactly the move that makes you sound senior.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🧮 Jeff Dean's "Numbers Everyone Should Know"</div><p>Google's famous
+          latency table (RAM vs SSD vs disk vs cross-country round trip) is the canonical cheat sheet behind every estimate. The
+          point was never the exact nanoseconds — it's internalizing the <strong>ratios</strong> so you instinctively serve from
+          memory and keep hot data close.</p></div>
+          <div class="realworld-card"><div class="rw-company">🗣️ The system-design interview staple</div><p>Nearly every big-tech
+          design interview opens with "estimate the scale." Interviewers use it to see whether you <strong>reason in numbers</strong>
+          or hand-wave. The structured flow — assumptions → QPS → storage → bandwidth → servers — is exactly what they're scoring.</p></div>
+          <div class="realworld-card"><div class="rw-company">📉 Capacity planning at scale</div><p>Real teams start every new service
+          with a back-of-envelope sketch, then <em>validate</em> it with load tests and production metrics. The envelope picks the
+          architecture; the measurements (Day 82) size the actual fleet and budget. Both matter — in that order.</p></div>
+          <div class="realworld-card"><div class="rw-company">🎬 Why Netflix &amp; YouTube are CDN-first</div><p>Run the video math (as
+          above) and <strong>bandwidth</strong>, measured in hundreds of GB/s, dominates everything. That single estimate is why
+          streaming giants push content to thousands of edge locations — the envelope literally dictates the company's core
+          architecture.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What are the five stages of the estimation pipeline?</div>
+          <div class="fc-a">A: <strong>Assumptions → QPS → Storage → Bandwidth → Servers.</strong> A few guesses (users, actions/user,
+          read:write, object size, peak factor) multiply into requests/second, then storage (writes × size × retention), bandwidth
+          (QPS × size), and server count (peak QPS ÷ ~1,000 QPS/server).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: How many seconds are in a day, and why does that number matter?</div>
+          <div class="fc-a">A: 86,400 — rounded to <strong>~100,000 (10<sup>5</sup>)</strong>. It's the master conversion between
+          "per day" and "per second": <strong>1 million/day ≈ 10/s</strong>, so <strong>1/s ≈ 100k/day ≈ 3M/month</strong>.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why size for peak instead of average, and what's a typical peak factor?</div>
+          <div class="fc-a">A: Because the <strong>peak</strong> is what overwhelms a system, not the mean — traffic clumps. A common
+          default is <strong>2–3× average</strong>, but spiky/event-driven systems can peak <strong>10×+</strong>. Always carry a
+          peak factor through the compute estimate.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What adds to storage — reads or writes? Give the formula.</div>
+          <div class="fc-a">A: Only <strong>writes</strong> add data. <strong>Storage = writes/day × object size × retention.</strong>
+          Reads consume <em>bandwidth</em> (QPS × object size), not storage. (A year ≈ 365 days; 5 years ≈ 1,800.)</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why round so aggressively, and to what accuracy?</div>
+          <div class="fc-a">A: Because the goal is the right <strong>order of magnitude</strong>, fast — not a precise number. Round
+          inputs to powers of ten, work by adding/subtracting exponents, and keep <strong>one significant figure</strong>. The answer
+          only needs to be right to ~10× to make the big decisions.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Using the caterer image, map each of the five estimation outputs (QPS, storage, bandwidth, servers, peak) to something in the kitchen.</li>
+          <li>Name the five stages of the estimation pipeline and the one formula at each stage.</li>
+          <li>How many seconds are in a day (rounded), and how do you convert 1 billion requests/day into QPS?</li>
+          <li>A system has 50M users doing 4 actions/day. What's the average QPS? The peak at 3×?</li>
+          <li>Which adds to storage, reads or writes? Write the storage formula and the bandwidth formula.</li>
+          <li>Why is the read:write ratio worth computing, and what does a 100:1 ratio tell you to reach for?</li>
+          <li>Give the rough latency ordering: RAM vs SSD vs disk seek vs cross-planet round trip — and why it matters.</li>
+          <li>Explain the difference between a back-of-envelope estimate and real capacity planning.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>size first, design second — the numbers choose the architecture.</strong> Run the
+          pipeline — <em>assumptions → QPS → storage → bandwidth → servers</em> — from a few rounded guesses: multiply
+          <em>users × actions</em> for requests/day, divide by the <strong>~100,000 seconds in a day</strong> for average QPS,
+          multiply by a <strong>peak factor</strong> for the number that actually sizes compute, split reads from writes (most systems
+          are <strong>read-heavy</strong>, which pays for caching and replicas), and get storage from <em>writes × size ×
+          retention</em>. Round ruthlessly to one significant figure and work in powers of ten so it takes ninety seconds, not ninety
+          minutes. The output isn't a budget — it's a <em>verdict</em>: fits on one box, or forces sharding, caching and a CDN. This
+          skill is the capstone of Phase 1, the glue that turns the parts you've learned into a <em>sized</em> system. Tomorrow we
+          climb into Phase 2 and <strong>consensus (Paxos)</strong> — because the moment your numbers say "one machine can't hold the
+          truth," you need many machines to agree.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-29.html">← Day 29: Auth — OAuth 2.0 &amp; JWT</a>
+        <a href="day-31.html" class="coming-soon-link">Day 31: Consensus — Paxos →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 30 of 90 — Back-of-Envelope Estimation</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── Estimation calculator ────────────────────────────────────────────
+  var DAU   = [1e6, 10e6, 50e6, 100e6, 300e6, 1e9];
+  var DAU_L = ['1M', '10M', '50M', '100M', '300M', '1B'];
+  var REQ   = [2, 5, 10, 20, 50];
+  var RATIO = [1, 10, 100, 1000];
+  var RATIO_L = ['1 : 1', '10 : 1', '100 : 1', '1000 : 1'];
+  var SIZE  = [100, 500, 1000, 100000, 1e6];
+  var SIZE_L = ['100 B', '500 B', '1 KB', '100 KB', '1 MB'];
+  var PEAK  = [1, 2, 3, 5];
+  var RET   = [1, 3, 5, 10];
+  var SEC_PER_DAY = 86400;
+  var SERVER_QPS = 1000;
+
+  var els = {
+    dau: document.getElementById('s-dau'),   vDau: document.getElementById('v-dau'),
+    req: document.getElementById('s-req'),   vReq: document.getElementById('v-req'),
+    ratio: document.getElementById('s-ratio'), vRatio: document.getElementById('v-ratio'),
+    size: document.getElementById('s-size'), vSize: document.getElementById('v-size'),
+    peak: document.getElementById('s-peak'), vPeak: document.getElementById('v-peak'),
+    ret: document.getElementById('s-ret'),   vRet: document.getElementById('v-ret'),
+    mAvg: document.getElementById('m-avg'),  mPeak: document.getElementById('m-peak'),
+    mWrite: document.getElementById('m-write'), mStore: document.getElementById('m-store'),
+    mBw: document.getElementById('m-bw'),    mSrv: document.getElementById('m-srv'),
+    status: document.getElementById('sim-status')
+  };
+
+  function fmtNum(n) {
+    if (n >= 1e9) return round1(n / 1e9) + 'B';
+    if (n >= 1e6) return round1(n / 1e6) + 'M';
+    if (n >= 1e3) return round1(n / 1e3) + 'K';
+    return Math.round(n).toString();
+  }
+  function round1(n) {
+    // one decimal, but drop a trailing .0
+    var r = Math.round(n * 10) / 10;
+    return (r % 1 === 0) ? r.toString() : r.toFixed(1);
+  }
+  function fmtBytes(b) {
+    var u = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB'];
+    var i = 0;
+    while (b >= 1000 && i < u.length - 1) { b /= 1000; i++; }
+    return round1(b) + ' ' + u[i];
+  }
+  function setCell(el, text, cls) { el.textContent = text; el.className = 'val ' + cls; }
+
+  function render() {
+    var dau   = DAU[+els.dau.value];
+    var req   = REQ[+els.req.value];
+    var ratio = RATIO[+els.ratio.value];
+    var size  = SIZE[+els.size.value];
+    var peak  = PEAK[+els.peak.value];
+    var ret   = RET[+els.ret.value];
+
+    // labels
+    els.vDau.textContent = DAU_L[+els.dau.value];
+    els.vReq.textContent = req.toString();
+    els.vRatio.textContent = RATIO_L[+els.ratio.value];
+    els.vSize.textContent = SIZE_L[+els.size.value];
+    els.vPeak.textContent = peak + '×';
+    els.vRet.textContent = ret + ' yr';
+
+    // pipeline
+    var reqPerDay = dau * req;
+    var avgQPS    = reqPerDay / SEC_PER_DAY;
+    var peakQPS   = avgQPS * peak;
+    var writeQPS  = avgQPS / (ratio + 1);
+    var readQPS   = avgQPS - writeQPS;
+    var writesPerDay = reqPerDay / (ratio + 1);
+    var storagePerDay = writesPerDay * size;             // bytes/day
+    var storageTotal  = storagePerDay * 365 * ret;       // bytes over retention
+    var egress        = readQPS * size;                  // bytes/sec (avg reads)
+    var servers       = Math.max(1, Math.ceil(peakQPS / SERVER_QPS));
+
+    setCell(els.mAvg,  fmtNum(avgQPS) + '/s',  'blue');
+    setCell(els.mPeak, fmtNum(peakQPS) + '/s', 'warn');
+    setCell(els.mWrite, fmtNum(writeQPS) + '/s', 'purple');
+    setCell(els.mStore, fmtBytes(storageTotal), 'good');
+    setCell(els.mBw,   fmtBytes(egress) + '/s', 'blue');
+    setCell(els.mSrv,  fmtNum(servers), 'warn');
+
+    // verdict — the numbers choose the architecture
+    var txt, scls;
+    if (peakQPS <= 1000 && storageTotal < 1e12) {
+      txt = '✅ SMALL. ~' + fmtNum(peakQPS) + '/s peak and ' + fmtBytes(storageTotal) +
+        ' total fit comfortably on one or two beefy servers and a single database. The right move is to NOT over-engineer — resist sharding and exotic caching you don\'t need yet.';
+      scls = 'q-status ok';
+    } else if (peakQPS <= 50000 && storageTotal < 100e12) {
+      txt = '⚙️ MEDIUM. ~' + fmtNum(peakQPS) + '/s peak over ' + fmtBytes(storageTotal) +
+        ' calls for the classic Phase-1 toolkit: a load-balanced fleet of ~' + fmtNum(servers) +
+        ' app servers, read replicas, and a cache in front of the database.';
+      scls = 'q-status warn';
+    } else {
+      txt = '🔥 LARGE. ~' + fmtNum(peakQPS) + '/s peak and ' + fmtBytes(storageTotal) +
+        ' force the hard choices: shard/partition the data (Day 13), cache aggressively + a CDN (Days 4–6), and go horizontal everywhere. The numbers — not taste — are dictating this architecture.';
+      scls = 'q-status bad';
+    }
+    els.status.textContent = txt;
+    els.status.className = scls;
+  }
+
+  ['dau','req','ratio','size','peak','ret'].forEach(function(k){
+    els[k].addEventListener('input', render);
+  });
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+
+  // Anchor diagram: the caterer's napkin — guests → plates → rush → fridge/waiters → system mapping.
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, '🧮 One napkin sizes the whole wedding — before a single ingredient is bought', '#e2e8f0', '13', '700');
+
+    var cards = [
+      { x:20,  icon:'👥', top:'500 GUESTS', sys:'= USERS',            stroke:'#38bdf8', c:'#7dd3fc' },
+      { x:175, icon:'🍽️', top:'3 PLATES each', sys:'= REQUESTS / user', stroke:'#a78bfa', c:'#c4b5fd' },
+      { x:330, icon:'⏰', top:'DINNER RUSH', sys:'= PEAK QPS',        stroke:'#fbbf24', c:'#fcd34d' },
+      { x:485, icon:'🧊', top:'FRIDGES', sys:'= STORAGE',            stroke:'#22c55e', c:'#86efac' },
+      { x:640, icon:'🤵', top:'WAITERS', sys:'= SERVERS',            stroke:'#fb7185', c:'#fecdd3' }
+    ];
+    cards.forEach(function(k, i){
+      svg.appendChild(rs.rectangle(k.x, 56, 150, 110, { stroke:k.stroke, strokeWidth:1.7, roughness:1.1, fill:k.stroke+'10', fillStyle:'solid' }));
+      T(k.x + 75, 92, k.icon, '#e2e8f0', '24');
+      T(k.x + 75, 122, k.top, k.c, '11', '800');
+      T(k.x + 75, 146, k.sys, '#cbd5e1', '10', '700');
+      if (i < cards.length - 1) {
+        svg.appendChild(rs.line(k.x + 150, 111, k.x + 175, 111, { stroke:'#64748b', strokeWidth:1.5, roughness:1 }));
+      }
+    });
+
+    // The napkin / math band
+    svg.appendChild(rs.rectangle(40, 196, 740, 92, { stroke:'#e2e8f0', strokeWidth:1.4, roughness:1.6, fill:'#1e293b', fillStyle:'solid' }));
+    T(410, 222, '📝 the napkin:  500 × 3 = 1,500 plates   ·   all in one 30-min rush → cook for ~3× the steady rate', '#e2e8f0', '11', '700');
+    T(410, 246, 'fridges hold 3 days of ingredients (storage)   ·   serving line = plates/min through one door (bandwidth)', '#cbd5e1', '10', '600');
+    T(410, 270, 'one waiter carries ~20 plates/hr → hire enough for the PEAK, not the average', '#fcd34d', '10', '700');
+
+    // Takeaway band
+    svg.appendChild(rs.rectangle(40, 302, 740, 72, { stroke:'#38bdf8', strokeWidth:1.6, roughness:1, fill:'#38bdf80c', fillStyle:'solid' }));
+    T(410, 328, 'Same picture for software: guests = users · plates = requests · dinner rush = peak QPS · fridges = storage · waiters = servers', '#7dd3fc', '10.5', '700');
+    T(410, 352, 'A few rough numbers, multiplied and rounded hard, give you the SIZE of the system before you build it.', '#86efac', '10', '700');
+  }
+
+  // Estimation pipeline / funnel diagram: assumptions → QPS → storage → bandwidth → servers.
+  function drawFunnelDiagram() {
+    var svg = document.getElementById('funnel-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'The estimation pipeline — a few assumptions flow into the four numbers that drive a design', '#e2e8f0', '12.5', '700');
+
+    // Top: assumptions box
+    svg.appendChild(rs.rectangle(190, 44, 440, 56, { stroke:'#94a3b8', strokeWidth:1.7, roughness:1, fill:'#94a3b812', fillStyle:'solid' }));
+    T(410, 66, '① ASSUMPTIONS (rounded guesses)', '#e2e8f0', '11.5', '800');
+    T(410, 86, 'users · actions/user · read:write · object size · peak factor', '#cbd5e1', '9.5', '600', true);
+
+    var stages = [
+      { y:122, stroke:'#38bdf8', c:'#7dd3fc', label:'② QPS', formula:'users × actions ÷ 100,000 s  → ×peak = peak QPS  → ÷(ratio+1) = writes', drives:'sizes compute' },
+      { y:196, stroke:'#22c55e', c:'#86efac', label:'③ STORAGE', formula:'writes/day × object size × retention (×365 per year)', drives:'one box · one DB · or a sharded cluster?' },
+      { y:270, stroke:'#a78bfa', c:'#c4b5fd', label:'④ BANDWIDTH', formula:'QPS × object size  (reads = egress, writes = ingress)', drives:'big objects → a CDN' },
+      { y:344, stroke:'#fb7185', c:'#fecdd3', label:'⑤ SERVERS & MEMORY', formula:'peak QPS ÷ ~1,000 QPS/server   ·   cache the hot 20% (80/20)', drives:'fleet size + cache size' }
+    ];
+    stages.forEach(function(s){
+      // connector from above
+      svg.appendChild(rs.line(410, s.y - 22, 410, s.y, { stroke:'#64748b', strokeWidth:1.4, roughness:1 }));
+      svg.appendChild(rs.line(410, s.y, 405, s.y - 6, { stroke:'#64748b', strokeWidth:1.4, roughness:1 }));
+      svg.appendChild(rs.line(410, s.y, 415, s.y - 6, { stroke:'#64748b', strokeWidth:1.4, roughness:1 }));
+      svg.appendChild(rs.rectangle(120, s.y, 580, 56, { stroke:s.stroke, strokeWidth:1.7, roughness:1, fill:s.stroke+'10', fillStyle:'solid' }));
+      T(410, s.y + 20, s.label, s.c, '11.5', '800');
+      T(410, s.y + 38, s.formula, '#cbd5e1', '9', '600', true);
+      T(690, s.y + 30, '→ ' + s.drives, '#94a3b8', '8.5', '600', false, 'end');
+    });
+
+    T(410, 436, 'Change one assumption at the top and the whole line re-derives in seconds. Round hard; keep one significant figure.', '#94a3b8', '9', '600');
+    T(410, 456, 'The output is not a budget — it is a VERDICT on the architecture.', '#86efac', '9.5', '700');
+  }
+
+  // Scale ruler: powers of ten and what each rung forces architecturally.
+  function drawScaleDiagram() {
+    var svg = document.getElementById('scale-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'The scale ruler — what each order of magnitude FORCES you to do', '#e2e8f0', '12.5', '700');
+
+    // The ruler line
+    svg.appendChild(rs.line(40, 70, 780, 70, { stroke:'#64748b', strokeWidth:2, roughness:0.8 }));
+
+    var ticks = [
+      { x:110, p:'10³', n:'KB',  feel:'one request', col:'#22c55e' },
+      { x:250, p:'10⁶', n:'MB',  feel:'a photo · fits in RAM', col:'#22c55e' },
+      { x:390, p:'10⁹', n:'GB',  feel:'one server\'s RAM', col:'#38bdf8' },
+      { x:530, p:'10¹²', n:'TB', feel:'one big disk · one DB', col:'#fbbf24' },
+      { x:670, p:'10¹⁵', n:'PB', feel:'a CLUSTER · shard now', col:'#fb7185' }
+    ];
+    ticks.forEach(function(t){
+      svg.appendChild(rs.line(t.x, 62, t.x, 78, { stroke:t.col, strokeWidth:2, roughness:0.8 }));
+      T(t.x, 52, t.p, t.col, '12', '800');
+      T(t.x, 98, t.n, '#e2e8f0', '11', '800');
+      T(t.x, 116, t.feel, '#94a3b8', '8.5', '600');
+    });
+
+    // Two zones under the ruler
+    svg.appendChild(rs.rectangle(40, 150, 350, 80, { stroke:'#22c55e', strokeWidth:1.6, roughness:1, fill:'#22c55e0c', fillStyle:'solid' }));
+    T(215, 174, '✅ KB → low TB', '#86efac', '11', '800');
+    T(215, 196, 'Fits on one box / one database.', '#cbd5e1', '9.5', '600');
+    T(215, 214, 'Don\'t over-engineer — simplicity wins.', '#86efac', '9', '700');
+
+    svg.appendChild(rs.rectangle(430, 150, 350, 80, { stroke:'#fb7185', strokeWidth:1.6, roughness:1, fill:'#fb71850c', fillStyle:'solid' }));
+    T(605, 174, '🔥 PB and beyond', '#fecdd3', '11', '800');
+    T(605, 196, 'Needs a cluster: sharding + object storage.', '#cbd5e1', '9.5', '600');
+    T(605, 214, 'The number FORCES the complexity.', '#fecdd3', '9', '700');
+
+    // Time conversion reminder band
+    svg.appendChild(rs.rectangle(40, 250, 740, 86, { stroke:'#38bdf8', strokeWidth:1.6, roughness:1, fill:'#38bdf80a', fillStyle:'solid' }));
+    T(410, 274, '⏱ The master conversion: a day ≈ 100,000 seconds (10⁵)', '#7dd3fc', '11.5', '800');
+    T(410, 298, '1 million requests/day ÷ 100,000 s  ≈  10 requests/second', '#e2e8f0', '10.5', '700', true);
+    T(410, 320, 'so 1 req/s ≈ 100,000/day ≈ ~3 million/month  —  memorize this and QPS math becomes instant', '#cbd5e1', '9.5', '600');
+  }
+
+  function drawAll() { drawAnchorDiagram(); drawFunnelDiagram(); drawScaleDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
