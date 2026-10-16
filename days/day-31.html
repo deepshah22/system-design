@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 31: Consensus — The Paxos Algorithm | System Design Mastery</title>
+  <meta name="description" content="How do a group of unreliable machines — some crashed, some unreachable, messages lost and reordered — agree on a single value and never un-agree? That is the problem of distributed consensus, and Paxos is the algorithm that solves it correctly. Learn consensus's three guarantees (validity, agreement, termination), why a single leader isn't enough, and the two-phase dance at Paxos's heart: Phase 1 Prepare/Promise reserves a numbered ballot and surfaces any value already in flight; Phase 2 Accept/Accepted commits a value once a MAJORITY accepts. The keystone is quorum overlap — any two majorities share at least one node — which is the entire reason two different values can never both be chosen. We cover roles (proposers, acceptors, learners), why majorities beat 'everyone', Multi-Paxos and the leader optimization, the FLP impossibility result and the safety-vs-liveness trade, dueling proposers, and how Chubby, ZooKeeper, etcd and Spanner use this in production. Taught with a flaky-group-chat anchor, a live 'Will they agree?' simulator, Excalidraw-style diagrams of the two-phase protocol and quorum intersection, and active recall. The opener of Phase 2 — Intermediate Systems." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .flow-step > span { font-weight:800; color: var(--accent-light); min-width:1.4rem; }
+    .family-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+    .family-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1.1rem 1.25rem; }
+    .family-card h4 { margin:0 0 .4rem; font-size:.95rem; color: var(--accent-light); }
+    .family-card p { margin:0; font-size:.85rem; }
+    .family-card .eg { font-size:.78rem; color: var(--text-muted); margin-top:.5rem; }
+    /* role / concept cards — colored left bar */
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card .answers { font-size:.8rem; font-weight:700; color:var(--text-primary); margin:.35rem 0; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    .pillar-card .eg { font-size:.75rem; color:var(--text-muted); margin-top:.45rem; }
+    /* numbered accent cards */
+    .signal-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .signal-card { background: var(--bg-card); border:1px solid var(--border); border-left:4px solid #fb7185; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .signal-card .snum { font-size:.7rem; font-weight:800; color:#fb7185; letter-spacing:.05em; }
+    .signal-card h4 { margin:.15rem 0 .35rem; font-size:.95rem; color:#fecdd3; }
+    .signal-card p { margin:0; font-size:.82rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .mode-toggle.prop-toggle button.active { background:#0ea5e9; } .mode-toggle.prior-toggle button.active { background:#8b5cf6; }
+    .slider-row { margin:1rem 0 .4rem; }
+    .slider-row label { display:flex; justify-content:space-between; font-size:.8rem; font-weight:700; color:var(--text-secondary); margin-bottom:.35rem; }
+    .slider-row label .sval { color:var(--accent-light); font-family:'JetBrains Mono',monospace; }
+    .slider-row input[type=range] { width:100%; accent-color: var(--accent); }
+    .toggle-row { display:flex; gap:1.25rem; flex-wrap:wrap; align-items:center; margin:.9rem 0 .2rem; }
+    .toggle-row .tog-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; }
+    .prop-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.75rem; margin:1.1rem 0; }
+    .prop-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.8rem 1rem; text-align:center; }
+    .prop-card .val { font-size:1.15rem; font-weight:800; line-height:1.3; font-family:'JetBrains Mono',monospace; }
+    .prop-card .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:.25rem; }
+    .prop-card .val.good { color:#22c55e; } .prop-card .val.bad { color:#fb7185; } .prop-card .val.warn { color:#fbbf24; } .prop-card .val.muted2 { color:#94a3b8; } .prop-card .val.blue { color:#7dd3fc; } .prop-card .val.violet { color:#c4b5fd; }
+    .q-status { text-align:center; font-weight:700; font-size:.88rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; line-height:1.55; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phase2">Phase 2: Intermediate Systems</a><span class="breadcrumb-sep">/</span>
+      <span>Day 31</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 31 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📘 Phase 2 — Intermediate Systems (opener)</span>
+      <span class="meta-pill">🗂 Week 5 — Distributed Algorithms</span>
+    </div>
+    <h1>Consensus: The Paxos Algorithm<br><span style="color:var(--accent)">Making Unreliable Machines Agree</span></h1>
+    <p class="lead">
+      For 30 days we built the <em>parts</em> of a system. Welcome to Phase&nbsp;2, where many machines start acting as <strong>one</strong>.
+      The first question is the hardest: how does a group of servers — some crashed, some unreachable, with messages lost,
+      delayed, and reordered — <strong>agree on a single value and never un-agree</strong>? That's <strong>distributed
+      consensus</strong>, and <strong>Paxos</strong> is the algorithm that solves it <em>correctly</em>. You'll learn the two-phase
+      dance at its heart — <strong>Prepare / Promise</strong>, then <strong>Accept / Accepted</strong> — and the one idea that
+      makes it all work: a decision needs a <strong>majority</strong>, and any two majorities must overlap, so two different values
+      can <em>never</em> both win. This is the bedrock under leader election, replicated databases, and Kubernetes itself.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#what">What Consensus Means</a>
+        <a href="#hard">Why It's So Hard</a>
+        <a href="#roles">The Three Roles</a>
+        <a href="#dance">The Two-Phase Dance</a>
+        <a href="#majority">Why Majorities = Safety</a>
+        <a href="#multi">Multi-Paxos &amp; Leaders</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🗳️ 📨 🤝</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Five friends are trying to pick <strong>one</strong> restaurant for tonight — but they can only talk through a
+            <strong>terrible group chat</strong>. Messages arrive hours late, or out of order, or vanish entirely. Two people are
+            asleep and won't answer. Someone's phone dies mid-conversation. And yet, by the end of the night, the group
+            <em>absolutely must</em> converge on <strong>exactly one</strong> restaurant — and once it's locked in, nobody is
+            allowed to quietly change it, or half the group shows up at the wrong place.</p>
+            <p>Here's the clever trick they invent. Nobody is allowed to just announce a choice. First you send a numbered
+            note — "<em>Note #7: can I propose something?</em>" — and each friend who sees it writes back "<em>promise: I'll ignore
+            any note numbered below 7</em>", <em>and</em> tells you if they already promised to something earlier. Only once a
+            <strong>majority</strong> (three of the five) have promised do you send your actual pick — "<em>Note #7: Luigi's</em>" —
+            and only when a <strong>majority</strong> write back "<em>accepted</em>" is Luigi's truly chosen. The <em>magic</em> is
+            the majority: because any three-person group and any other three-person group must share at least one person, a choice
+            that got three "accepts" can never be forgotten — the shared friend always remembers it and forces the next proposer to
+            keep it. Burn in the image: <strong>a round table, numbered notes, and three raised hands</strong>. You never need
+            everyone. You need a majority — and majorities always overlap.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="820" height="430" viewBox="0 0 820 430"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Split-Brain Sofia</span> ran the database behind a fast-growing payments app. She'd done
+            Day&nbsp;22 well: one <strong>primary</strong> server took the writes, a <strong>standby</strong> replica stayed in sync,
+            and a heartbeat let the standby take over if the primary died. "<em>Automatic failover,</em>" she told everyone. "<em>If
+            the primary dies, the standby is promoted. Zero downtime.</em>"
+          </p>
+          <p>
+            Then the network hiccuped — not a crash, just thirty seconds where the primary and standby couldn't hear each other. The
+            standby's heartbeat went silent, so the standby did exactly what Sofia built it to do: it declared the primary dead and
+            <strong>promoted itself</strong>. But the primary hadn't died at all — it was happily still taking writes. For thirty
+            seconds there were <strong>two primaries</strong>, each accepting payments, each certain it was the only one. Account
+            balances forked. When the network healed, the two histories could not be merged: some customers had been charged twice,
+            others not at all. This is <strong>split-brain</strong>, and no amount of clever reconciliation code fixes it after the
+            fact — the damage is done the moment two nodes both believe they're in charge.
+          </p>
+          <p>
+            Sofia's first instinct was to add a <em>lock</em> — "whoever grabs the lock is the real primary." But where does the lock
+            live? On one server? Then that server is a new single point of failure (Day&nbsp;22), and if <em>it</em> gets partitioned,
+            she's back to two primaries. She'd just moved the problem. A senior engineer drew a circle of five servers on the
+            whiteboard and asked one question: "<em>What if a node can only become primary if a <strong>majority</strong> of the
+            five agree to it? During your thirty-second blip, the network split the five into a group of three and a group of two.
+            How many primaries can you elect?</em>" Sofia saw it instantly: the side with three can agree; the side with two can
+            <em>never</em> get a majority, so it can't elect anyone. <strong>At most one primary, always — because two different
+            majorities can't both exist.</strong>
+          </p>
+          <p>
+            "<em>That's consensus,</em>" the engineer said. "<em>And the classic algorithm that does it safely — even when machines
+            crash mid-decision and messages get lost — is called Paxos. It won't make your decision faster, and honestly it's a pain
+            to implement. But it will guarantee you never, ever have two primaries or two conflicting decisions. Safety first; speed
+            you buy later with a leader.</em>"
+          </p>
+          <p>
+            Sofia's lesson is Phase&nbsp;2's opening lesson: <strong>you cannot build a correct distributed system on top of "trust
+            one node." The moment the network can lie to you by going quiet, agreement has to come from a majority vote — and getting
+            that vote right, despite crashes and lost messages, is exactly what Paxos is for.</strong>
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement"><strong>Consensus</strong> is getting a group of unreliable machines to <strong>agree on a
+          single value</strong> with three guarantees: only a value someone actually proposed can be chosen (<em>validity</em>), at
+          most one value is <em>ever</em> chosen (<em>agreement</em> — the safety property), and a value is eventually chosen and
+          learned by all (<em>termination</em>). <strong>Paxos</strong> achieves this despite crashes and lost/delayed/reordered
+          messages (but <em>not</em> lying — that's the harder Byzantine case). It works in two phases driven by ever-increasing
+          <strong>proposal numbers</strong>: <strong>Phase&nbsp;1 (Prepare&nbsp;→&nbsp;Promise)</strong> reserves a ballot number and
+          surfaces any value already accepted; <strong>Phase&nbsp;2 (Accept&nbsp;→&nbsp;Accepted)</strong> commits a value once a
+          <strong>majority</strong> accepts it. The keystone is the <strong>majority quorum</strong>: any two majorities of N nodes
+          share at least one node, so a value chosen by one majority is always visible to the next proposer — which is then
+          <em>forced</em> to re-propose it. That single fact is why two different values can never both be chosen. Safety is
+          <strong>unconditional</strong>; liveness is not — by the FLP result, no async algorithm can guarantee progress under
+          failures, and two "dueling" proposers can livelock, so real systems elect a single stable <strong>leader</strong>
+          (Multi-Paxos) and skip Phase&nbsp;1. One-line test: <em>if the network splits in two, can both halves independently decide?
+          With majority quorums — no, because only one side can hold a majority.</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — "Will They Agree?"</h2>
+        <div class="sim-box">
+          <p>A cluster of <strong>five acceptors</strong> is trying to choose one value. A majority is <strong>3 of 5</strong>. Set
+          how many acceptors are currently reachable, whether one orderly leader or two proposers are competing, and whether a value
+          was <em>already</em> chosen before this round began. Watch what Paxos guarantees — and what it refuses to guarantee. The
+          punchline you're hunting for: <strong>safety is always ✓, even when progress is ✗.</strong></p>
+
+          <div class="slider-row">
+            <label>📡 Reachable acceptors (of 5) <span class="sval" id="v-reach">5</span></label>
+            <input type="range" id="s-reach" min="1" max="5" step="1" value="5" />
+          </div>
+
+          <div class="toggle-row"><span class="tog-label">🧑‍💼 Proposers competing this round</span></div>
+          <div class="mode-toggle prop-toggle" id="prop-toggle">
+            <button data-prop="1" class="active">1 — a single leader</button>
+            <button data-prop="2">2 — dueling proposers</button>
+          </div>
+
+          <div class="toggle-row"><span class="tog-label">📜 Before this round started…</span></div>
+          <div class="mode-toggle prior-toggle" id="prior-toggle">
+            <button data-prior="fresh" class="active">Fresh — nothing chosen yet</button>
+            <button data-prior="chosen">Value "X" already chosen</button>
+          </div>
+
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val" id="m-maj">—</div><div class="lbl">Majority reachable?</div></div>
+            <div class="prop-card"><div class="val" id="m-choose">—</div><div class="lbl">Can a value be chosen?</div></div>
+            <div class="prop-card"><div class="val" id="m-val">—</div><div class="lbl">Which value wins?</div></div>
+          </div>
+          <div class="prop-grid">
+            <div class="prop-card"><div class="val good" id="m-safe">—</div><div class="lbl">Safety (never 2 values)</div></div>
+            <div class="prop-card"><div class="val" id="m-live">—</div><div class="lbl">Liveness (makes progress)</div></div>
+          </div>
+
+          <div class="q-status ok" id="sim-status">—</div>
+
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: start at the defaults (5 reachable, 1
+          leader, fresh) — a single proposer runs the full two-phase round on a majority and value "Y" is chosen cleanly. Now drag
+          <strong>reachable</strong> down to 2: there's no majority, so <em>nothing</em> can be chosen — the round stalls, but notice
+          <strong>safety is still ✓</strong> (stalling is safe; choosing the wrong thing would not be). Flip to <strong>2 dueling
+          proposers</strong> with 5 reachable: each one's Prepare keeps pre-empting the other's Accept — they can livelock forever
+          (liveness ✗) yet <em>still</em> never choose two different values. Finally set <strong>"X already chosen"</strong>: even a
+          brand-new proposer is forced to re-propose X — the decision is permanent. That's the whole algorithm in four toggles.</p>
+        </div>
+      </section>
+
+      <section id="what">
+        <h2>What "Consensus" Actually Means</h2>
+        <p>Strip away the jargon and consensus is one sentence: <strong>a set of processes must agree on a single value.</strong> It
+        sounds trivial — it is anything but, once machines can fail. To be useful, a consensus algorithm must satisfy three
+        properties, and it's worth knowing them by name because interviewers love them and because they explain every design choice
+        in Paxos:</p>
+        <div class="pillar-grid">
+          <div class="pillar-card conf">
+            <h4>✅ Validity</h4>
+            <div class="answers">Only a proposed value can be chosen.</div>
+            <p>The algorithm can't invent a value out of thin air. If every proposer proposes "A", the answer is "A" — not "B". This
+            keeps the result <em>meaningful</em>.</p>
+          </div>
+          <div class="pillar-card integ">
+            <h4>🤝 Agreement</h4>
+            <div class="answers">At most one value is <em>ever</em> chosen.</div>
+            <p>This is the <strong>safety</strong> property — the one Paxos never, ever violates. No two nodes may decide different
+            values, and a decision, once made, is permanent. Break this and you get split-brain.</p>
+          </div>
+          <div class="pillar-card avail">
+            <h4>⏭️ Termination</h4>
+            <div class="answers">A value is eventually chosen &amp; learned.</div>
+            <p>The <strong>liveness</strong> property — the group actually makes progress. This is the one Paxos can't always
+            guarantee (see FLP), which is why we add leaders.</p>
+          </div>
+        </div>
+        <p>And the fault model matters enormously. Paxos assumes the <strong>non-Byzantine</strong> (or "crash-fault") model: nodes
+        may <em>crash</em> and recover, and messages may be <em>lost, delayed, duplicated, or reordered</em> — but no node
+        <em>lies</em>, forges messages, or acts maliciously. That "no lying" assumption is a big deal: handling liars needs
+        Byzantine-fault-tolerant protocols (a later lesson) which are far more expensive. For servers inside your own data center,
+        crash-fault is the right model, and Paxos is built precisely for it.</p>
+      </section>
+
+      <section id="hard">
+        <h2>Why It's So Much Harder Than It Looks</h2>
+        <p>"Just take a vote" is the instinct. Here is why every naïve scheme breaks:</p>
+        <div class="signal-grid">
+          <div class="signal-card"><div class="snum">TRAP 1</div><h4>Trust one leader? It crashes.</h4><p>Let one node decide and
+          broadcast the answer. Fine — until it crashes <em>after</em> telling two nodes and <em>before</em> telling the rest. Now
+          some nodes know the decision and some don't, with no safe way to resolve the disagreement.</p></div>
+          <div class="signal-card"><div class="snum">TRAP 2</div><h4>Wait for everyone? Someone's always down.</h4><p>Require a
+          unanimous vote and your system halts the instant a single node is slow or dead — which, at any real scale, is
+          <em>always</em>. You can't demand everyone; you must decide with the nodes you can reach.</p></div>
+          <div class="signal-card"><div class="snum">TRAP 3</div><h4>Two proposers race.</h4><p>Nothing stops two nodes from
+          proposing different values at the same moment. Without a rule to serialize them, half the cluster accepts "A" and half
+          accepts "B" — a tie with no tiebreaker, and two conflicting decisions.</p></div>
+          <div class="signal-card"><div class="snum">TRAP 4</div><h4>The network splits.</h4><p>A partition cuts the cluster in two.
+          Each half sees the other as "dead." If each half is allowed to decide on its own, you get two answers — the exact
+          split-brain Sofia hit. Something must stop <em>both</em> halves from deciding.</p></div>
+        </div>
+        <p>Paxos answers all four with the same two tools: <strong>proposal numbers</strong> (which serialize racing proposers and
+        let a later attempt supersede a stalled earlier one) and the <strong>majority quorum</strong> (which guarantees at most one
+        side can ever decide, and that a decision survives any crash of a minority of nodes). Hold those two ideas; everything else
+        is mechanics.</p>
+        <p style="margin-top:.75rem;">One sobering result frames the whole field: the <strong>FLP impossibility</strong> theorem
+        (Fischer, Lynch &amp; Paterson, 1985) proves that in a fully asynchronous network where even one node may crash, <em>no</em>
+        algorithm can guarantee <strong>both</strong> safety and termination in all cases. Paxos's response is principled: it keeps
+        <strong>safety absolutely, always</strong>, and gives up the <em>guarantee</em> of termination — in practice it almost always
+        terminates, and a leader makes it terminate quickly. Remember that trade; it's the soul of the algorithm.</p>
+      </section>
+
+      <section id="roles">
+        <h2>The Three Roles</h2>
+        <p>Paxos describes three <em>roles</em>, not three kinds of machine — in real systems every server usually plays all three at
+        once. Separating them conceptually is what makes the protocol understandable.</p>
+        <div class="family-grid">
+          <div class="family-card"><h4>🧑‍💼 Proposer</h4><p>Wants to get a value chosen. It drives the two phases: picks a proposal
+          number, asks for promises, then asks acceptors to accept a value. A client write usually turns into a proposer's
+          attempt.</p><div class="eg">the one making the motion</div></div>
+          <div class="family-card"><h4>🗳️ Acceptor</h4><p>The "voters" and the <strong>memory</strong> of the system. Acceptors
+          promise, accept, and — crucially — <em>remember</em> what they've promised and accepted (on durable storage) so the
+          decision survives a crash. A value is chosen when a <strong>majority of acceptors</strong> accept it.</p><div class="eg">the
+          senators who vote &amp; remember</div></div>
+          <div class="family-card"><h4>📚 Learner</h4><p>Finds out which value was chosen and acts on it (applies the write, updates
+          the state machine). Learners don't vote; they just observe the outcome once a majority has accepted, often told by the
+          acceptors or the proposer.</p><div class="eg">everyone who needs the answer</div></div>
+        </div>
+        <p>Keep your eye on the <strong>acceptors</strong> — they are where safety lives. The whole algorithm is a careful protocol
+        for how acceptors promise and accept so that their collective memory can never represent two different chosen values.</p>
+      </section>
+
+      <section id="dance">
+        <h2>The Two-Phase Dance</h2>
+        <p>Here is single-decree Paxos — agreeing on <em>one</em> value — in full. A proposer runs two phases. Every acceptor keeps
+        two durable facts: the highest proposal number it has <em>promised</em>, and the <em>(number, value)</em> it has most
+        recently <em>accepted</em> (if any).</p>
+
+        <div class="diagram-box">
+          <svg id="dance-diagram" width="820" height="470" viewBox="0 0 820 470"></svg>
+        </div>
+
+        <div class="flow-box">
+          <div class="flow-step"><span>1a</span><div><strong>PREPARE (proposer → acceptors).</strong> The proposer picks a proposal
+          number <code>n</code> that is <em>higher than any it has used before</em> (numbers must be unique per proposer and ever
+          increasing), and sends <code>Prepare(n)</code> to the acceptors.</div></div>
+          <div class="flow-step"><span>1b</span><div><strong>PROMISE (acceptor → proposer).</strong> When an acceptor receives
+          <code>Prepare(n)</code>: if <code>n</code> is the highest it has seen, it <strong>promises</strong> never to accept any
+          proposal numbered below <code>n</code>, and it replies with any <em>(number, value)</em> it has <em>already accepted</em>.
+          If it has already promised something higher than <code>n</code>, it ignores the prepare (or says no).</div></div>
+          <div class="flow-step"><span>2a</span><div><strong>ACCEPT (proposer → acceptors).</strong> If the proposer collects promises
+          from a <strong>majority</strong>, it sends <code>Accept(n, v)</code>. The value <code>v</code> is <em>not free to choose</em>
+          if any promise reported an already-accepted value: the proposer <strong>must</strong> pick the value tied to the
+          <em>highest</em> proposal number it heard about. Only if <em>no</em> promise reported a value may it use its own.</div></div>
+          <div class="flow-step"><span>2b</span><div><strong>ACCEPTED (acceptor → proposer / learners).</strong> An acceptor receiving
+          <code>Accept(n, v)</code> accepts it <em>unless</em> it has since promised to a number higher than <code>n</code>. When a
+          <strong>majority</strong> accept <code>(n, v)</code>, the value <code>v</code> is <strong>CHOSEN</strong> — permanently.
+          Learners are informed and act on it.</div></div>
+        </div>
+
+        <p>Step <strong>2a</strong> is the heart of the whole algorithm. That single rule — "<em>if anyone already accepted a value,
+        you must re-propose <strong>that</strong> value, not your own</em>" — is what stops a later proposer from overwriting an
+        earlier decision. It means a proposer's job isn't really to push its own value; it's to <em>discover and finish</em> any
+        decision that might already be in progress, and only propose fresh when it's certain none is.</p>
+
+        <div class="code-label">The acceptor's logic — the entire safety-critical core</div>
+        <div class="code-panel"><span class="muted"># Each acceptor keeps two durable values:</span>
+promised_n   <span class="k">=</span> null   <span class="muted"># highest proposal number I've promised</span>
+accepted     <span class="k">=</span> null   <span class="muted"># the (n, value) I last accepted, if any</span>
+
+<span class="k">def</span> <span class="f">on_prepare</span>(n):
+    <span class="k">if</span> promised_n <span class="k">is</span> null <span class="k">or</span> n <span class="k">&gt;</span> promised_n:
+        promised_n <span class="k">=</span> n                       <span class="muted"># promise to ignore anything below n</span>
+        <span class="k">return</span> <span class="s">PROMISE</span>(n, accepted)        <span class="muted"># ...and confess what I already accepted</span>
+    <span class="k">return</span> <span class="b">REJECT</span>                           <span class="muted"># I've promised someone higher</span>
+
+<span class="k">def</span> <span class="f">on_accept</span>(n, v):
+    <span class="k">if</span> promised_n <span class="k">is</span> null <span class="k">or</span> n <span class="k">&gt;=</span> promised_n:
+        promised_n <span class="k">=</span> n
+        accepted   <span class="k">=</span> (n, v)                  <span class="muted"># durably remember it, then ACK</span>
+        <span class="k">return</span> <span class="s">ACCEPTED</span>(n, v)
+    <span class="k">return</span> <span class="b">REJECT</span>
+
+<span class="muted"># A value is CHOSEN the instant a MAJORITY of acceptors hold it as `accepted`.</span></div>
+      </section>
+
+      <section id="majority">
+        <h2>Why Majorities = Safety</h2>
+        <p>Everything above rests on one geometric fact. Picture five acceptors. A <strong>majority</strong> is any three of them. Now
+        take <em>any</em> two majorities — say <code>{1,2,3}</code> and <code>{3,4,5}</code>. They <strong>must share at least one
+        acceptor</strong> (here, #3). It's impossible to pick two groups of three from five without an overlap. This is the
+        <strong>quorum intersection</strong> property, and it is the whole ballgame.</p>
+
+        <div class="diagram-box">
+          <svg id="majority-diagram" width="820" height="360" viewBox="0 0 820 360"></svg>
+        </div>
+
+        <p>Why does overlap guarantee safety? Suppose value <strong>X</strong> was chosen — that means some majority accepted it. Now
+        a new proposer comes along with a higher number and runs Phase&nbsp;1. Its <code>Prepare</code> reaches <em>some</em> majority,
+        and <strong>that majority must overlap the one that accepted X</strong> — so at least one acceptor in its promises will report
+        "<em>I already accepted X</em>". By the rule in step&nbsp;2a, the new proposer is <strong>forced</strong> to propose X too.
+        The decision can't be lost and can't be contradicted. Run this argument inductively and you get the full theorem: once a value
+        is chosen, every future proposal — no matter how high its number — proposes the same value. <strong>Agreement is
+        preserved forever.</strong></p>
+        <p>The same fact kills split-brain. During a network partition, the cluster might split into groups of two and three. The
+        group of two can <em>never</em> assemble a majority, so it simply cannot choose anything — it stalls. Only the side that still
+        holds a majority can make progress. There is never a moment when both sides decide, because <strong>there can only ever be one
+        majority at a time</strong>. This is also why consensus clusters use <strong>odd</strong> node counts (3, 5, 7): five nodes
+        tolerate two failures (majority = 3), seven tolerate three (majority = 4) — an even count just adds a node without raising the
+        failures you can survive.</p>
+      </section>
+
+      <section id="multi">
+        <h2>Multi-Paxos &amp; the Leader Optimization</h2>
+        <p>Single-decree Paxos agrees on <em>one</em> value. But a real system — a database, a config store, a lock service — needs to
+        agree on a <strong>whole sequence</strong> of values: command 1, then command 2, then command 3… This is the
+        <strong>replicated log</strong> that backs a <strong>replicated state machine</strong>: if every node applies the same
+        commands in the same order, every node ends up in the same state. You get there by running Paxos once per slot in the log —
+        this is <strong>Multi-Paxos</strong>.</p>
+        <p>Done naïvely that's two round-trips (Phase 1 + Phase 2) <em>per command</em> — painfully slow. The key optimization:
+        <strong>elect one proposer as a stable leader</strong>. The leader runs Phase&nbsp;1 <em>once</em> for a whole range of future
+        log slots, and thereafter only needs Phase&nbsp;2 — a single round-trip per command — for as long as it stays leader. If the
+        leader crashes, another node notices, bumps the proposal number, runs Phase&nbsp;1 to recover any in-flight decisions, and
+        becomes the new leader. Notice the beautiful recursion: <em>electing the leader is itself a consensus decision</em>, and Paxos
+        is exactly what makes that election safe.</p>
+        <div class="flow-box">
+          <div class="flow-step"><span>1</span><div><strong>Steady state.</strong> One leader, Phase&nbsp;1 already done; each client
+          write is one <code>Accept</code> round-trip to a majority. Fast and simple.</div></div>
+          <div class="flow-step"><span>2</span><div><strong>Leader dies.</strong> A follower times out, picks a higher proposal
+          number, runs Phase&nbsp;1 across a majority to <em>learn any half-finished decisions</em>, and takes over — no data lost,
+          no split-brain, because the majority carries the truth forward.</div></div>
+          <div class="flow-step"><span>3</span><div><strong>Why this matters.</strong> This "leader + replicated log + majority
+          commit" shape is <em>exactly</em> what Raft (Day&nbsp;32) formalizes — and what etcd, ZooKeeper, and Spanner run in
+          production. Paxos is the theory; these are the practice.</div></div>
+        </div>
+        <p>If this part felt slippery, you're in excellent company — Paxos is famous for being hard to understand, which is precisely
+        why Raft was invented to teach the same guarantees more clearly. That's tomorrow. Today's job was the <em>idea</em>:
+        majority-quorum, two-phase, proposal-numbered agreement.</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>Paxos is a triumph of correctness, and a notorious source of pain. Know the sharp edges.</p>
+
+        <h3>Safety always; liveness never guaranteed</h3>
+        <p>By FLP, no async consensus can promise progress under failures. Concretely, <strong>dueling proposers</strong> can
+        livelock: proposer A runs Phase&nbsp;1 with n=1; before it finishes Phase&nbsp;2, proposer B runs Phase&nbsp;1 with n=2,
+        pre-empting A; A retries with n=3, pre-empting B; forever. No value is ever chosen, yet <em>safety still holds</em> — it's just
+        stuck. The fix is practical, not theoretical: elect <strong>one leader</strong> so only it proposes. Progress returns; the FLP
+        theorem is sidestepped in practice (not disproven).</p>
+
+        <h3>It is genuinely hard to implement correctly</h3>
+        <p>The paper is short; a correct, performant implementation is not. Google's "<em>Paxos Made Live</em>" paper catalogs the gap
+        between the one-page algorithm and a production system: disk corruption, handling restarts, log compaction, master leases,
+        group membership changes. Most teams should <strong>use a battle-tested library</strong> (etcd, ZooKeeper) rather than roll
+        their own — rolling your own consensus is a classic way to introduce subtle, catastrophic bugs.</p>
+
+        <h3>It costs a round-trip to a majority</h3>
+        <p>Every decision needs at least one round-trip to a majority of nodes, written durably. That's latency you pay for
+        consistency — which is why you reserve consensus for the <em>small, critical</em> state (who's the leader, cluster config,
+        commit order) and keep it <strong>off</strong> the high-volume data path where you can. Consensus is a scalpel, not a
+        firehose.</p>
+
+        <h3>CAP, revisited</h3>
+        <p>Remember Day&nbsp;10: under a partition you must choose consistency or availability. Paxos is the embodiment of
+        <strong>choosing consistency</strong> (CP). The majority side stays consistent and available; the minority side deliberately
+        <em>refuses</em> to serve decisions rather than risk disagreeing. That refusal isn't a bug — it's the guarantee you're paying
+        for.</p>
+
+        <p style="margin-top:1rem;">The through-line: consensus trades <strong>latency and availability-under-partition for
+        iron-clad agreement</strong>. You give up "every node can always answer" in exchange for "no two nodes ever disagree." For the
+        parts of a system where being <em>wrong</em> is catastrophic — who holds the lock, what order writes commit, which node is
+        primary — that's exactly the trade you want.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room. Yesterday a spiral staircase led up from the ground floor (Phase&nbsp;1) to
+        the first floor (Phase&nbsp;2). Here is its first room.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">🏛️</span><div><strong>The Voting Chamber</strong>
+          — <span>You step off the staircase into a circular <strong>parliament chamber</strong> — the first room of the
+          <em>first floor</em>. Five senators (the <strong>acceptors</strong>) sit around a ring; a <strong>proposer</strong> stands
+          at the podium. The proposer quickly learns the house rule: you cannot pass a motion by convincing <em>one</em> senator — you
+          need <strong>three raised hands, a majority</strong>. Every motion carries a <strong>numbered brass ticket</strong>, and a
+          senator who has promised their vote to a higher ticket will coldly refuse any lower one. Above the dais hangs a plaque that
+          is really the whole lesson: <em>"Any two majorities must share a member — so this chamber can never pass two conflicting
+          laws."</em> And in the corner, bolted to the floor, a <strong>heavy ledger</strong> where each senator writes down what they
+          promised and accepted, so that even if a senator faints (crashes) and is revived, the chamber remembers.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Side Door</strong> — <span>A small door off the
+          chamber is labeled <strong>Day&nbsp;32: Raft</strong>. Through it is a tidier parliament with a single elected
+          <em>Speaker</em> who serves a numbered <em>term</em>, keeps an orderly <em>logbook</em> every senator copies, and stands for
+          re-election the moment they go silent. Same guarantees as this chamber — just arranged so a newcomer can actually follow the
+          proceedings.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Back-of-Envelope Estimation (Day 30)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Consensus: Paxos (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Consensus: Raft (Day 32)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Builds on…</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Replication (Day 8)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">CAP Theorem (Day 10)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Fault Tolerance &amp; split-brain (Day 22)</span>
+        </div>
+        <p>Today opens Phase&nbsp;2 by closing a loop Phase&nbsp;1 left dangling. <strong>Replication (Day 8)</strong> gave us copies of
+        data but never answered "which write wins when copies disagree?" — consensus is that answer. <strong>CAP (Day 10)</strong>
+        told us a partition forces a choice between consistency and availability; Paxos is what <em>choosing consistency</em> actually
+        looks like in code — the majority side serves, the minority side waits. And <strong>Fault Tolerance (Day 22)</strong> ended on
+        a cliffhanger: automatic failover can cause <em>split-brain</em>, and it warned the fix was "quorum/fencing → consensus."
+        <strong>This is that fix.</strong> From here, Paxos's shape — leader + majority-committed replicated log — powers
+        <strong>Raft (Day 32)</strong>, underpins <strong>distributed transactions &amp; 2PC/3PC (Day 33)</strong>, and is the
+        machinery behind every "leader election" you'll meet for the rest of the course.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Consensus means <em>everyone</em> agrees."</td><td>It means a <strong>majority</strong> agrees; crashed or
+          unreachable nodes catch up later. Requiring unanimity would halt the system on any single failure — the opposite of
+          fault-tolerant.</td></tr>
+          <tr><td>"Paxos picks the <em>best</em> value."</td><td>It picks <strong>one</strong> proposed value, not the "best" one.
+          Any proposed value is valid; the only guarantee is that there's exactly <em>one</em>. Paxos chooses <em>a</em> winner, not
+          the <em>right</em> winner.</td></tr>
+          <tr><td>"A network partition can cause two decisions."</td><td>No — only a side holding a <strong>majority</strong> can
+          decide, and both sides can't simultaneously be a majority. Quorum overlap makes two conflicting decisions
+          impossible.</td></tr>
+          <tr><td>"Once I've elected a leader I don't need consensus."</td><td>The leader can crash. Safely <em>replacing</em> it, and
+          keeping the replicated log consistent across the handoff, is <em>exactly</em> what consensus does. The leader is an
+          optimization on top of Paxos, not a replacement for it.</td></tr>
+          <tr><td>"Paxos guarantees the cluster makes progress."</td><td>It guarantees <strong>safety</strong> always, but not
+          <strong>liveness</strong> (FLP). Dueling proposers can livelock. A single stable leader restores progress in
+          practice.</td></tr>
+          <tr><td>"More nodes make it safer."</td><td>More nodes tolerate more failures but need a <em>bigger</em> majority (slower
+          commits) and don't change the safety guarantee. Use <strong>odd</strong> counts (3, 5, 7) so majorities are clean and an
+          extra node actually buys fault tolerance.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ You run a 5-node consensus cluster (majority = 3). A network partition splits it into
+          a group of 2 and a group of 3, and each group independently tries to choose a configuration value. (a) What happens in each
+          group, and why can the two groups <em>never</em> disagree? (b) The group of 3 chooses value "X". The partition heals, and a
+          node from the formerly-isolated group of 2 — which never saw X — starts a brand-new proposal with a <em>higher</em> proposal
+          number. What value is it forced to choose, and <em>which exact Paxos mechanism</em> forces it? (click to reveal)</div>
+          <div class="recall-answer"><strong>(a)</strong> The group of <strong>3 has a majority</strong>, so it can run both phases and
+          choose a value. The group of <strong>2 can never assemble a majority</strong>, so it <em>stalls</em> — it cannot choose
+          anything at all. The two groups can't disagree because <strong>there can only ever be one majority at a time</strong>:
+          it's impossible for both a 3-group and a 2-group to each be a majority of 5. Stalling is safe; choosing a conflicting value
+          would not be. <strong>(b)</strong> It is forced to choose <strong>X</strong>. When it runs <strong>Phase&nbsp;1
+          (Prepare)</strong>, it must collect promises from a majority (3 nodes). <em>Any</em> majority it reaches must
+          <strong>overlap</strong> the majority that accepted X — so at least one acceptor replies "<em>I already accepted X</em>".
+          The rule in <strong>step&nbsp;2a</strong> — "propose the value tied to the highest-numbered accepted value you heard about" —
+          then forces it to re-propose X, not its own value. The decision is permanent. This is <strong>quorum intersection</strong>
+          plus the <strong>adopt-the-highest-accepted-value</strong> rule doing their job together.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🔒 Google Chubby</div><p>Google's lock service — the thing that answers
+          "who is the leader?" for GFS, Bigtable, and more — is built directly on Paxos. Its authors wrote the influential "<em>Paxos
+          Made Live</em>" paper documenting just how much engineering sits between the textbook algorithm and a service that survives
+          disk faults, restarts, and membership changes.</p></div>
+          <div class="realworld-card"><div class="rw-company">🐘 Apache ZooKeeper</div><p>The coordination backbone for Kafka
+          (historically), HBase, and countless clusters. It runs <strong>ZAB</strong>, a Paxos-family atomic-broadcast protocol, to
+          keep a replicated, strongly-consistent store of small critical state — config, leader election, locks — exactly the
+          "scalpel, not firehose" use of consensus.</p></div>
+          <div class="realworld-card"><div class="rw-company">☸️ etcd &amp; Kubernetes</div><p>Kubernetes stores <em>all</em> of its
+          cluster state in <strong>etcd</strong>, which uses <strong>Raft</strong> (Paxos's more-teachable cousin, Day&nbsp;32). When
+          you <code>kubectl apply</code>, a majority of etcd nodes must agree before the change is committed — consensus is literally
+          the brain of the orchestrator.</p></div>
+          <div class="realworld-card"><div class="rw-company">🌍 Spanner &amp; CockroachDB</div><p>Globally-distributed SQL databases
+          run a <strong>Paxos (or Raft) group per shard</strong>, replicating each piece of data across regions with majority commit.
+          That's how they offer strong consistency across continents — every write is a tiny consensus decision among the replicas of
+          its shard.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What three guarantees define distributed consensus?</div>
+          <div class="fc-a">A: <strong>Validity</strong> (only a proposed value can be chosen), <strong>Agreement</strong> (at most one
+          value is ever chosen — the safety property), and <strong>Termination</strong> (a value is eventually chosen &amp; learned —
+          liveness). Paxos guarantees the first two unconditionally; the third only with a stable leader.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What are Paxos's two phases?</div>
+          <div class="fc-a">A: <strong>Phase 1 — Prepare/Promise:</strong> a proposer reserves a proposal number <code>n</code>;
+          acceptors promise to ignore anything lower and report any value they've already accepted. <strong>Phase 2 —
+          Accept/Accepted:</strong> the proposer sends <code>Accept(n, v)</code> to a majority; the value is <em>chosen</em> once a
+          majority accepts.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why do majority quorums make Paxos safe?</div>
+          <div class="fc-a">A: Any two majorities of N nodes <strong>share at least one node</strong> (quorum intersection). That
+          overlapping node remembers an already-chosen value and reports it during Phase&nbsp;1, forcing every later proposer to
+          re-propose the same value — so two different values can never both be chosen.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: In Phase 2, when is a proposer <em>not</em> free to use its own value?</div>
+          <div class="fc-a">A: If any Phase-1 promise reported an already-accepted value, the proposer <strong>must</strong> propose the
+          value tied to the <em>highest</em> proposal number it heard about. This single rule is what preserves agreement across
+          competing proposers.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Does Paxos guarantee progress, and what's the fix for when it doesn't?</div>
+          <div class="fc-a">A: No — by the <strong>FLP</strong> result, async consensus can't guarantee liveness under failures, and
+          <strong>dueling proposers</strong> can livelock. Safety still always holds. The practical fix is to elect a single stable
+          <strong>leader</strong> (Multi-Paxos) so only it proposes — one round-trip per decision.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>State consensus's three guarantees, and name one fault model Paxos handles and one it does <em>not</em>.</li>
+          <li>Walk through single-decree Paxos end to end, naming all four messages (Prepare, Promise, Accept, Accepted).</li>
+          <li>Using a 5-node cluster, explain why two <em>different</em> values can never both be chosen.</li>
+          <li>A proposer finishes Phase 1 and learns acceptor #3 already accepted "blue" (number 4). What value must it now propose,
+          and why?</li>
+          <li>Why can't you just trust one leader and skip consensus? What goes wrong if it crashes mid-write?</li>
+          <li>Distinguish single-decree Paxos from Multi-Paxos, and say what the leader optimization buys you.</li>
+          <li>State the FLP impossibility result in one sentence, and say which property Paxos sacrifices to keep the other.</li>
+          <li>During a 2-vs-3 partition of a 5-node cluster, which side makes progress and which stalls — and is that a bug or the
+          point?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>consensus is how unreliable machines agree on one value and never un-agree, and
+          Paxos does it with proposal-numbered, two-phase voting on a MAJORITY.</strong> Phase&nbsp;1 (Prepare/Promise) reserves a
+          ballot and surfaces any value already in flight; Phase&nbsp;2 (Accept/Accepted) commits a value once a majority accepts. The
+          magic is <strong>quorum overlap</strong> — any two majorities share a node, so a chosen value can never be lost or
+          contradicted, and the rule "re-propose the highest value you heard about" forces every future proposer to keep it. Safety is
+          <em>absolute</em>; progress needs a <strong>leader</strong> (Multi-Paxos), because by FLP no async algorithm can promise both.
+          This is the bedrock under replicated databases, leader election, and Kubernetes' own brain. Tomorrow we meet the same
+          guarantees in a form built to be understood — <strong>Day 32: Consensus &amp; the Raft algorithm.</strong>
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-30.html">← Day 30: Back-of-Envelope Estimation</a>
+        <a href="day-32.html" class="coming-soon-link">Day 32: Consensus — Raft →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 31 of 90 — Consensus: Paxos</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── "Will they agree?" simulator ─────────────────────────────────────
+  var state = { reach: 5, prop: 1, prior: 'fresh' };
+  var MAJORITY = 3; // of 5
+
+  var els = {
+    sReach: document.getElementById('s-reach'), vReach: document.getElementById('v-reach'),
+    prop: document.getElementById('prop-toggle'), prior: document.getElementById('prior-toggle'),
+    maj: document.getElementById('m-maj'), choose: document.getElementById('m-choose'),
+    val: document.getElementById('m-val'), safe: document.getElementById('m-safe'),
+    live: document.getElementById('m-live'), status: document.getElementById('sim-status')
+  };
+
+  function set(el, text, cls) {
+    el.textContent = text;
+    el.className = 'val' + (cls ? ' ' + cls : '');
+  }
+
+  function render() {
+    els.vReach.textContent = state.reach + ' of 5';
+    var hasMajority = state.reach >= MAJORITY;
+
+    // Majority reachable?
+    set(els.maj, hasMajority ? 'YES (' + state.reach + '≥3)' : 'NO (' + state.reach + '<3)',
+        hasMajority ? 'good' : 'bad');
+
+    // Safety is ALWAYS preserved — that's the whole point of Paxos.
+    set(els.safe, '✓ always', 'good');
+
+    if (!hasMajority) {
+      // No majority: nothing can be chosen, but safety holds (stalling is safe).
+      set(els.choose, '✗ no', 'bad');
+      set(els.val, state.prior === 'chosen' ? 'X (frozen)' : '— none —', 'muted2');
+      set(els.live, '✗ stalled', 'bad');
+      els.status.className = 'q-status warn';
+      els.status.innerHTML = '<strong>No majority reachable.</strong> Only ' + state.reach +
+        ' of 5 acceptors are up, and you need 3. The round <strong>stalls</strong> — nothing new can be chosen. ' +
+        'But notice: <strong>safety still holds</strong>. Paxos would rather wait forever than risk choosing a second, ' +
+        'conflicting value. (This is the minority side of a partition: it <em>refuses</em> to decide.)';
+      return;
+    }
+
+    if (state.prior === 'chosen') {
+      // A value was already chosen on a majority: any new proposer is forced to re-propose it.
+      set(els.choose, '✓ (re-chosen)', 'good');
+      set(els.val, 'X (forced)', 'violet');
+      set(els.live, '✓ progresses', 'good');
+      els.status.className = 'q-status ok';
+      els.status.innerHTML = '<strong>Value X was already chosen — and it is permanent.</strong> ' +
+        'Any majority this proposer reaches must <strong>overlap</strong> the majority that accepted X, so a ' +
+        'Phase-1 promise reports X back. By the step-2a rule, even a brand-new proposer with a higher number is ' +
+        '<strong>forced to re-propose X</strong>. The decision can never flip.';
+      return;
+    }
+
+    // Fresh, majority present — depends on how many proposers compete.
+    if (state.prop === 1) {
+      set(els.choose, '✓ yes', 'good');
+      set(els.val, 'Y (clean)', 'blue');
+      set(els.live, '✓ one round', 'good');
+      els.status.className = 'q-status ok';
+      els.status.innerHTML = '<strong>One leader, clean round.</strong> A single proposer runs ' +
+        'Prepare→Promise→Accept→Accepted across a majority, and value <strong>Y is chosen in one go</strong>. ' +
+        'This is the happy path Multi-Paxos engineers toward: elect one leader and keep it.';
+    } else {
+      set(els.choose, '⚠ eventually', 'warn');
+      set(els.val, 'Y or Z', 'warn');
+      set(els.live, '⚠ may livelock', 'bad');
+      els.status.className = 'q-status warn';
+      els.status.innerHTML = '<strong>Two dueling proposers.</strong> Each one\'s Prepare keeps pre-empting the ' +
+        'other\'s Accept (A:n=1 → B:n=2 → A:n=3 …), so they can <strong>livelock</strong> and choose nothing for a ' +
+        'long time — liveness ✗. Yet they can <em>still</em> never choose two different values — <strong>safety ✓</strong>. ' +
+        'The fix isn\'t cleverer math; it\'s electing <strong>one leader</strong> so only it proposes.';
+    }
+  }
+
+  els.sReach.addEventListener('input', function(){ state.reach = +this.value; render(); });
+
+  function wireButtons(container, key, attr, numeric) {
+    Array.prototype.forEach.call(container.querySelectorAll('button'), function(btn){
+      btn.addEventListener('click', function(){
+        state[key] = numeric ? +btn.getAttribute(attr) : btn.getAttribute(attr);
+        Array.prototype.forEach.call(container.querySelectorAll('button'), function(b){
+          b.classList.toggle('active', b === btn);
+        });
+        render();
+      });
+    });
+  }
+  wireButtons(els.prop, 'prop', 'data-prop', true);
+  wireButtons(els.prior, 'prior', 'data-prior', false);
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+
+  // Anchor diagram: five friends / acceptors over a flaky network, majority ring.
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, '🗳️ Pick ONE restaurant over a terrible group chat — agree with a MAJORITY, not everyone', '#e2e8f0', '12.5', '700');
+
+    // proposer on the left
+    svg.appendChild(rs.rectangle(30, 170, 120, 70, { stroke:'#0ea5e9', strokeWidth:1.8, roughness:1.2, fill:'#0ea5e912', fillStyle:'solid' }));
+    T(90, 198, '🧑‍💼 Proposer', '#7dd3fc', '11', '800');
+    T(90, 218, '"Note #7:', '#cbd5e1', '9.5', '600', true);
+    T(90, 232, 'Luigi\'s?"', '#cbd5e1', '9.5', '600', true);
+
+    // five acceptors in a ring on the right
+    var cx = 520, cy = 200, R = 120;
+    var nodes = [];
+    for (var i = 0; i < 5; i++) {
+      var ang = -Math.PI/2 + i * (2*Math.PI/5);
+      nodes.push({ x: cx + R*Math.cos(ang), y: cy + R*Math.sin(ang) });
+    }
+    // majority = the first three get a green "promised/accepted" ring; last two asleep
+    nodes.forEach(function(nd, i){
+      var inMaj = i < 3;
+      svg.appendChild(rs.circle(nd.x, nd.y, 62, {
+        stroke: inMaj ? '#22c55e' : '#64748b', strokeWidth: inMaj ? 2 : 1.4, roughness:1.1,
+        fill: inMaj ? '#22c55e14' : '#64748b10', fillStyle:'solid'
+      }));
+      T(nd.x, nd.y - 4, inMaj ? '🗳️' : '😴', '#e2e8f0', '15', '800');
+      T(nd.x, nd.y + 15, inMaj ? '"accepted"' : 'asleep', inMaj ? '#86efac' : '#94a3b8', '8.5', '700');
+    });
+    // arrows from proposer to the three majority nodes (solid), lost to the two (dashed red)
+    nodes.forEach(function(nd, i){
+      if (i < 3) {
+        svg.appendChild(rs.line(152, 200, nd.x - 30, nd.y, { stroke:'#38bdf8', strokeWidth:1.4, roughness:1.2 }));
+      } else {
+        var ln = rs.line(152, 205, nd.x - 28, nd.y, { stroke:'#fb7185', strokeWidth:1.3, roughness:1.6 });
+        ln.setAttribute('stroke-dasharray', '5 5');
+        svg.appendChild(ln);
+        T((152 + nd.x - 28)/2, (205 + nd.y)/2 - 6, '✗ lost', '#fca5a5', '8', '700');
+      }
+    });
+    // majority badge
+    svg.appendChild(rs.rectangle(cx - 60, cy + R + 2, 120, 30, { stroke:'#22c55e', strokeWidth:1.6, roughness:1, fill:'#22c55e10', fillStyle:'solid' }));
+    T(cx, cy + R + 22, '3 of 5 = MAJORITY ✓', '#86efac', '10', '800');
+
+    // bottom band
+    svg.appendChild(rs.rectangle(30, 348, 760, 64, { stroke:'#a78bfa', strokeWidth:1.5, roughness:1, fill:'#a78bfa0a', fillStyle:'solid' }));
+    T(410, 372, 'Numbered notes serialize proposers; a MAJORITY of "accepts" chooses the value.', '#cbd5e1', '10.5', '700');
+    T(410, 392, 'Any two majorities share a member → that member remembers → the choice can never flip.', '#ddd6fe', '10.5', '700');
+  }
+
+  // Two-phase protocol: proposer <-> 3 acceptors, Phase 1 then Phase 2.
+  function drawDanceDiagram() {
+    var svg = document.getElementById('dance-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 22, 'Single-decree Paxos: two phases, driven by proposal number n=5', '#e2e8f0', '13', '700');
+
+    // proposer lane (left) and three acceptor lanes (right)
+    var px = 90, ax = [430, 570, 710];
+    svg.appendChild(rs.rectangle(px - 60, 44, 120, 34, { stroke:'#0ea5e9', strokeWidth:1.8, roughness:1.1, fill:'#0ea5e912', fillStyle:'solid' }));
+    T(px, 66, '🧑‍💼 Proposer', '#7dd3fc', '10.5', '800');
+    ax.forEach(function(x, i){
+      svg.appendChild(rs.rectangle(x - 48, 44, 96, 34, { stroke:'#22c55e', strokeWidth:1.6, roughness:1.1, fill:'#22c55e12', fillStyle:'solid' }));
+      T(x, 66, '🗳️ Acc ' + (i+1), '#86efac', '10', '800');
+    });
+    // vertical lifelines
+    [px].concat(ax).forEach(function(x){
+      var ln = rs.line(x, 80, x, 430, { stroke:'#334155', strokeWidth:1, roughness:0.6 });
+      ln.setAttribute('stroke-dasharray', '3 4'); svg.appendChild(ln);
+    });
+
+    function arrow(x1, x2, y, c, dash) {
+      var ln = rs.line(x1, y, x2, y, { stroke:c, strokeWidth:1.5, roughness:0.9 });
+      if (dash) ln.setAttribute('stroke-dasharray', '5 4');
+      svg.appendChild(ln);
+      var dir = x2 > x1 ? -1 : 1;
+      svg.appendChild(rs.line(x2, y, x2 + dir*8, y - 4, { stroke:c, strokeWidth:1.5, roughness:0.9 }));
+      svg.appendChild(rs.line(x2, y, x2 + dir*8, y + 4, { stroke:c, strokeWidth:1.5, roughness:0.9 }));
+    }
+
+    // Phase 1 label
+    T(px - 55, 104, 'PHASE 1', '#fbbf24', '10', '800', false, 'start');
+    T(px - 55, 118, 'Prepare / Promise', '#94a3b8', '8.5', '600', false, 'start');
+    // Prepare out (to all 3)
+    ax.forEach(function(x){ arrow(px + 6, x - 50, 110, '#fbbf24'); });
+    T((px + ax[2])/2, 102, 'Prepare(n=5) →', '#fcd34d', '9.5', '800');
+    // Promise back
+    ax.forEach(function(x){ arrow(x - 50, px + 6, 148, '#38bdf8', true); });
+    T((px + ax[2])/2, 142, '← Promise(5, no value yet)', '#7dd3fc', '9.5', '800');
+
+    // majority gate
+    svg.appendChild(rs.rectangle(px - 70, 176, 300, 30, { stroke:'#a78bfa', strokeWidth:1.5, roughness:1, fill:'#a78bfa10', fillStyle:'solid' }));
+    T(px + 80, 196, 'Got a MAJORITY of promises (3 of 3) ✓', '#ddd6fe', '9.5', '800');
+
+    // Phase 2 label
+    T(px - 55, 250, 'PHASE 2', '#22c55e', '10', '800', false, 'start');
+    T(px - 55, 264, 'Accept / Accepted', '#94a3b8', '8.5', '600', false, 'start');
+    // Accept out
+    ax.forEach(function(x){ arrow(px + 6, x - 50, 256, '#22c55e'); });
+    T((px + ax[2])/2, 248, 'Accept(5, "Luigi\'s") →', '#86efac', '9.5', '800');
+    // Accepted back
+    ax.forEach(function(x){ arrow(x - 50, px + 6, 294, '#38bdf8', true); });
+    T((px + ax[2])/2, 288, '← Accepted(5, "Luigi\'s")', '#7dd3fc', '9.5', '800');
+
+    // chosen band
+    svg.appendChild(rs.rectangle(90, 326, 640, 44, { stroke:'#22c55e', strokeWidth:2, roughness:1, fill:'#22c55e14', fillStyle:'solid' }));
+    T(410, 353, '✅ A MAJORITY accepted (5, "Luigi\'s")  →  value is CHOSEN — permanently', '#86efac', '11.5', '800');
+
+    // rule reminder
+    svg.appendChild(rs.rectangle(90, 384, 640, 50, { stroke:'#fb7185', strokeWidth:1.5, roughness:1, fill:'#fb718509', fillStyle:'solid' }));
+    T(410, 404, 'Step 2a rule: if any Promise had reported an already-accepted value,', '#fecdd3', '10', '700');
+    T(410, 422, 'the proposer MUST re-propose that value — not its own. (Here none had, so it used "Luigi\'s".)', '#fca5a5', '9.5', '700');
+  }
+
+  // Quorum intersection: two majorities of 5 overlap in node 3.
+  function drawMajorityDiagram() {
+    var svg = document.getElementById('majority-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'Quorum intersection — why two different values can never both win', '#e2e8f0', '13', '700');
+
+    // five acceptors in a row
+    var xs = [150, 290, 430, 570, 710], y = 150;
+    // majority A bracket (1,2,3) above, majority B bracket (3,4,5) below
+    svg.appendChild(rs.rectangle(xs[0] - 48, 92, (xs[2] - xs[0]) + 96, 40, { stroke:'#38bdf8', strokeWidth:1.6, roughness:1, fill:'#38bdf810', fillStyle:'solid' }));
+    T((xs[0]+xs[2])/2, 117, 'Majority A = {1,2,3} — accepted "X"', '#7dd3fc', '10', '800');
+    svg.appendChild(rs.rectangle(xs[2] - 48, 168, (xs[4] - xs[2]) + 96, 40, { stroke:'#a78bfa', strokeWidth:1.6, roughness:1, fill:'#a78bfa10', fillStyle:'solid' }));
+    T((xs[2]+xs[4])/2, 193, 'Majority B = {3,4,5} — a later proposer\'s quorum', '#c4b5fd', '10', '800');
+
+    xs.forEach(function(x, i){
+      var overlap = (i === 2); // node 3
+      svg.appendChild(rs.circle(x, y, 60, {
+        stroke: overlap ? '#fbbf24' : '#64748b', strokeWidth: overlap ? 2.4 : 1.5, roughness:1.1,
+        fill: overlap ? '#fbbf2420' : '#1e293b', fillStyle:'solid'
+      }));
+      T(x, y + 4, (i+1).toString(), '#e2e8f0', '15', '800');
+      if (overlap) T(x, y + 42, 'in BOTH', '#fcd34d', '9', '800');
+    });
+
+    // the punchline band
+    svg.appendChild(rs.rectangle(80, 250, 660, 86, { stroke:'#22c55e', strokeWidth:1.6, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(410, 274, 'Node 3 is in BOTH majorities — and it remembers it accepted "X".', '#86efac', '11', '800');
+    T(410, 296, 'So when proposer B runs Phase 1, node 3 reports "X" back → B is FORCED to propose "X" too.', '#cbd5e1', '10', '700');
+    T(410, 318, 'No two groups of 3 from 5 can avoid sharing a member. That overlap IS the safety proof.', '#fcd34d', '10', '800');
+  }
+
+  function drawAll() { drawAnchorDiagram(); drawDanceDiagram(); drawMajorityDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
