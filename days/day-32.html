@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 32: Consensus — The Raft Algorithm | System Design Mastery</title>
+  <meta name="description" content="Yesterday we proved that a group of unreliable machines CAN agree on a single value — Paxos showed it's possible. But Paxos is famously hard to understand and harder to build correctly. Raft solves the exact same problem with the exact same guarantees, and was designed from scratch for one goal most algorithms ignore: being UNDERSTANDABLE. Today we build Raft from its three simple ideas — a single strong Leader, logical Terms numbered like election cycles, and a replicated Log that every node copies in the same order. We cover the three server states (Follower, Candidate, Leader) and the state machine that connects them; Leader Election with randomized timeouts that quietly prevent split votes; Log Replication and what it means for an entry to be 'committed'; and the two safety rules — the Log Matching Property and the up-to-date-log election restriction — that guarantee a new leader always already has every committed entry. Taught with a one-newsroom-one-editor memory anchor, a live Raft cluster simulator you can step through (a clean election, log replication, a leader crash and recovery, and a split vote broken by randomization), Excalidraw-style diagrams of the state machine and the replicated log, the tradeoffs (why a strong leader is both the strength and the bottleneck), and active recall. The algorithm behind etcd, Consul, CockroachDB, TiKV, and Kubernetes itself." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .flow-step > span { font-weight:800; color: var(--accent-light); min-width:1.4rem; }
+    /* role / concept cards — colored left bar */
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card .answers { font-size:.8rem; font-weight:700; color:var(--text-primary); margin:.35rem 0; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    .pillar-card .eg { font-size:.75rem; color:var(--text-muted); margin-top:.45rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .acc-grid { display:grid; grid-template-columns:repeat(5, 1fr); gap:.6rem; margin:1.1rem 0; }
+    @media (max-width: 640px) { .acc-grid { grid-template-columns:repeat(2,1fr); } }
+    .acc-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:.7rem .5rem; text-align:center; transition:all .2s; }
+    .acc-card .acc-id { font-size:.9rem; font-weight:800; color:var(--text-primary); }
+    .acc-card .acc-role { font-size:.72rem; font-weight:700; margin-top:.25rem; line-height:1.3; }
+    .acc-card .acc-term { font-size:.66rem; color:var(--text-muted); margin-top:.15rem; font-family:'JetBrains Mono',monospace; }
+    .acc-card .acc-log { display:flex; gap:2px; justify-content:center; margin-top:.4rem; min-height:14px; flex-wrap:wrap; }
+    .acc-card .lg { width:11px; height:13px; border-radius:2px; border:1px solid #475569; }
+    .acc-card .lg.c { background:#22c55e; border-color:#22c55e; }
+    .acc-card .lg.u { background:#fbbf2433; border-color:#fbbf24; }
+    .acc-card .acc-vote { font-size:.62rem; color:#7dd3fc; margin-top:.3rem; min-height:1em; font-family:'JetBrains Mono',monospace; }
+    .acc-card.dead { opacity:.4; border-style:dashed; }
+    .acc-card.role-L { border-color:#fbbf24; box-shadow:0 0 0 1px #fbbf24; }
+    .acc-card.role-C { border-color:#a78bfa; box-shadow:0 0 0 1px #a78bfa; }
+    .acc-card.role-L .acc-role { color:#fcd34d; } .acc-card.role-C .acc-role { color:#c4b5fd; } .acc-card.role-F .acc-role { color:#94a3b8; }
+    .sim-controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 1rem; }
+    .q-status { text-align:center; font-weight:700; font-size:.88rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; line-height:1.6; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+    .q-status.info { background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .phase-track { display:flex; gap:.4rem; justify-content:center; margin:.25rem 0 1rem; flex-wrap:wrap; }
+    .phase-chip { font-size:.68rem; font-weight:700; padding:.25rem .6rem; border-radius:20px; border:1px solid var(--border); color:var(--text-muted); }
+    .phase-chip.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .legend { display:flex; gap:1rem; justify-content:center; flex-wrap:wrap; font-size:.72rem; color:var(--text-muted); margin:.25rem 0 .5rem; }
+    .legend span { display:inline-flex; align-items:center; gap:.3rem; }
+    .legend .sw { width:11px; height:13px; border-radius:2px; display:inline-block; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phases">Phase 2: Intermediate Systems</a><span class="breadcrumb-sep">/</span>
+      <span>Day 32</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 32 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📗 Phase 2 — Intermediate Systems</span>
+      <span class="meta-pill">🗂 Week 5 — Distributed Algorithms</span>
+    </div>
+    <h1>Consensus: The Raft Algorithm<br><span style="color:var(--accent)">The Same Guarantee, Finally Understandable</span></h1>
+    <p class="lead">
+      Yesterday Paxos proved the impossible-sounding thing is possible: unreliable machines <em>can</em> agree on a single value and
+      never disagree. But Paxos is a maze — brilliant, correct, and so hard to understand that teams ship subtle bugs for years. In
+      2014 two Stanford researchers asked a different question: not "what's the cleverest consensus algorithm?" but <strong>"what's
+      the most <em>understandable</em> one?"</strong> The answer was <strong>Raft</strong> — the exact same guarantees as Multi-Paxos,
+      rebuilt around three ideas a human can hold in their head: a single strong <strong>Leader</strong>, numbered <strong>Terms</strong>
+      like election cycles, and a replicated <strong>Log</strong> every node copies in the same order. Today we build it from scratch —
+      the three server states, leader election with the one quietly-genius trick (randomized timeouts), log replication, and the two
+      safety rules that guarantee a new leader always already holds every committed entry. This is the algorithm inside etcd,
+      Consul, CockroachDB, TiKV — and therefore inside Kubernetes itself.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#why">Why Raft Exists</a>
+        <a href="#states">The Three States</a>
+        <a href="#election">Leader Election</a>
+        <a href="#replication">Log Replication</a>
+        <a href="#safety">The Safety Rules</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">📰 ✍️ 🔔</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>A newsroom. There is exactly <strong>one Editor-in-Chief</strong>, and a room full of <strong>reporters</strong>. The
+            Editor calls out the day's headlines <em>in strict order</em> — "Headline 1… Headline 2… Headline 3…" — and every reporter
+            writes each one into an <strong>identical notebook</strong>, in the same order. The rule of the room: reporters only write
+            what the Editor dictates, and they write it in the Editor's order. That shared, in-order notebook is the whole point — if
+            every notebook matches, the newsroom has <em>one agreed story of the day</em>.</p>
+            <p>Every few seconds the Editor shouts "<strong>still here!</strong>" — a heartbeat. As long as reporters hear it, they stay
+            quiet and keep copying. But if the Editor goes silent (steps out, faints, loses their voice), each reporter is counting
+            down a private timer — and here's the trick: <strong>everyone's timer is a different, random length</strong>. The first one
+            to hit zero stands up and declares, "The Editor is gone — I nominate myself as Editor for <strong>Edition #7</strong>!"
+            (each new editorship gets the next edition number). If a <strong>majority</strong> of the room raises their hands for
+            her — and crucially, <em>only if her notebook is at least as complete as theirs</em> — she becomes the new Editor, and the
+            newsroom carries on without missing a headline.</p>
+            <p>Burn in the image: <strong>one editor dictating an ordered notebook, a heartbeat keeping everyone calm, and a
+            random-length timer that lets exactly one reporter stand first.</strong> That is Raft. A single leader, a replicated log
+            copied in order, terms numbered like editions, and randomized timeouts so the room never descends into everyone shouting at
+            once. Everything else is the careful rules that make sure the new Editor never erases a headline the old newsroom already
+            agreed on.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="820" height="430" viewBox="0 0 820 430"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Maya</span> inherited a problem: a home-grown coordination service, built on Multi-Paxos,
+            that the whole company's infrastructure leaned on for leader election and config. The original authors were long gone. The
+            code <em>worked</em> — mostly — but nobody on the team could fully explain it. There were comments like <em>"// do not
+            touch this, it took 3 weeks to get right"</em> next to logic nobody dared change. Twice a year, during a messy network
+            event, it would do something baffling: lose an entry it had already acknowledged, or get wedged with two nodes each
+            convinced recovery was incomplete.
+          </p>
+          <p>
+            Maya spent a month trying to truly understand it. She drew the message flows. She re-read "Paxos Made Simple" three times.
+            The single-value protocol she could follow — but the <em>real</em> system was Multi-Paxos plus leader election plus log
+            compaction plus membership changes, and the paper left all of that as an exercise. Every engineer who'd touched it had
+            filled the gaps slightly differently. The bugs lived in those gaps. "The algorithm is correct," she told her manager, "but
+            I can't prove <em>our implementation</em> is, and neither could the people who wrote it. That's the actual problem."
+          </p>
+          <p>
+            A staff engineer pointed her at a 2014 paper with an unusual title: <em>"In Search of an Understandable Consensus
+            Algorithm."</em> Its authors, Diego Ongaro and John Ousterhout, had started from a premise Maya had never seen stated out
+            loud: that if an algorithm is too hard to understand, <strong>it doesn't matter that it's correct — the systems built on it
+            will be buggy</strong>, because humans can't reason about what they can't follow. So they designed <strong>Raft</strong>
+            backwards from understandability. One strong leader (not a committee of equal proposers). Time sliced into numbered
+            <strong>terms</strong>. A single, concrete <strong>log</strong> everyone copies. They even ran user studies proving students
+            learned Raft faster than Paxos.
+          </p>
+          <p>
+            Maya rebuilt the service on Raft over a quarter. The difference wasn't that Raft was more powerful — it gives the
+            <em>exact same guarantees</em> as Multi-Paxos. The difference was that now the <em>whole team</em> could read the code and
+            say, out loud, why it was correct. Code review caught two real bugs before they shipped, because reviewers could actually
+            follow the leader-election and log-matching logic. The mysterious twice-a-year incidents stopped. "We didn't get a better
+            algorithm," Maya wrote in the postmortem-that-never-was. "We got one we could <em>trust</em>, because we could
+            <em>understand</em> it. In a system people have to operate at 3 a.m., that's the same thing."
+          </p>
+          <p>
+            Maya's lesson is Raft's whole reason to exist: <strong>correctness you can't understand is correctness you can't maintain.
+            An algorithm engineered to be followed by a human is an algorithm engineered to be implemented, reviewed, and operated
+            without quiet, catastrophic bugs.</strong>
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement"><strong>Raft</strong> solves the same problem as Paxos — getting unreliable machines to agree on
+          a <strong>replicated log</strong> (an ordered sequence of commands) and never disagree — but is built around three
+          human-sized ideas. <strong>(1) One strong Leader:</strong> at any moment at most one node is leader, and <em>all</em> client
+          writes go through it; the leader is the single source of order. <strong>(2) Terms:</strong> time is divided into numbered
+          terms, each beginning with an election; a term has at most one leader, and the term number acts as a logical clock — anyone
+          who sees a higher term immediately steps down and updates. <strong>(3) The Log:</strong> each entry carries its command and
+          the term it was created in; the leader appends entries and replicates them, and an entry is <strong>committed</strong> the
+          moment it's stored on a <strong>majority</strong> of nodes — after which it's applied to the state machine and can never be
+          lost. Nodes live in three states — <strong>Follower</strong> (passive, obeys the leader), <strong>Candidate</strong> (running
+          for leader), <strong>Leader</strong> — connected by one rule: a follower that stops hearing heartbeats becomes a candidate,
+          wins if a majority votes for it, and leads until it crashes or sees a higher term. <strong>Randomized election timeouts</strong>
+          make split votes rare (nodes rarely time out together). Two safety rules make it bulletproof: the <strong>Log Matching
+          Property</strong> (if two logs agree on an entry's index <em>and</em> term, they're identical up to there) and the
+          <strong>election restriction</strong> (you can't win a vote unless your log is at least as up-to-date as the voter's) — so a
+          new leader <em>always</em> already holds every committed entry. One-line test: <em>could a newly elected leader be missing an
+          entry the old cluster already committed? In Raft, no — the vote wouldn't have gone to a node whose log was behind.</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — A Raft Cluster</h2>
+        <div class="sim-box">
+          <p>Here is a cluster of <strong>five nodes</strong> (majority = 3). Pick a scenario, then press <strong>Next step</strong> to
+          walk through it one event at a time. Watch each node's <strong>role</strong> (👤 Follower, 🙋 Candidate, 👑 Leader), its
+          <strong>term</strong>, and its <strong>log</strong> — and watch the status line tell you what just happened. The four
+          scenarios show the four things that actually happen in a Raft cluster: a clean election, replicating a command, surviving a
+          leader crash, and a split vote broken by randomization.</p>
+
+          <div class="mode-toggle" id="scenario-toggle">
+            <button data-scn="election" class="active">✅ Leader election</button>
+            <button data-scn="replicate">📝 Log replication</button>
+            <button data-scn="crash">💥 Leader crash</button>
+            <button data-scn="split">⚔️ Split vote</button>
+          </div>
+
+          <div class="phase-track" id="phase-track">
+            <span class="phase-chip" data-ph="follow">Followers</span>
+            <span class="phase-chip" data-ph="elect">Election</span>
+            <span class="phase-chip" data-ph="lead">Leader + Replicate</span>
+            <span class="phase-chip" data-ph="done">Result</span>
+          </div>
+
+          <div class="legend">
+            <span><i class="sw" style="background:#fbbf24;border:1px solid #fbbf24;"></i> Leader</span>
+            <span><i class="sw" style="background:transparent;border:1px solid #a78bfa;"></i> Candidate</span>
+            <span><i class="sw" style="background:#22c55e;border:1px solid #22c55e;"></i> committed entry</span>
+            <span><i class="sw" style="background:#fbbf2433;border:1px solid #fbbf24;"></i> uncommitted entry</span>
+          </div>
+
+          <div class="acc-grid" id="acc-grid"></div>
+
+          <div class="q-status info" id="sim-status">—</div>
+
+          <div class="sim-controls">
+            <button class="btn btn-primary btn-sm" id="sim-next">Next step →</button>
+            <button class="btn btn-outline btn-sm" id="sim-reset">↺ Reset scenario</button>
+            <span style="font-size:.78rem;color:var(--text-muted);" id="sim-counter"></span>
+          </div>
+
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: run <strong>Split vote</strong> to the end.
+          Two nodes time out at almost the same instant in term 2, both become candidates, and the votes split 2–2 with no majority —
+          so <em>nobody</em> wins and the term simply ends with no leader. Then watch the fix: because each node re-rolls a <em>random</em>
+          timeout, one node fires clearly first in term 3, grabs a majority before anyone else wakes up, and wins cleanly. Raft doesn't
+          prevent split votes with clever logic — it makes them <em>unlikely and self-correcting</em> with randomness. Then run
+          <strong>Leader crash</strong> and notice the committed (green) entries survive into the new leader's term untouched.</p>
+        </div>
+      </section>
+
+      <section id="why">
+        <h2>Why Raft Exists</h2>
+        <p>Paxos (Day 31) answered the <em>theoretical</em> question — <strong>is</strong> consensus possible on unreliable machines? —
+        with a resounding yes. But it left engineers with a <em>practical</em> problem. Single-decree Paxos is elegant, but real systems
+        need Multi-Paxos (a whole <em>log</em> of decisions), plus leader election, log compaction, snapshotting, and cluster membership
+        changes. Lamport's papers specify the core and wave at the rest. The result: almost every production "Paxos" is really a
+        custom, under-documented variant, and <strong>the bugs hide in the parts the paper didn't pin down.</strong></p>
+        <p>Raft's designers made <strong>understandability a first-class goal</strong>, equal to correctness and performance — because
+        an algorithm nobody can fully follow produces systems nobody can fully trust. They achieved it with two techniques:</p>
+        <div class="pillar-grid">
+          <div class="pillar-card conf">
+            <h4>🧩 Decomposition</h4>
+            <div class="answers">Split consensus into independent sub-problems.</div>
+            <p>Raft breaks the problem into three nearly-separate pieces you can learn one at a time: <strong>leader election</strong>,
+            <strong>log replication</strong>, and <strong>safety</strong>. You can understand each without holding the others in your
+            head. Paxos mixes them all into one flow.</p>
+          </div>
+          <div class="pillar-card integ">
+            <h4>👑 A strong leader</h4>
+            <div class="answers">One node is in charge; data flows one way.</div>
+            <p>Unlike Paxos, where any node can propose at any time (the source of dueling proposers), Raft elects <strong>one
+            leader</strong> that is the sole source of new log entries. Entries flow <em>only</em> leader → followers. This single
+            constraint eliminates whole classes of confusing cases.</p>
+          </div>
+          <div class="pillar-card amber">
+            <h4>🎲 Reducing state space</h4>
+            <div class="answers">Fewer ways things can happen = easier to reason.</div>
+            <p>Raft deliberately removes nondeterminism wherever it can — for example, logs only ever flow in one direction and are
+            never allowed to have holes. Randomized timeouts replace intricate coordination for split votes. Fewer moving parts means
+            fewer states to reason about, and fewer places for bugs.</p>
+          </div>
+        </div>
+        <p>The punchline: <strong>Raft gives the identical safety guarantee as Multi-Paxos</strong> — a consistent replicated log that
+        tolerates <code>f</code> failures with <code>2f+1</code> nodes — but is learnable in an afternoon. That is why nearly every
+        consensus system built since 2014 (etcd, Consul, CockroachDB, TiKV, MongoDB's replica sets, Redis's newer coordination) chose
+        Raft. Same power; a fraction of the footguns.</p>
+      </section>
+
+      <section id="states">
+        <h2>The Three States</h2>
+        <p>Every Raft node is always in exactly one of three states. The genius is how few there are and how simply they connect — the
+        entire protocol is this one small state machine plus the rules for the messages that drive it.</p>
+        <div class="pillar-grid">
+          <div class="pillar-card avail">
+            <h4>👤 Follower</h4>
+            <div class="answers">Passive. The default. Obeys the leader.</div>
+            <p>Followers never initiate anything. They respond to the leader's <code>AppendEntries</code> (which carries log entries and
+            doubles as the heartbeat) and to candidates' <code>RequestVote</code>. If a follower hears nothing from a leader for its
+            <strong>election timeout</strong>, it assumes the leader is gone and becomes a candidate.</p>
+          </div>
+          <div class="pillar-card integ">
+            <h4>🙋 Candidate</h4>
+            <div class="answers">Running for leader of a new term.</div>
+            <p>On timing out, a follower becomes a candidate: it <strong>increments the term</strong>, votes for itself, and sends
+            <code>RequestVote</code> to everyone. If it collects votes from a <strong>majority</strong>, it becomes leader. If it hears
+            from a legitimate leader (equal or higher term), it steps back to follower. If nobody wins, it times out and tries again in
+            the next term.</p>
+          </div>
+          <div class="pillar-card amber">
+            <h4>👑 Leader</h4>
+            <div class="answers">In charge. The only one who writes.</div>
+            <p>The leader handles all client requests, appends them to its log, and replicates via <code>AppendEntries</code>. It sends
+            empty <code>AppendEntries</code> as <strong>heartbeats</strong> to stop followers from timing out. It stays leader until it
+            crashes or discovers a higher term — at which point it immediately steps down to follower.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="states-diagram" width="820" height="400" viewBox="0 0 820 400"></svg>
+        </div>
+
+        <p>Notice the one escape hatch that keeps the whole system consistent: <strong>any node, in any state, that sees a message with
+        a higher term number immediately adopts that term and reverts to follower.</strong> The term number is a logical clock, and the
+        highest term always wins. An old leader that was network-partitioned and comes back will see the newer term in the first message
+        it receives and quietly stand down — it <em>can't</em> keep leading in the past. This single rule is why Raft never ends up with
+        two active leaders doing damage.</p>
+      </section>
+
+      <section id="election">
+        <h2>Leader Election</h2>
+        <p>Raft divides time into <strong>terms</strong>, numbered 1, 2, 3, … Each term begins with an election and lasts until the next
+        one. A term has <strong>at most one leader</strong> (sometimes zero, if an election fails). Think of terms as numbered editions
+        of the newspaper, or election cycles — the number only ever goes up, and it lets every node order events in time without a shared
+        clock.</p>
+
+        <div class="flow-box">
+          <div class="flow-step"><span>1</span><div><strong>A follower times out.</strong> It hasn't heard a heartbeat within its
+          election timeout, so it assumes there's no leader. It becomes a <strong>candidate</strong>, increments the term (say 2 → 3),
+          and votes for itself.</div></div>
+          <div class="flow-step"><span>2</span><div><strong>It requests votes.</strong> The candidate sends <code>RequestVote(term,
+          lastLogIndex, lastLogTerm)</code> to all other nodes.</div></div>
+          <div class="flow-step"><span>3</span><div><strong>Others vote — at most once per term.</strong> A node grants its vote if (a)
+          it hasn't already voted this term, and (b) the candidate's log is <strong>at least as up-to-date</strong> as its own (the
+          safety restriction — more below). Each node votes for at most one candidate per term, which is why two majorities can't both
+          form.</div></div>
+          <div class="flow-step"><span>4</span><div><strong>Majority wins.</strong> If the candidate collects votes from a majority
+          (including its own), it becomes <strong>leader</strong> and immediately sends heartbeats to assert authority and stop other
+          timeouts.</div></div>
+          <div class="flow-step"><span>5</span><div><strong>Nobody wins → try again.</strong> If votes split and no one gets a majority,
+          the term ends leaderless. Candidates time out and start a <em>new</em> term — but with freshly <strong>randomized</strong>
+          timeouts, so this time one is very likely to fire first and win cleanly.</div></div>
+        </div>
+
+        <h3>The quietly-genius trick: randomized timeouts</h3>
+        <p>Here's the problem randomization solves. If every follower used the <em>same</em> election timeout, they'd all time out at
+        the same instant when the leader died, all become candidates at once, all split the vote — and then do it again, forever. A
+        livelock, exactly like Paxos's dueling proposers. Raft's fix is almost embarrassingly simple: each node picks its election
+        timeout <strong>randomly</strong> from a range (typically 150–300&nbsp;ms). So when the leader dies, <em>one</em> follower's
+        timer almost always fires first, it becomes a candidate and wins a majority before anyone else even wakes up. Split votes become
+        rare, and when they do happen, the next round's fresh random timeouts break the tie. No clever coordination — just a dice roll.
+        It's the kind of solution you only find when you optimize for understandability.</p>
+      </section>
+
+      <section id="replication">
+        <h2>Log Replication</h2>
+        <p>Once there's a leader, the real work begins: agreeing on an ordered <strong>log</strong> of commands. Every log entry holds
+        two things — the <strong>command</strong> (e.g. <code>set x = 5</code>) and the <strong>term</strong> it was created in — and
+        sits at a numbered <strong>index</strong>. The leader's job is to make every follower's log an identical copy of its own.</p>
+
+        <div class="diagram-box">
+          <svg id="log-diagram" width="820" height="400" viewBox="0 0 820 400"></svg>
+        </div>
+
+        <div class="flow-box">
+          <div class="flow-step"><span>1</span><div><strong>Client → Leader.</strong> A client sends a command. The leader
+          <strong>appends</strong> it to its own log as a new, uncommitted entry.</div></div>
+          <div class="flow-step"><span>2</span><div><strong>Leader → Followers.</strong> The leader sends <code>AppendEntries</code>
+          with the new entry (plus the index/term of the entry just before it, for the consistency check). Followers append it to their
+          logs and acknowledge.</div></div>
+          <div class="flow-step"><span>3</span><div><strong>Committed at a majority.</strong> Once the entry is stored on a
+          <strong>majority</strong> of nodes, the leader marks it <strong>committed</strong>. Commitment is the point of no return: a
+          committed entry will never be lost and will survive every future leader.</div></div>
+          <div class="flow-step"><span>4</span><div><strong>Apply + respond.</strong> The leader applies the committed command to its
+          state machine and responds to the client. It tells followers the new commit index on the next <code>AppendEntries</code>, and
+          they apply it too — so every node's state machine executes the <em>same commands in the same order</em>.</div></div>
+        </div>
+
+        <h3>The consistency check and repairing stragglers</h3>
+        <p>Every <code>AppendEntries</code> includes the index and term of the entry <em>immediately before</em> the new ones. A follower
+        refuses the append if its log doesn't match there. When a follower rejects, the leader walks backward — resending from an earlier
+        point — until it finds the last index where their logs agree, then overwrites everything after it with its own entries. This is
+        how a follower that fell behind (or a new leader's followers that have conflicting tail entries) gets <strong>forced back into
+        line</strong>. Logs only ever flow leader → follower, and the leader never changes its own entries — it only ever appends. That
+        one-directional flow is a huge part of why Raft is easier to reason about than Paxos.</p>
+      </section>
+
+      <section id="safety">
+        <h2>The Safety Rules</h2>
+        <p>Leader election and log replication make Raft <em>work</em>; two safety rules make it <em>correct</em> — they guarantee that
+        a committed entry is never lost, even across crashes and elections. This is the part worth slowing down for.</p>
+
+        <h3>1. The Log Matching Property</h3>
+        <p>Raft maintains an invariant that sounds almost too strong to be true: <strong>if two logs contain an entry with the same
+        index and the same term, then the logs are identical in all entries up through that index.</strong> So you can verify two logs
+        agree completely just by checking their last matching (index, term) — everything before it is guaranteed to match. This holds
+        because (a) a leader creates at most one entry per index per term, and (b) the <code>AppendEntries</code> consistency check
+        refuses any append that doesn't line up with the previous entry, so inconsistencies can never silently accumulate.</p>
+
+        <h3>2. The election restriction (the up-to-date rule)</h3>
+        <p>This is the keystone. When a candidate asks for a vote, it includes the index and term of its <em>last</em> log entry. A voter
+        <strong>refuses</strong> if its own log is <em>more</em> up-to-date (a higher last term, or the same last term but a longer log).
+        Result: <strong>a candidate can only win if its log is at least as up-to-date as a majority of the cluster.</strong> And because
+        any committed entry is, by definition, on a majority — and any winning majority overlaps that majority in at least one node
+        (the quorum-overlap magic from Day 31) — the winner is <em>guaranteed</em> to already have every committed entry. A node missing
+        a committed entry simply cannot win. <strong>The new leader never needs to "catch up" on committed data; it already has it.</strong></p>
+
+        <div class="code-label">The trace — a leader crash, and safety holding</div>
+        <div class="code-panel"><span class="muted"># Term 2. Leader N1 has committed entries [1,2,3] on a majority (N1 N2 N3).</span>
+N1(leader) log: 1 2 3     <span class="s">committed through 3</span>
+N2          log: 1 2 3
+N3          log: 1 2 3
+N4          log: 1 2        <span class="muted"># lagging</span>
+N5          log: 1          <span class="muted"># lagging more</span>
+
+<span class="b"># N1 crashes. An election starts for term 3.</span>
+N4 → RequestVote(term=<span class="n">3</span>, lastLogIndex=<span class="n">2</span>, lastLogTerm=<span class="n">2</span>)
+N2 → <span class="b">DENIED</span>  <span class="muted"># N2's log (len 3) is MORE up-to-date than N4's (len 2)</span>
+N3 → <span class="b">DENIED</span>  <span class="muted"># same reason — N4 is missing committed entry 3</span>
+
+<span class="muted"># N4 can NOT win: it lacks committed entry 3, so the majority refuses it.</span>
+<span class="muted"># Only N2 or N3 (who HAVE entry 3) can gather a majority and lead.</span>
+N2 → RequestVote(term=<span class="n">3</span>, lastLogIndex=<span class="n">3</span>, lastLogTerm=<span class="n">2</span>)
+N3 N4 N5 → <span class="s">GRANTED</span>   <span class="muted"># N2's log is ≥ theirs → N2 becomes leader</span>
+
+<span class="s"># Committed entry 3 survived the crash. The new leader already had it.</span></div>
+
+        <p style="margin-top:1rem;">There's one subtle rule that trips up even careful implementers (Raft's famous "Figure 8"): a
+        leader may <strong>only directly commit entries from its own current term</strong> by counting replicas. It must not look at an
+        older-term entry sitting on a majority and declare it committed — doing so can, in a specific interleaving of crashes, let that
+        entry be overwritten later. Instead, older entries get committed <em>indirectly</em>: once the leader commits a new entry from
+        its current term, everything before it (including those older entries) is committed along with it, by the Log Matching Property.
+        You don't need to memorize the counterexample — just remember: <strong>commit by counting only for your own term's entries;
+        older ones ride along.</strong></p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>Raft is dramatically easier than Paxos, but it isn't free of tradeoffs. Knowing them is what separates "I read the paper"
+        from "I'd run this in production."</p>
+
+        <h3>The strong leader is both the strength and the bottleneck</h3>
+        <p>A single leader is what makes Raft understandable — but it also means <strong>every write funnels through one node</strong>.
+        That node's capacity and its network latency to a majority bound the whole cluster's write throughput. You can't scale writes by
+        adding Raft nodes; more nodes make each write <em>slower</em> (bigger majority to wait for). The standard answer is
+        <strong>sharding</strong>: run many independent Raft groups, each owning a slice of the data, so leadership (and write load)
+        spreads across machines. CockroachDB and TiKV do exactly this — thousands of Raft groups, one per data range.</p>
+
+        <h3>Leader changes cost a beat</h3>
+        <p>When a leader crashes, the cluster is <strong>unavailable for writes</strong> until a new leader is elected — typically the
+        election timeout plus a round-trip, often well under a second, but not zero. Tuning matters: too-short timeouts cause spurious
+        elections during brief network blips; too-long timeouts mean slower recovery. This is a real "availability dip on failover" that
+        shows up in tail latency, and it's the practical face of the CAP tradeoff (Day 10) — Raft is a <strong>CP</strong> system that
+        chooses consistency, pausing writes rather than risking two leaders.</p>
+
+        <h3>Reads need care, too</h3>
+        <p>Naively, a leader can serve reads from its own state — but a <em>stale</em> leader (one that was partitioned out and doesn't
+        yet know it's been replaced) could serve old data. Correct Raft reads require the leader to confirm it's still leader (e.g. by a
+        heartbeat round-trip to a majority, or a "lease") before answering. Many systems offer a choice: <strong>linearizable reads</strong>
+        (correct, slower) or <strong>follower/stale reads</strong> (fast, possibly behind) — a direct consistency-vs-latency knob.</p>
+
+        <h3>Membership changes are genuinely tricky</h3>
+        <p>Adding or removing nodes while the cluster is live can momentarily create <em>two</em> different majorities (old config vs new
+        config) — a split-brain risk. Raft handles this with <strong>joint consensus</strong> (a transitional phase where decisions need
+        a majority of <em>both</em> the old and new configurations) or single-node-at-a-time changes. It's the one area where Raft is
+        still fiddly, and a common source of real-world bugs.</p>
+
+        <p style="margin-top:1rem;">The through-line: Raft trades <strong>raw write scalability for understandability and a clean
+        consistency guarantee</strong>. One leader, a replicated log, numbered terms — simple enough to implement correctly, at the cost
+        of a single-writer bottleneck you solve by running many Raft groups rather than one big one.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">📰</span><div><strong>Next Door on the First Floor — The Newsroom</strong>
+          — <span>You step out of the Council Chamber (Day 31, Paxos) and into the room next door — the <strong>newsroom</strong>, still
+          on the <strong>first floor (Phase 2)</strong>. Same five desks, but the chaos is gone: there's a single <strong>Editor-in-Chief</strong>
+          at the front with a glowing crown, dictating headlines into everyone's identical <strong>notebooks</strong>, in order. On the
+          wall, a flip-board shows the current <strong>Edition number</strong> (the term) — it only ever ticks up. Every few seconds the
+          Editor calls "<em>still here!</em>" and the reporters relax. On each desk sits an <strong>egg-timer set to a random
+          length</strong> — so if the Editor ever goes quiet, exactly one timer dings first and that reporter stands to run for Editor,
+          but only if their notebook is at least as full as the room's. A committed headline — one copied into a majority of
+          notebooks — is inked in <strong>permanent green</strong>; it can never be erased, not even by the next Editor.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Door Ahead</strong> — <span>At the far end of the
+          newsroom is a door labelled <strong>Day 33: Distributed Transactions — 2PC &amp; 3PC</strong>. Through it you glimpse a
+          different problem: not "agree on one log," but "make several <em>separate</em> databases all commit — or all abort — a single
+          transaction together." Consensus agreed on a value; now we need many parties to agree on an all-or-nothing outcome. That's
+          tomorrow.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Consensus: Paxos (Day 31)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Consensus: Raft (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Distributed Transactions (Day 33)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Raft is built from…</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Majority Quorums (Day 31)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Replication (Day 12)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">CAP Theorem (Day 10)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Fault Tolerance (Day 22)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Heartbeats (Day 25)</span>
+        </div>
+        <p>Raft is the practical face of everything we've built. It stands directly on <strong>Paxos's majority-quorum insight (Day
+        31)</strong> — the election restriction is <em>precisely</em> the two-majorities-always-overlap argument, reused to guarantee a
+        new leader has all committed entries. It <em>is</em> the mechanism behind leader-based <strong>replication (Day 12)</strong>: the
+        replicated log is how a primary and its replicas stay identical. Its <code>2f+1</code> math is <strong>fault tolerance (Day
+        22)</strong>, and its heartbeat-and-timeout failure detection is the <strong>health-checking (Day 25)</strong> idea applied to
+        leadership. And its choice to pause writes during a leaderless gap rather than risk two leaders is <strong>CAP (Day 10)</strong>
+        made concrete — Raft is firmly <strong>CP</strong>. Downstream, Raft is what makes <strong>etcd</strong> (and therefore
+        Kubernetes, Week 7+) trustworthy, and it reappears inside the consistent databases and coordination services of the coming
+        weeks. Tomorrow we pivot from "agree on a log" to "agree on an all-or-nothing outcome across systems" — <strong>distributed
+        transactions (Day 33)</strong>.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Raft is more powerful / safer than Paxos."</td><td>It gives the <strong>exact same guarantees</strong> as
+          Multi-Paxos. Raft's advantage is <strong>understandability</strong>, not strength — which in practice means fewer
+          implementation bugs.</td></tr>
+          <tr><td>"The leader makes reads fast and always correct."</td><td>Not for free. A <strong>stale leader</strong> (partitioned
+          out, not yet aware it's replaced) can serve old data. Linearizable reads need the leader to re-confirm leadership (lease or
+          heartbeat round-trip) first.</td></tr>
+          <tr><td>"More Raft nodes = more write throughput."</td><td>The opposite. All writes funnel through <strong>one leader</strong>,
+          and more nodes mean a bigger majority to wait for — <em>slower</em>. Scale with <strong>many Raft groups (sharding)</strong>,
+          not a bigger group.</td></tr>
+          <tr><td>"An entry on a majority is always committed."</td><td>Only when it's from the leader's <strong>current term</strong>.
+          A leader must not commit an <em>older-term</em> entry by counting replicas (the Figure-8 subtlety); older entries commit
+          indirectly once a current-term entry commits.</td></tr>
+          <tr><td>"A new leader might miss committed data and corrupt state."</td><td>Impossible in Raft. The <strong>up-to-date
+          election restriction</strong> means a node missing a committed entry <em>can't win</em> — the majority refuses it. The new
+          leader always already holds every committed entry.</td></tr>
+          <tr><td>"Randomized timeouts are a hack / minor detail."</td><td>They're load-bearing. Without randomization, nodes time out
+          together, split the vote, and <strong>livelock forever</strong>. Randomness is Raft's clean answer to the dueling-proposers
+          problem.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ A 5-node Raft cluster is in term 4 with N1 as leader. A network partition cuts N1 off
+          with only N2 (2 nodes on one side; N3, N4, N5 on the other). N1 keeps trying to replicate new client writes to its side. On the
+          other side, N3 times out and starts an election. Walk through what happens on <em>both</em> sides — and can the cluster end up
+          with two leaders that both commit data? (click to reveal)</div>
+          <div class="recall-answer"><strong>No two leaders can both commit.</strong> <u>N1's side (N1, N2):</u> N1 is still "leader" but
+          can only reach N2 — just 2 nodes, short of the majority of 3. So when N1 tries to replicate a write, it <em>never reaches a
+          majority</em>, so the entry is <strong>never committed</strong>. N1 keeps appending uncommitted entries that go nowhere.
+          <u>The other side (N3, N4, N5):</u> N3 times out, increments the term to 5, requests votes, and gets a majority (3 of 5). It
+          becomes the <strong>new leader for term 5</strong> and can commit writes, because it has a real majority. <u>When the partition
+          heals:</u> N1 receives a message carrying <strong>term 5</strong> — higher than its term 4 — and by the step-down rule it
+          <em>immediately</em> reverts to follower. Its uncommitted tail entries that conflict with the new leader's log get overwritten
+          by <code>AppendEntries</code>. Net result: <strong>exactly one leader ever committed anything</strong> (the majority side), no
+          committed data is lost, and the minority side's stranded writes — which were never acknowledged to any client as committed —
+          are correctly discarded. This is the same split-brain that Day 31's Sanjay suffered, now <em>prevented</em> by majority votes
+          plus the highest-term-wins rule.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">⚙️ etcd &amp; Kubernetes</div><p><strong>etcd</strong>, the key-value store
+          that holds <em>all</em> of Kubernetes' cluster state, is built on Raft. Every time Kubernetes agrees on what pods run where, a
+          Raft log entry was committed by a majority of etcd nodes. If you've ever run <code>kubectl apply</code>, you've driven a Raft
+          round. This is where most working engineers actually touch consensus.</p></div>
+          <div class="realworld-card"><div class="rw-company">🪳 CockroachDB &amp; TiKV</div><p>These distributed SQL databases shard
+          data into thousands of <strong>ranges</strong>, each its own independent <strong>Raft group</strong> with its own leader. This
+          is the textbook answer to the single-leader bottleneck: leadership (and write load) is spread across the whole fleet, so the
+          database scales horizontally while every individual range stays strongly consistent.</p></div>
+          <div class="realworld-card"><div class="rw-company">🧭 HashiCorp Consul &amp; Nomad</div><p>Consul (service discovery, Day 27's
+          neighbor) and Nomad (scheduling) use Raft for their consistent server state via the widely-used <code>hashicorp/raft</code>
+          library. When Consul says "this is the authoritative list of healthy services," a Raft majority agreed on it. The same library
+          powers countless other Go systems.</p></div>
+          <div class="realworld-card"><div class="rw-company">🍃 MongoDB Replica Sets</div><p>MongoDB's replication and automatic
+          failover use a Raft-like protocol: one primary accepts writes and replicates an <em>oplog</em> to secondaries; when the primary
+          fails, secondaries hold an election (with terms and an up-to-date-log restriction) to pick a new one. The concepts you learned
+          today map almost one-to-one.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why was Raft created when Paxos already solved consensus?</div>
+          <div class="fc-a">A: For <strong>understandability</strong>. Paxos gives the same guarantees but is famously hard to
+          understand and implement correctly, so real systems ship subtle bugs. Raft was designed from scratch to be followable by a
+          human — which makes implementations correct.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Name Raft's three server states and the transitions between them.</div>
+          <div class="fc-a">A: <strong>Follower</strong> → (election timeout, no heartbeat) → <strong>Candidate</strong> → (wins a
+          majority of votes) → <strong>Leader</strong>. Any node seeing a <em>higher term</em> immediately reverts to Follower.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What problem do randomized election timeouts solve, and how?</div>
+          <div class="fc-a">A: <strong>Split votes / livelock.</strong> If all nodes timed out together they'd all run, split the vote,
+          and repeat forever. Random timeouts (e.g. 150–300 ms) mean one node almost always fires first and wins before others wake —
+          and a rare split is broken by the next round's fresh random values.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What does it mean for a log entry to be "committed"?</div>
+          <div class="fc-a">A: It has been stored on a <strong>majority</strong> of nodes. A committed entry is permanent — it will
+          never be lost and will survive every future leader. Only then is it applied to the state machine and acknowledged to the
+          client.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is the election restriction, and why does it matter?</div>
+          <div class="fc-a">A: A voter refuses a candidate whose log is <strong>less up-to-date</strong> than its own. Since any
+          committed entry is on a majority and any winning majority overlaps it, the winner is <strong>guaranteed to already hold every
+          committed entry</strong> — so a new leader never loses committed data.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>What single goal did Raft's designers prioritize that Paxos didn't, and why does it matter in practice?</li>
+          <li>Name the three server states and draw the state machine connecting them, with the trigger on each transition.</li>
+          <li>What is a "term," and what happens the moment any node sees a message with a higher term than its own?</li>
+          <li>Walk through a leader election from timeout to a new leader sending its first heartbeat.</li>
+          <li>Explain randomized election timeouts: what failure do they prevent, and how?</li>
+          <li>Define "committed." What exactly makes an entry committed, and what's guaranteed about it afterward?</li>
+          <li>State the Log Matching Property and the election restriction, and explain why together they mean a new leader never loses
+          committed data.</li>
+          <li>Why can't you scale write throughput by adding nodes to a Raft group? What do real systems do instead?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>Raft is Paxos's guarantee, rebuilt to be understandable — one strong Leader, numbered
+          Terms, and a replicated Log everyone copies in order.</strong> A Follower that stops hearing heartbeats becomes a Candidate,
+          wins if a majority votes for it, and leads until it crashes or sees a higher term (then it steps down instantly). Writes flow
+          one way, leader → followers; an entry is <strong>committed</strong> once it's on a majority, and from then it's permanent. Two
+          safety rules make it bulletproof: the <strong>Log Matching Property</strong> (same index + term ⇒ identical logs up to there)
+          and the <strong>up-to-date election restriction</strong> (you can't win a vote with a log behind the voter's) — so a new
+          leader <em>always</em> already has every committed entry. <strong>Randomized timeouts</strong> quietly dissolve the split-vote
+          livelock that plagued Paxos. The price is a single-leader write bottleneck, solved by running many Raft groups. This is the
+          consensus you'll actually meet — etcd, Consul, CockroachDB, Kubernetes. Tomorrow we change the question from "agree on one
+          log" to "make several systems commit or abort together" — <strong>Day 33: Distributed Transactions (2PC &amp; 3PC).</strong>
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-31.html">← Day 31: Consensus — The Paxos Algorithm</a>
+        <a href="day-33.html" class="coming-soon-link">Day 33: Distributed Transactions →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 32 of 90 — Consensus: The Raft Algorithm</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── Raft cluster simulator ───────────────────────────────────────────
+  // Each scenario is a list of "frames". A frame is a full snapshot of the
+  // five nodes plus a narration line, phase, and status class — so the
+  // stepper is just an index into precomputed, always-correct states.
+  // node: role 'F'|'C'|'L'|'dead', term, log (count), committed (count),
+  //       vote (string shown under the card), hi (highlight class suffix).
+  function N(role, term, log, committed, vote) {
+    return { role: role, term: term, log: log||0, committed: committed||0, vote: vote||'' };
+  }
+
+  var SCENARIOS = {
+    election: {
+      label: '✅ Leader election — a clean election from cold start',
+      frames: [
+        { phase:'follow', cls:'info',
+          narr:'Five fresh nodes, all <b>Followers</b> in term 1, empty logs. No leader yet — each is quietly counting down a <b>random</b> election timer.',
+          nodes:[N('F',1),N('F',1),N('F',1),N('F',1),N('F',1)] },
+        { phase:'elect', cls:'warn',
+          narr:'<b>N1’s timer fires first.</b> It becomes a <b>Candidate</b>, bumps the term to 2, votes for itself, and sends RequestVote to everyone.',
+          nodes:[N('C',2,0,0,'→ self'),N('F',1),N('F',1),N('F',1),N('F',1)] },
+        { phase:'elect', cls:'info',
+          narr:'<b>Votes come in.</b> N2–N5 haven’t voted this term and N1’s log is ≥ theirs (all empty), so they grant their votes to N1.',
+          nodes:[N('C',2,0,0,'→ self'),N('F',2,0,0,'→ N1'),N('F',2,0,0,'→ N1'),N('F',2,0,0,'→ N1'),N('F',2,0,0,'→ N1')] },
+        { phase:'lead', cls:'ok',
+          narr:'<b>N1 has a majority (5 of 5 ≥ 3) → it becomes LEADER of term 2.</b> It immediately sends heartbeats so no one else times out.',
+          nodes:[N('L',2),N('F',2),N('F',2),N('F',2),N('F',2)] },
+        { phase:'done', cls:'ok',
+          narr:'✅ <b>One leader, term 2.</b> The cluster is stable: N1 leads, the others follow and reset their timers on every “still here!” heartbeat.',
+          nodes:[N('L',2),N('F',2),N('F',2),N('F',2),N('F',2)] }
+      ]
+    },
+    replicate: {
+      label: '📝 Log replication — committing a client command',
+      frames: [
+        { phase:'lead', cls:'info',
+          narr:'N1 is leader of term 2. A client sends <b>“SET x=5”</b>. N1 <b>appends</b> it to its own log as an uncommitted (yellow) entry.',
+          nodes:[N('L',2,1,0),N('F',2,0,0),N('F',2,0,0),N('F',2,0,0),N('F',2,0,0)] },
+        { phase:'lead', cls:'info',
+          narr:'<b>AppendEntries.</b> N1 sends the new entry to all followers. N2 and N3 append it to their logs (still uncommitted) and acknowledge.',
+          nodes:[N('L',2,1,0),N('F',2,1,0),N('F',2,1,0),N('F',2,0,0),N('F',2,0,0)] },
+        { phase:'lead', cls:'ok',
+          narr:'<b>Stored on a majority (N1, N2, N3 = 3 of 5).</b> N1 marks the entry <b>committed</b> — it ties green now and can never be lost.',
+          nodes:[N('L',2,1,1),N('F',2,1,0),N('F',2,1,0),N('F',2,0,0),N('F',2,0,0)] },
+        { phase:'lead', cls:'ok',
+          narr:'<b>Apply + respond.</b> N1 applies SET x=5 to its state machine and replies to the client. Next heartbeat carries the new commit index to followers.',
+          nodes:[N('L',2,1,1),N('F',2,1,1),N('F',2,1,1),N('F',2,1,0),N('F',2,1,0)] },
+        { phase:'done', cls:'ok',
+          narr:'✅ <b>All five logs converge.</b> The stragglers caught up via AppendEntries; every state machine will run SET x=5 in the same order.',
+          nodes:[N('L',2,1,1),N('F',2,1,1),N('F',2,1,1),N('F',2,1,1),N('F',2,1,1)] }
+      ]
+    },
+    crash: {
+      label: '💥 Leader crash — recovery with committed data preserved',
+      frames: [
+        { phase:'lead', cls:'ok',
+          narr:'Stable: N1 leads term 2, and entries <b>[1,2]</b> are committed (green) on a majority. All logs are in sync.',
+          nodes:[N('L',2,2,2),N('F',2,2,2),N('F',2,2,2),N('F',2,2,1),N('F',2,1,1)] },
+        { phase:'follow', cls:'bad',
+          narr:'💥 <b>N1 crashes.</b> Heartbeats stop. The remaining followers start counting down their random election timers.',
+          nodes:[N('dead',2,2,2),N('F',2,2,2),N('F',2,2,2),N('F',2,2,1),N('F',2,1,1)] },
+        { phase:'elect', cls:'warn',
+          narr:'<b>N4 times out first</b> but its log is behind (missing committed entry 2). It becomes a Candidate for term 3 and requests votes…',
+          nodes:[N('dead',2,2,2),N('F',2,2,2),N('F',2,2,2),N('C',3,2,1,'→ self'),N('F',2,1,1)] },
+        { phase:'elect', cls:'warn',
+          narr:'<b>DENIED.</b> N2 and N3 refuse N4 — their logs (len 2) are more up-to-date. The election restriction blocks a node missing committed data.',
+          nodes:[N('dead',2,2,2),N('F',3,2,2,'✗ refuse N4'),N('F',3,2,2,'✗ refuse N4'),N('C',3,2,1,'→ self'),N('F',2,1,1)] },
+        { phase:'elect', cls:'info',
+          narr:'<b>N2 runs instead</b> (term 3). Its log holds both committed entries, so N3, N4, N5 all grant it their votes.',
+          nodes:[N('dead',2,2,2),N('C',3,2,2,'→ self'),N('F',3,2,2,'→ N2'),N('F',3,2,1,'→ N2'),N('F',3,1,1,'→ N2')] },
+        { phase:'done', cls:'ok',
+          narr:'✅ <b>N2 is the new leader of term 3</b> and it already has every committed entry. It repairs the stragglers via AppendEntries. No committed data was ever lost.',
+          nodes:[N('dead',2,2,2),N('L',3,2,2),N('F',3,2,2),N('F',3,2,2),N('F',3,2,2)] }
+      ]
+    },
+    split: {
+      label: '⚔️ Split vote — broken by randomized timeouts',
+      frames: [
+        { phase:'follow', cls:'info',
+          narr:'No leader. By bad luck, <b>N1 and N2’s timers fire at almost the same instant</b> in term 2.',
+          nodes:[N('F',1),N('F',1),N('F',1),N('F',1),N('F',1)] },
+        { phase:'elect', cls:'warn',
+          narr:'<b>Two candidates, same term.</b> N1 and N2 both become Candidates for term 2 and both request votes from everyone.',
+          nodes:[N('C',2,0,0,'→ self'),N('C',2,0,0,'→ self'),N('F',1),N('F',1),N('F',1)] },
+        { phase:'elect', cls:'bad',
+          narr:'<b>Votes split.</b> N3 votes N1, N4 votes N2, and N5’s vote is lost in flight. N1 has 2 (self+N3), N2 has 2 (self+N4) — <b>neither reaches the majority of 3</b>.',
+          nodes:[N('C',2,0,0,'← N3'),N('C',2,0,0,'← N4'),N('F',2,0,0,'→ N1'),N('F',2,0,0,'→ N2'),N('F',2,0,0,'(lost)')] },
+        { phase:'elect', cls:'warn',
+          narr:'⏱️ <b>No winner — term 2 ends leaderless.</b> Both candidates time out and re-roll <b>fresh random</b> timeouts for term 3.',
+          nodes:[N('F',2,0,0),N('F',2,0,0),N('F',2,0,0),N('F',2,0,0),N('F',2,0,0)] },
+        { phase:'elect', cls:'info',
+          narr:'<b>This time N1 fires clearly first</b> (shorter random timer). It becomes Candidate for term 3 and requests votes before anyone else wakes up.',
+          nodes:[N('C',3,0,0,'→ self'),N('F',2,0,0),N('F',2,0,0),N('F',2,0,0),N('F',2,0,0)] },
+        { phase:'done', cls:'ok',
+          narr:'✅ <b>N1 wins term 3 cleanly</b> (majority grants votes). Randomization didn’t <i>prevent</i> the split — it made the next round resolve it. One leader at last.',
+          nodes:[N('L',3),N('F',3,0,0,'→ N1'),N('F',3,0,0,'→ N1'),N('F',3,0,0,'→ N1'),N('F',3,0,0,'→ N1')] }
+      ]
+    }
+  };
+
+  var ROLE = { F:{e:'👤',t:'Follower'}, C:{e:'🙋',t:'Candidate'}, L:{e:'👑',t:'Leader'}, dead:{e:'💀',t:'crashed'} };
+
+  var cur = 'election';
+  var step = 0;
+
+  var grid = document.getElementById('acc-grid');
+  var statusEl = document.getElementById('sim-status');
+  var counterEl = document.getElementById('sim-counter');
+  var trackEl = document.getElementById('phase-track');
+
+  function logStrip(n) {
+    if (n.role === 'dead') return '';
+    var boxes = '';
+    for (var i = 0; i < n.log; i++) {
+      var committed = i < n.committed;
+      boxes += '<i class="lg ' + (committed ? 'c' : 'u') + '"></i>';
+    }
+    return boxes;
+  }
+
+  function renderNode(n, i) {
+    var dead = n.role === 'dead';
+    var cls = 'acc-card role-' + (dead ? 'F' : n.role) + (dead ? ' dead' : '');
+    var r = ROLE[n.role];
+    return '<div class="' + cls + '">' +
+      '<div class="acc-id">N' + (i+1) + '</div>' +
+      '<div class="acc-role">' + r.e + ' ' + r.t + '</div>' +
+      '<div class="acc-term">' + (dead ? '—' : 'term ' + n.term) + '</div>' +
+      '<div class="acc-log">' + logStrip(n) + '</div>' +
+      '<div class="acc-vote">' + (dead ? '' : n.vote) + '</div>' +
+    '</div>';
+  }
+
+  function render() {
+    var scn = SCENARIOS[cur];
+    var frame = scn.frames[step];
+    grid.innerHTML = frame.nodes.map(renderNode).join('');
+    statusEl.className = 'q-status ' + frame.cls;
+    statusEl.innerHTML = frame.narr;
+    counterEl.textContent = 'Step ' + (step+1) + ' of ' + scn.frames.length + '  ·  ' + scn.label;
+    Array.prototype.forEach.call(trackEl.querySelectorAll('.phase-chip'), function(chip){
+      chip.classList.toggle('on', chip.getAttribute('data-ph') === frame.phase);
+    });
+    document.getElementById('sim-next').disabled = (step >= scn.frames.length - 1);
+  }
+
+  document.getElementById('sim-next').addEventListener('click', function(){
+    if (step < SCENARIOS[cur].frames.length - 1) { step++; render(); }
+  });
+  document.getElementById('sim-reset').addEventListener('click', function(){ step = 0; render(); });
+
+  Array.prototype.forEach.call(document.querySelectorAll('#scenario-toggle button'), function(btn){
+    btn.addEventListener('click', function(){
+      cur = btn.getAttribute('data-scn'); step = 0;
+      Array.prototype.forEach.call(document.querySelectorAll('#scenario-toggle button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      render();
+    });
+  });
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+
+  // Anchor: the newsroom — one editor dictating an ordered notebook to reporters.
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 26, '📰 One Editor dictates an ordered notebook; reporters copy it in the same order', '#e2e8f0', '13', '700');
+
+    // Edition flip-board (the term)
+    svg.appendChild(rs.rectangle(640, 44, 150, 46, { stroke:'#fbbf24', strokeWidth:1.8, roughness:1, fill:'#fbbf2412', fillStyle:'solid' }));
+    T(715, 63, 'EDITION #7', '#fcd34d', '11', '800');
+    T(715, 80, '(the term number)', '#94a3b8', '8.5', '600');
+
+    // Editor (leader)
+    svg.appendChild(rs.rectangle(40, 120, 180, 150, { stroke:'#fbbf24', strokeWidth:2.2, roughness:1.1, fill:'#fbbf2410', fillStyle:'solid' }));
+    T(130, 150, '👑', '#fcd34d', '26', '800');
+    T(130, 182, 'EDITOR-IN-CHIEF', '#fcd34d', '11', '800');
+    T(130, 199, '(the Leader)', '#94a3b8', '9', '600');
+    T(130, 224, '“Headline 1… 2… 3…”', '#e2e8f0', '9.5', '700');
+    T(130, 244, '🔔 “still here!”', '#86efac', '9.5', '700');
+    T(130, 260, '(heartbeat)', '#94a3b8', '8.5', '600');
+
+    // Reporters (followers) with notebooks
+    var rx = [330, 480, 630], ry = 130;
+    rx.forEach(function(x, i){
+      svg.appendChild(rs.rectangle(x, ry, 130, 120, { stroke:'#38bdf8', strokeWidth:1.6, roughness:1, fill:'#38bdf80a', fillStyle:'solid' }));
+      T(x+65, ry+28, '👤 Reporter ' + (i+1), '#7dd3fc', '10', '800');
+      T(x+65, ry+44, '(a Follower)', '#94a3b8', '8', '600');
+      // notebook: three identical headlines
+      ['H1','H2','H3'].forEach(function(h, j){
+        var by = ry + 56 + j*18;
+        svg.appendChild(rs.rectangle(x+22, by, 86, 15, { stroke:'#22c55e', strokeWidth:1.1, roughness:1, fill:'#22c55e14', fillStyle:'solid' }));
+        T(x+65, by+11, h, '#86efac', '8.5', '700', true);
+      });
+      // dictation arrow from editor
+      svg.appendChild(rs.line(222, 180, x-4, ry+60, { stroke:'#fbbf24', strokeWidth:1.3, roughness:0.9 }));
+    });
+    T(480, 272, 'Identical notebooks = one agreed story (the replicated log)', '#86efac', '10', '700');
+
+    // random timers band
+    svg.appendChild(rs.rectangle(40, 300, 750, 48, { stroke:'#a78bfa', strokeWidth:1.5, roughness:1, fill:'#a78bfa0a', fillStyle:'solid' }));
+    T(410, 320, '⏱️ Each reporter’s egg-timer is a DIFFERENT random length. If the Editor goes silent,', '#c4b5fd', '10', '700');
+    T(410, 338, 'one timer dings first → that reporter stands to run for Editor (only if their notebook is ≥ the room’s).', '#c4b5fd', '10', '700');
+
+    // bottom takeaway
+    svg.appendChild(rs.rectangle(40, 360, 750, 50, { stroke:'#22c55e', strokeWidth:1.5, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(410, 381, 'One leader + an ordered shared log + numbered editions + random timers = Raft.', '#cbd5e1', '10.5', '800');
+    T(410, 399, 'Simple enough to hold in your head — which is the entire point.', '#86efac', '10', '700');
+  }
+
+  // States: the Follower / Candidate / Leader state machine.
+  function drawStatesDiagram() {
+    var svg = document.getElementById('states-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 26, 'The whole protocol is this one small state machine', '#e2e8f0', '13', '700');
+
+    // three state circles
+    function stateNode(x, y, emoji, label, col) {
+      svg.appendChild(rs.circle(x, y, 120, { stroke:col, strokeWidth:2.2, roughness:1.1, fill:col+'12', fillStyle:'solid' }));
+      T(x, y-6, emoji, col, '26', '800');
+      T(x, y+28, label, col, '12', '800');
+    }
+    stateNode(160, 200, '👤', 'FOLLOWER', '#22c55e');
+    stateNode(410, 200, '🙋', 'CANDIDATE', '#a78bfa');
+    stateNode(660, 200, '👑', 'LEADER', '#fbbf24');
+
+    function arrow(x1, y1, x2, y2, col) {
+      svg.appendChild(rs.line(x1, y1, x2, y2, { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+      var ang = Math.atan2(y2-y1, x2-x1);
+      svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang - 0.4), y2 - 10*Math.sin(ang - 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+      svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang + 0.4), y2 - 10*Math.sin(ang + 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+    }
+
+    // Follower -> Candidate (top)
+    arrow(222, 175, 348, 175, '#a78bfa');
+    T(285, 150, 'times out', '#c4b5fd', '10', '800');
+    T(285, 165, '(no heartbeat)', '#94a3b8', '8.5', '600');
+
+    // Candidate -> Leader (top)
+    arrow(472, 175, 598, 175, '#fbbf24');
+    T(535, 150, 'wins majority', '#fcd34d', '10', '800');
+    T(535, 165, 'of votes', '#94a3b8', '8.5', '600');
+
+    // Candidate -> Follower (bottom, discovers leader/higher term)
+    arrow(348, 228, 222, 228, '#64748b');
+    T(285, 258, 'sees valid leader', '#94a3b8', '9', '700');
+    T(285, 272, 'or higher term', '#94a3b8', '8.5', '600');
+
+    // Leader -> Follower (bottom curve back)
+    svg.appendChild(rs.line(640, 262, 500, 320, { stroke:'#fb7185', strokeWidth:1.8, roughness:0.9 }));
+    svg.appendChild(rs.line(500, 320, 230, 320, { stroke:'#fb7185', strokeWidth:1.8, roughness:0.9 }));
+    arrow(240, 320, 185, 262, '#fb7185');
+    T(410, 340, '⬇️ sees a HIGHER term → steps down to Follower immediately', '#fca5a5', '10', '800');
+
+    // Candidate self-loop (split vote -> new term)
+    svg.appendChild(rs.line(410, 138, 410, 110, { stroke:'#94a3b8', strokeWidth:1.5, roughness:0.9 }));
+    arrow(380, 118, 410, 140, '#94a3b8');
+    T(410, 100, 'split vote → new term, retry', '#94a3b8', '9', '700');
+
+    // caption
+    svg.appendChild(rs.rectangle(90, 356, 640, 34, { stroke:'#334155', strokeWidth:1.2, roughness:0.8, fill:'#1e293b55', fillStyle:'solid' }));
+    T(410, 377, 'Highest term always wins. A node that sees a newer term never keeps leading in the past.', '#cbd5e1', '10', '700');
+  }
+
+  // Log: leader replicating an ordered log to followers; committed vs not.
+  function drawLogDiagram() {
+    var svg = document.getElementById('log-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 26, 'The replicated log — same commands, same order, on every node', '#e2e8f0', '13', '700');
+
+    // entries: term shown inside; indices 1..5. committedUpto differs per node.
+    var entries = [ {i:1,t:1}, {i:2,t:1}, {i:3,t:2}, {i:4,t:2}, {i:5,t:2} ];
+    var startX = 250, w = 92, h = 40;
+
+    function drawLog(y, label, labelCol, filledUpto, committedUpto, isLeader) {
+      // node label box
+      svg.appendChild(rs.rectangle(40, y-2, 190, h+4, { stroke:labelCol, strokeWidth: isLeader?2:1.4, roughness:1, fill:labelCol+(isLeader?'14':'08'), fillStyle:'solid' }));
+      T(135, y+18, label, labelCol, '11', '800');
+      T(135, y+33, isLeader ? '(appends & replicates)' : '(copies the leader)', '#94a3b8', '8', '600');
+      // log cells
+      entries.forEach(function(e, k){
+        var x = startX + k*w;
+        if (k >= filledUpto) {
+          // empty slot
+          svg.appendChild(rs.rectangle(x, y, w-8, h, { stroke:'#475569', strokeWidth:1, roughness:1.1, fill:'none' }));
+          return;
+        }
+        var committed = k < committedUpto;
+        var col = committed ? '#22c55e' : '#fbbf24';
+        svg.appendChild(rs.rectangle(x, y, w-8, h, { stroke:col, strokeWidth:1.6, roughness:1, fill:col+'18', fillStyle:'solid' }));
+        T(x+(w-8)/2, y+17, 'idx ' + e.i, '#e2e8f0', '9', '800', true);
+        T(x+(w-8)/2, y+31, 'term ' + e.t, '#94a3b8', '8', '700', true);
+      });
+    }
+
+    drawLog(70,  '👑 LEADER (N1)', '#fbbf24', 5, 4, true);
+    drawLog(140, '👤 Follower N2', '#38bdf8', 5, 4, false);
+    drawLog(210, '👤 Follower N3', '#38bdf8', 4, 4, false);
+    drawLog(280, '👤 Follower N4', '#38bdf8', 3, 3, false);
+
+    // committed marker line under the committed region (idx 1..4 committed)
+    var commitX = startX + 4*w - 8;
+    svg.appendChild(rs.line(commitX, 60, commitX, 330, { stroke:'#22c55e', strokeWidth:1.6, roughness:0.8 }));
+    T(startX + 2*w, 352, '← committed (on a majority) — permanent, applied to the state machine', '#86efac', '9.5', '800');
+    T(startX + 4.4*w, 352, 'uncommitted →', '#fcd34d', '9.5', '800', false, 'start');
+    T(410, 378, 'An entry is COMMITTED the instant it’s stored on a majority; the consistency check keeps every log in lock-step.', '#cbd5e1', '9.5', '700');
+  }
+
+  function drawAll() { drawAnchorDiagram(); drawStatesDiagram(); drawLogDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
