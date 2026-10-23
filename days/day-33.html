@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 33: Distributed Transactions — 2PC & 3PC | System Design Mastery</title>
+  <meta name="description" content="Consensus (Days 31–32) got many machines to agree on one ordered log. Today's problem looks similar but is subtly different and far more dangerous in practice: how do you make several SEPARATE databases all commit — or all abort — a single transaction together, so money never gets created or destroyed in the gap? This is atomic commitment, and the classic answer is Two-Phase Commit (2PC). We build it from the ground up: a coordinator, a Prepare/Vote phase where every participant durably locks in and promises, and a Commit/Abort phase where one global decision is applied everywhere. Then we meet its fatal flaw — the blocking problem: if the coordinator crashes in the gap after everyone votes YES, the participants are left IN-DOUBT, holding locks, unable to decide alone, and the system stalls. We cover Three-Phase Commit (3PC), which adds a PreCommit step to be non-blocking when only the coordinator fails — and why its hidden assumption (no network partitions) means production almost never uses it. Taught with a wedding-altar memory anchor, a live 2PC/3PC simulator you can step through (happy path, a NO vote, a coordinator crash that blocks everyone, and 3PC's timeout-safe recovery), Excalidraw-style diagrams of the protocol and the in-doubt window, the real tradeoffs (blocking, the coordinator as a single point of failure, locks held across the network, CAP's consistency-over-availability choice), and how Google Spanner runs 2PC safely by making each participant a Paxos group. The bridge to tomorrow's Saga pattern." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .flow-step > span { font-weight:800; color: var(--accent-light); min-width:1.4rem; }
+    /* role / concept cards — colored left bar */
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card .answers { font-size:.8rem; font-weight:700; color:var(--text-primary); margin:.35rem 0; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    .pillar-card .eg { font-size:.75rem; color:var(--text-muted); margin-top:.45rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .acc-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:.9rem; margin:1.1rem 0; }
+    @media (max-width: 640px) { .acc-grid { grid-template-columns:1fr; } }
+    .acc-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1rem .8rem; text-align:center; transition:all .2s; }
+    .acc-card .acc-id { font-size:1rem; font-weight:800; color:var(--text-primary); }
+    .acc-card .acc-sub { font-size:.68rem; color:var(--text-muted); margin-top:.15rem; }
+    .acc-card .acc-state { font-size:.82rem; font-weight:800; margin-top:.65rem; padding:.35rem .45rem; border-radius:7px; line-height:1.35; }
+    .acc-card .acc-note { font-size:.69rem; color:var(--text-muted); margin-top:.45rem; min-height:2.6em; line-height:1.35; }
+    .st-idle { background:#33415533; color:#94a3b8; }
+    .st-work { background:#38bdf822; color:#7dd3fc; }
+    .st-lock { background:#a78bfa22; color:#c4b5fd; }
+    .st-ok   { background:#22c55e22; color:#86efac; }
+    .st-bad  { background:#fb718522; color:#fca5a5; }
+    .st-doubt{ background:#f59e0b22; color:#fbbf24; }
+    .acc-card.is-coord { border-color:#fbbf24; box-shadow:0 0 0 1px #fbbf2455; }
+    .acc-card.crashed { opacity:.45; border-style:dashed; }
+    .sim-controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 1rem; }
+    .q-status { text-align:center; font-weight:700; font-size:.88rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; line-height:1.6; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+    .q-status.info { background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .phase-track { display:flex; gap:.4rem; justify-content:center; margin:.25rem 0 1rem; flex-wrap:wrap; }
+    .phase-chip { font-size:.68rem; font-weight:700; padding:.25rem .6rem; border-radius:20px; border:1px solid var(--border); color:var(--text-muted); }
+    .phase-chip.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .legend { display:flex; gap:1rem; justify-content:center; flex-wrap:wrap; font-size:.72rem; color:var(--text-muted); margin:.25rem 0 .5rem; }
+    .legend span { display:inline-flex; align-items:center; gap:.3rem; }
+    .legend .sw { width:11px; height:13px; border-radius:2px; display:inline-block; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phases">Phase 2: Intermediate Systems</a><span class="breadcrumb-sep">/</span>
+      <span>Day 33</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 33 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📗 Phase 2 — Intermediate Systems</span>
+      <span class="meta-pill">🗂 Week 5 — Distributed Algorithms</span>
+    </div>
+    <h1>Distributed Transactions: 2PC &amp; 3PC<br><span style="color:var(--accent)">All-or-Nothing Across Many Databases</span></h1>
+    <p class="lead">
+      Consensus (Days 31–32) solved one problem: get many machines to agree on a single ordered log. Today's problem <em>looks</em>
+      the same but is quietly more dangerous — how do you make <strong>several separate databases</strong> all commit, or all abort,
+      <strong>one</strong> transaction together, so money is never created in the gap or lost in the crash? On a single database the
+      letter <strong>A</strong> in ACID (Day 9) was free — one write-ahead log, one disk, atomic. Across two databases there is no
+      shared log, no shared disk, and a network that can drop any message. The classic answer is <strong>Two-Phase Commit (2PC)</strong>:
+      a coordinator, a <em>Prepare</em> phase where everyone locks in and <em>promises</em>, and a <em>Commit</em> phase where one
+      global verdict is applied everywhere. It works beautifully — until the coordinator crashes in exactly the wrong half-second and
+      leaves everyone frozen <strong>in-doubt</strong>, holding locks, unable to decide alone. We'll build 2PC from scratch, feel that
+      blocking problem in a simulator, meet <strong>Three-Phase Commit (3PC)</strong> and the one hidden assumption that keeps it in
+      textbooks rather than production, and see how Google Spanner runs 2PC safely by making every participant a Raft/Paxos group.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#why">Why This Problem Exists</a>
+        <a href="#protocol">How 2PC Works</a>
+        <a href="#blocking">The Blocking Problem</a>
+        <a href="#threepc">Three-Phase Commit</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">💍 🧭 📜</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>A wedding at the altar. There is one <strong>officiant</strong> (the <strong>coordinator</strong>) and two people
+            standing before them (two <strong>databases</strong>). The whole ceremony has a single, strict rule: the marriage happens
+            <em>only</em> if <strong>both</strong> people say yes — one "no" and there is no wedding at all. There is no such thing as
+            "half married."</p>
+            <p>So the officiant runs it in <strong>two phases</strong>. First the <strong>vows</strong>: "Do you take this person…?"
+            — and each turns, in turn, and says "<strong>I do</strong>." Saying "I do" is not a casual nod; it is a <em>binding
+            promise</em>. The moment you say it, you have locked yourself in — you cannot wander off, you cannot say "actually, never
+            mind." You are <em>prepared</em>. Only once the officiant has heard "I do" from <strong>both</strong> does the second phase
+            happen: "<strong>I now pronounce you married.</strong>" That pronouncement is the <em>commit</em> — now, and only now, is it
+            official and permanent for everyone at once.</p>
+            <p>Now the dark twist that is the whole reason this lesson has a sequel. Imagine both have said "I do," they are standing
+            there vowed and locked in — and the officiant <strong>faints</strong> before pronouncing anything. What now? The two can't
+            walk away (they already promised — maybe the officiant was about to say "married"). But they can't declare themselves
+            married either (maybe the officiant fainted <em>because</em> they saw an objection). They can only <strong>stand frozen at
+            the altar, waiting</strong> — and everyone queued up for the next wedding is stuck behind them. That frozen couple is a
+            database <strong>in-doubt</strong>, holding its locks, blocking the system. Burn in the image: <strong>two phases — vows
+            then pronouncement — and a fainted officiant leaving a couple frozen mid-ceremony.</strong> That frozen couple is 2PC's
+            fatal flaw, and the reason 3PC exists.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="820" height="440" viewBox="0 0 820 440"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Tara</span> owned the money-movement service at a fintech. The rule she could never break was
+            the oldest one in banking: when $100 moves from account A to account B, <strong>exactly</strong> $100 leaves A and
+            <strong>exactly</strong> $100 arrives at B — never money created, never money vanished. On a single database this was a
+            solved problem: wrap both the debit and the credit in one transaction, and the database's write-ahead log makes it atomic —
+            both happen or neither does. She had trusted that <em>A</em> in ACID (Day 9) for years without thinking about it.
+          </p>
+          <p>
+            Then accounts A and B landed in <em>different</em> databases — A in the US ledger, B in the EU ledger, after a migration.
+            Her old single-transaction trick was gone: two databases, two separate logs, two separate disks, a network between them.
+            Her first instinct was the obvious one: debit A, then credit B. It worked a thousand times. The thousand-and-first time, A's
+            debit succeeded and then B's database <em>crashed</em> before the credit landed. $100 left A and simply… evaporated. A
+            customer's money, gone, in a reconciliation report nobody could explain for two days.
+          </p>
+          <p>
+            A staff engineer walked her through <strong>Two-Phase Commit</strong>. Instead of doing the two writes directly, a
+            <strong>coordinator</strong> would orchestrate. <em>Phase 1:</em> ask both databases "can you commit this? Prepare it and
+            tell me." Each would do the write <em>provisionally</em> — durably logged, rows locked — and reply "<strong>YES, prepared</strong>,"
+            which is a promise: <em>whatever you decide, I can carry it out</em>. <em>Phase 2:</em> only if <strong>both</strong> said
+            YES would the coordinator record "COMMIT" in its own durable log and tell both to finalize. If either said NO, it would tell
+            both to roll back. Tara shipped it. The money stopped evaporating. Atomicity across two databases — it felt like magic.
+          </p>
+          <p>
+            The magic held for months. Then, at 3 a.m., the coordinator process <strong>crashed</strong> — in the worst possible
+            instant: right after both databases had voted YES and locked their rows, but <em>before</em> it had sent the commit. Both
+            databases sat there holding their locks, <strong>in-doubt</strong>. They could not commit (what if the coordinator had
+            actually decided to abort?) and could not abort (what if it had decided to commit?). They could only wait. And behind those
+            locked rows, every other transaction touching those accounts <strong>queued up and stalled</strong>. The on-call engineer
+            was paged not because money was lost, but because the whole ledger had frozen solid around two stuck rows. Recovery meant
+            waiting for the coordinator to come back and read its log — or a human carefully deciding by hand.
+          </p>
+          <p>
+            Tara read about <strong>Three-Phase Commit</strong>, which adds a middle step so a coordinator crash no longer freezes
+            everyone — and then read the fine print: it only works if the network never partitions, an assumption real networks violate
+            constantly (Day 25). Her real fixes were more pragmatic: make the coordinator itself <strong>fault-tolerant</strong> by
+            backing its decision log with Raft (Day 32), so a crash just fails over instead of blocking; and, for the services that
+            could tolerate it, drop atomic commit entirely in favor of the <strong>Saga pattern</strong> (Day 34) — a sequence of
+            local commits with compensating undos. Her lesson: <strong>2PC buys you true atomicity across databases, but you pay for it
+            in blocking and locks — so the real engineering question is not "how do I do a distributed transaction?" but "can I avoid
+            needing one at all?"</strong>
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement"><strong>Atomic commitment</strong> is the problem of getting <em>N independent databases</em> to
+          agree on a single <strong>all-or-nothing</strong> outcome for one transaction: every participant commits, or every participant
+          aborts — never a mix. <strong>Two-Phase Commit (2PC)</strong> solves it with a <strong>coordinator</strong> and two phases.
+          <strong>Phase 1 — Prepare/Vote:</strong> the coordinator asks every participant "can you commit?"; each does the work
+          <em>provisionally</em> — writes it durably, <strong>locks</strong> the rows — and replies <strong>YES</strong> (a binding
+          promise it can still commit if asked) or <strong>NO</strong>. A YES means the participant has given up its right to decide
+          alone. <strong>Phase 2 — Commit/Abort:</strong> if <em>all</em> voted YES, the coordinator durably records
+          <strong>COMMIT</strong> (its point of no return) and tells everyone to finalize; if <em>any</em> voted NO (or timed out), it
+          records <strong>ABORT</strong> and everyone rolls back. The guarantee is atomicity. The price is the <strong>blocking
+          problem</strong>: a participant that has voted YES and then loses contact with the coordinator is stuck <strong>in-doubt</strong>
+          — it cannot safely commit (maybe the verdict was abort) or abort (maybe the verdict was commit), so it <em>waits</em>, holding
+          its locks, stalling everything behind them. <strong>Three-Phase Commit (3PC)</strong> inserts a <strong>PreCommit</strong> step
+          between vote and commit so that, once a participant has heard "pre-commit," it <em>knows</em> the verdict is commit and can
+          safely finish on a timeout if the coordinator vanishes — <strong>non-blocking, but only when the sole failure is the
+          coordinator</strong>. 3PC's hidden assumption is a network that never partitions and has bounded delays; a real partition
+          (Day 25) can split participants into groups that reach <em>different</em> safe defaults and break atomicity — which is why 3PC
+          is almost never used in practice. One-line test: <em>in 2PC, the instant you vote YES you surrender the right to decide on your
+          own — so if the coordinator disappears, you can only wait.</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — A Distributed Transaction</h2>
+        <div class="sim-box">
+          <p>Here is a <strong>coordinator</strong> (🧭) trying to commit one transaction across two databases, <strong>DB-A</strong>
+          and <strong>DB-B</strong> (🗄️). Pick a scenario, then press <strong>Next step</strong> to walk through it one event at a
+          time. Watch each participant's <strong>state</strong> — idle → prepared 🔒 (locked, voted YES) → committed ✅ / aborted — and
+          read the status line. The four scenarios are the four things that actually happen: everyone agrees, someone refuses, the
+          coordinator crashes and <em>blocks</em> everyone (2PC's flaw), and 3PC's extra step recovering safely from that same crash.</p>
+
+          <div class="mode-toggle" id="scenario-toggle">
+            <button data-scn="happy" class="active">✅ Happy path (2PC)</button>
+            <button data-scn="novote">❌ One votes NO</button>
+            <button data-scn="crash">💥 Coordinator crash</button>
+            <button data-scn="threepc">🔀 3PC recovers</button>
+          </div>
+
+          <div class="phase-track" id="phase-track">
+            <span class="phase-chip" data-ph="prepare">Phase 1: Prepare</span>
+            <span class="phase-chip" data-ph="vote">Vote</span>
+            <span class="phase-chip" data-ph="decide">Phase 2: Decide</span>
+            <span class="phase-chip" data-ph="done">Result</span>
+          </div>
+
+          <div class="legend">
+            <span><i class="sw" style="background:#a78bfa;border:1px solid #a78bfa;"></i> prepared 🔒 (locked, voted YES)</span>
+            <span><i class="sw" style="background:#22c55e;border:1px solid #22c55e;"></i> committed</span>
+            <span><i class="sw" style="background:#fbbf24;border:1px solid #fbbf24;"></i> in-doubt (blocked)</span>
+            <span><i class="sw" style="background:#fb7185;border:1px solid #fb7185;"></i> aborted / crashed</span>
+          </div>
+
+          <div class="acc-grid" id="acc-grid"></div>
+
+          <div class="q-status info" id="sim-status">—</div>
+
+          <div class="sim-controls">
+            <button class="btn btn-primary btn-sm" id="sim-next">Next step →</button>
+            <button class="btn btn-outline btn-sm" id="sim-reset">↺ Reset scenario</button>
+            <span style="font-size:.78rem;color:var(--text-muted);" id="sim-counter"></span>
+          </div>
+
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: run <strong>Coordinator crash</strong> to the
+          end. Both databases vote YES and lock their rows — then the coordinator dies <em>before</em> sending the verdict. Watch both
+          participants turn amber: <strong>in-doubt</strong>. They can't commit and can't abort, so they freeze, holding their locks,
+          and everything behind them stalls. That's the blocking problem. Now run <strong>3PC recovers</strong>: the <em>same</em>
+          crash happens, but because the coordinator first sent <strong>PRE-COMMIT</strong> (telling everyone "all votes were YES"),
+          each participant already <em>knows</em> the verdict and safely commits on its own after a timeout — no freeze. The catch,
+          covered below: 3PC only stays correct if the network doesn't partition.</p>
+        </div>
+      </section>
+
+      <section id="why">
+        <h2>Why This Problem Exists</h2>
+        <p>On a single database, atomicity (the <strong>A</strong> in ACID, Day 9) is almost free. The database keeps a
+        <strong>write-ahead log</strong> on one disk: it records "I'm about to do X," does it, and records "done." If the power fails
+        mid-way, recovery reads that one log and either replays or undoes the change. One log, one disk, one authority — atomic by
+        construction.</p>
+        <p>Now split the work across <strong>two</strong> databases — two logs, two disks, a lossy network in between — and that
+        free atomicity evaporates. There is no shared log that both can consult. The naive "just do A, then do B" fails in the gap:</p>
+        <div class="code-label">The gap that loses money</div>
+        <div class="code-panel"><span class="muted"># Transfer $100 from A (US ledger) to B (EU ledger)</span>
+dbA.debit(100)     <span class="s">✓ succeeds — $100 leaves A</span>
+<span class="b"># ... network blips / dbB crashes HERE ...</span>
+dbB.credit(100)    <span class="b">✗ never runs</span>
+
+<span class="b"># Result: $100 vanished. A is down 100, B is unchanged.</span>
+<span class="muted"># Reverse the order and you can CREATE money instead. There is no safe order.</span></div>
+        <p style="margin-top:1rem;">The problem is that each database can independently succeed <em>or</em> fail, and the network can
+        drop the message that would tell the other what happened. We need a protocol that makes two (or more) separate systems reach
+        <strong>one shared decision</strong> — commit everywhere or abort everywhere — despite crashes and lost messages. That protocol
+        is <strong>atomic commitment</strong>, and 2PC is its classic form.</p>
+        <p>Note the subtle difference from <strong>consensus</strong> (Days 31–32). Consensus (Paxos/Raft) gets a group to agree on a
+        value that <em>any</em> of them proposed, and a majority is enough — a minority can lag and catch up later. Atomic commitment is
+        stricter: it needs <strong>unanimity</strong>. A commit requires <em>every single</em> participant to be able to carry it out,
+        because a single participant that can't commit means the whole transaction must abort. "Majority rules" is the wrong model when
+        one dissenter can veto the outcome.</p>
+      </section>
+
+      <section id="protocol">
+        <h2>How 2PC Works</h2>
+        <p>There is one <strong>coordinator</strong> (often the service that received the request, or a dedicated transaction manager)
+        and a set of <strong>participants</strong> (the databases / resource managers). Every participant and the coordinator keeps its
+        own durable log, because the protocol must survive crashes on either side.</p>
+
+        <div class="diagram-box">
+          <svg id="protocol-diagram" width="820" height="430" viewBox="0 0 820 430"></svg>
+        </div>
+
+        <h3>Phase 1 — Prepare (the vote)</h3>
+        <div class="flow-box">
+          <div class="flow-step"><span>1</span><div><strong>Coordinator → all: <code>PREPARE</code>.</strong> "I want to commit this
+          transaction. Can you?" It also durably logs that this transaction is now in progress.</div></div>
+          <div class="flow-step"><span>2</span><div><strong>Each participant prepares.</strong> It does the work
+          <em>provisionally</em>: writes the change to its own durable log (so it survives a crash), <strong>locks</strong> the affected
+          rows, and decides whether it <em>can</em> commit (constraints satisfied, disk space, etc.).</div></div>
+          <div class="flow-step"><span>3</span><div><strong>Participant → coordinator: <code>YES</code> or <code>NO</code>.</strong> A
+          <strong>YES</strong> is a <em>binding promise</em>: "I have durably prepared; whatever you decide, I can carry it out, and I
+          will not change my mind." From this moment the participant has <strong>given up the right to decide on its own</strong>. A
+          <strong>NO</strong> means it already rolled back and released its locks.</div></div>
+        </div>
+
+        <h3>Phase 2 — Commit or Abort (the decision)</h3>
+        <div class="flow-box">
+          <div class="flow-step"><span>4</span><div><strong>Coordinator decides.</strong> If <em>all</em> votes are YES, it durably
+          records <strong>COMMIT</strong> — this write is the <strong>point of no return</strong>, the single instant the global
+          outcome becomes "commit." If <em>any</em> vote is NO (or a participant timed out), it records <strong>ABORT</strong>.</div></div>
+          <div class="flow-step"><span>5</span><div><strong>Coordinator → all: the verdict.</strong> It sends <code>COMMIT</code> (or
+          <code>ABORT</code>) to every participant.</div></div>
+          <div class="flow-step"><span>6</span><div><strong>Participants finalize + ACK.</strong> On COMMIT they make the provisional
+          change permanent and release their locks; on ABORT they undo it and release their locks. Each acknowledges, and once all ACKs
+          are in the coordinator can forget the transaction.</div></div>
+        </div>
+
+        <p><strong>Why this is safe against crashes:</strong> everything hinges on durable logs. If a <em>participant</em> crashes after
+        voting YES, on restart it sees the "prepared" record in its log, re-acquires the locks, and asks the coordinator "what was the
+        verdict?" If the <em>coordinator</em> crashes, on restart it reads its own log: if it finds COMMIT, it re-sends commit; if it
+        finds no decision yet, it can safely abort (nobody was told to commit). The protocol never forgets a decision it already made.
+        The one scenario it <em>can't</em> handle gracefully is the next section.</p>
+      </section>
+
+      <section id="blocking">
+        <h2>The Blocking Problem</h2>
+        <p>Here is 2PC's defining weakness — the thing that makes senior engineers nervous about it. Consider the exact instant a
+        participant has voted <strong>YES</strong> and is holding its locks, waiting for the verdict, and the <strong>coordinator
+        disappears</strong> (crashes, or is cut off by a network partition). Ask: what can the participant safely do <em>on its own</em>?</p>
+
+        <div class="pillar-grid">
+          <div class="pillar-card bad" style="border-left-color:#fb7185;">
+            <h4 style="color:#fca5a5;">🚫 It can't just commit</h4>
+            <p>Maybe <em>another</em> participant voted NO, and the coordinator decided <strong>ABORT</strong> and told that participant
+            before dying. If this participant commits on a hunch, the transaction is now <em>half-committed</em> — atomicity is broken,
+            money is created or lost.</p>
+          </div>
+          <div class="pillar-card bad" style="border-left-color:#fb7185;">
+            <h4 style="color:#fca5a5;">🚫 It can't just abort</h4>
+            <p>Maybe <em>everyone</em> voted YES, the coordinator decided <strong>COMMIT</strong>, and already told another participant
+            who committed and released. If this one aborts, again the transaction is half-done — same broken atomicity, opposite
+            direction.</p>
+          </div>
+          <div class="pillar-card amber">
+            <h4>⏳ So it must block</h4>
+            <p>Unable to safely pick either way, the participant can only <strong>wait</strong> — holding its locks — until the
+            coordinator comes back and tells it the recorded verdict. This is being <strong>in-doubt</strong>, and it can last seconds,
+            minutes, or (without intervention) forever.</p>
+          </div>
+        </div>
+
+        <p>And blocking isn't just one stuck transaction. Those locked rows are <em>unavailable</em> to everyone else. Every other
+        transaction that needs them <strong>queues behind the locks</strong> and stalls too. A single coordinator crash at the wrong
+        moment can cascade into a frozen slice of the whole system — not because data was corrupted, but because nobody is <em>allowed</em>
+        to touch it until the in-doubt transactions resolve. This is why the coordinator is a dreaded <strong>single point of failure</strong>,
+        and why "did the coordinator survive the vote?" is the question 2PC's whole reliability hinges on.</p>
+
+        <div class="code-label">The in-doubt window — the dangerous gap</div>
+        <div class="code-panel">coordinator     dbA            dbB
+    |  PREPARE →  |              |
+    |  PREPARE ───────────────→  |
+    |   ← YES 🔒  |              |     <span class="muted"># dbA locked, promised</span>
+    |   ← YES 🔒 ───────────────  |     <span class="muted"># dbB locked, promised</span>
+    | <span class="b">💥 CRASH (before writing/sending the verdict)</span>
+    |             | ⏳ in-doubt  | ⏳ in-doubt    <span class="b"># both frozen, holding locks</span>
+    |             |  (waiting)   |  (waiting)
+    <span class="muted"># The window between "votes collected" and "verdict delivered"</span>
+    <span class="muted"># is where a coordinator crash blocks every participant.</span></div>
+      </section>
+
+      <section id="threepc">
+        <h2>Three-Phase Commit — The Fix That Mostly Isn't Used</h2>
+        <p>3PC targets exactly the blocking problem. The insight: participants block because, at the moment the coordinator vanishes,
+        they don't <em>know</em> what the verdict is going to be. 3PC fixes that by splitting the commit into two steps, inserting a
+        <strong>PreCommit</strong> phase between the vote and the final commit, so that the verdict becomes <em>known</em> to everyone
+        before anyone actually commits.</p>
+
+        <div class="diagram-box">
+          <svg id="threepc-diagram" width="820" height="400" viewBox="0 0 820 400"></svg>
+        </div>
+
+        <div class="flow-box">
+          <div class="flow-step"><span>1</span><div><strong>Phase 1 — CanCommit? / Vote.</strong> Same as 2PC's prepare: ask everyone,
+          collect YES/NO. (In the strict model, participants don't lock as aggressively yet.)</div></div>
+          <div class="flow-step"><span>2</span><div><strong>Phase 2 — PreCommit.</strong> If all voted YES, the coordinator sends
+          <strong><code>PRE-COMMIT</code></strong>. This carries one crucial piece of information: "<em>everyone</em> voted YES — the
+          decision <strong>will be</strong> commit, get ready." Each participant acknowledges. Now every participant <em>knows</em> the
+          outcome, even though nothing is finalized yet.</div></div>
+          <div class="flow-step"><span>3</span><div><strong>Phase 3 — DoCommit.</strong> The coordinator sends the final
+          <code>COMMIT</code>, and participants finalize.</div></div>
+        </div>
+
+        <h3>Why the extra phase makes it non-blocking</h3>
+        <p>Now re-run the coordinator crash. If a participant has already received <strong>PRE-COMMIT</strong> and then the coordinator
+        vanishes, it can reason: "I know all votes were YES, so the only possible verdict is commit. On a timeout, I'll <strong>commit
+        anyway</strong>." Conversely, if a participant times out <em>before</em> ever seeing PRE-COMMIT, it knows the decision couldn't
+        have been commit yet, so the safe default is to <strong>abort</strong>. Participants that can reach each other can even agree on
+        this default among themselves. Either way, a lone coordinator failure no longer freezes anyone — <strong>that's the win</strong>.</p>
+
+        <h3>The hidden assumption that keeps it in textbooks</h3>
+        <p>3PC's safety rests on an assumption real networks violate all the time: <strong>no network partitions, and bounded message
+        delays</strong> (a synchronous network where a timeout <em>reliably</em> means "dead," not "slow"). But we proved in Day 25 that
+        you <em>cannot tell slow from dead</em>. Picture a partition that splits the participants into two groups right at the PreCommit
+        step: one group received PRE-COMMIT and, on timeout, <strong>commits</strong>; the other group never saw it and, on timeout,
+        <strong>aborts</strong>. The result is a <em>split outcome</em> — atomicity shattered, exactly the thing the whole protocol
+        exists to prevent. So 3PC trades 2PC's <em>blocking</em> for a <em>potential safety violation</em> under partitions, adds a full
+        extra round-trip of latency, and is more complex. Most engineers consider that a bad trade. <strong>In production, 3PC is rare;
+        the real-world answer to 2PC's blocking is to make the coordinator itself fault-tolerant (below).</strong></p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>2PC gives a real, valuable guarantee — true atomic commit across independent systems — but the costs are exactly why
+        distributed systems try hard to <em>avoid</em> needing it.</p>
+
+        <h3>Blocking &amp; the coordinator as a single point of failure</h3>
+        <p>As we saw: a coordinator crash in the in-doubt window freezes participants and cascades through the locks they hold. The
+        standard production fix isn't 3PC — it's to stop the coordinator from being a single point of failure by making its
+        <strong>decision log fault-tolerant with consensus</strong> (Raft/Paxos, Day 32). If the coordinator's "COMMIT/ABORT" record
+        lives on a replicated, highly-available log, a crashed coordinator just <em>fails over</em> to a replica that reads the same
+        log and finishes the job — the blocking window collapses from "until a human intervenes" to "until failover completes."</p>
+
+        <h3>Locks held across the network murder throughput</h3>
+        <p>In single-database transactions, locks are held for microseconds. In 2PC, a participant holds its locks from the moment it
+        votes YES until it receives the verdict — <strong>across one or more network round-trips</strong>, often milliseconds to
+        seconds. The whole time, those rows are unavailable to everyone else. Under load, these long-held locks become the bottleneck:
+        contention, timeouts, and sharply reduced concurrency. 2PC does not scale the way engineers often hope.</p>
+
+        <h3>It's a CP protocol — it sacrifices availability</h3>
+        <p>2PC chooses <strong>consistency over availability</strong> (CAP, Day 10): faced with a failure in the middle of a commit, it
+        would rather <em>pause</em> (block) than risk a wrong, non-atomic answer. That is often the <em>correct</em> choice for money —
+        but it means a distributed transaction is only as available as the <em>least</em> available participant, and any one of them
+        being slow or down stalls the whole thing. More participants = more ways to fail = lower availability.</p>
+
+        <h3>It doesn't compose well with microservices</h3>
+        <p>2PC needs every participant to speak the same transaction protocol (e.g. XA) and to expose "prepare/commit/abort" hooks.
+        Independent microservices with their own databases, third-party APIs, and message queues generally <em>can't</em> all do this —
+        you can't ask Stripe or an email provider to join your two-phase commit. This is the practical reason the microservices world
+        reaches for the <strong>Saga pattern</strong> (Day 34) instead: a chain of ordinary local commits, each with a
+        <strong>compensating action</strong> that undoes it, giving you a weaker (eventually-consistent) but <em>available</em> and
+        loosely-coupled alternative to true atomic commit.</p>
+
+        <p style="margin-top:1rem;">The through-line: <strong>2PC is the price-is-no-object way to get atomicity across databases —
+        correct, but blocking, lock-heavy, and availability-sacrificing.</strong> Use it when you genuinely need cross-database
+        atomicity <em>and</em> you can make the coordinator fault-tolerant (Spanner does); avoid it — via Sagas or by redesigning so the
+        transaction lives in one place — whenever you can.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">💒</span><div><strong>Down the Hall on the First Floor — The Wedding Chapel</strong>
+          — <span>You leave the Newsroom (Day 32, Raft) and step into the little <strong>chapel</strong> next door, still on the
+          <strong>first floor (Phase 2)</strong>. At the front stands one <strong>officiant</strong> (the coordinator) with a heavy
+          leather <strong>ledger</strong>. Before them, two people (the two databases) stand at the altar. The ceremony runs in two
+          beats: first the <strong>vows</strong> — each says "<em>I do</em>," and the instant they do, a little <strong>padlock</strong>
+          clicks shut on their wrist (they've locked in, voted YES, and can't walk away). Only once <em>both</em> locks have clicked does
+          the officiant write <strong>COMMIT</strong> in the ledger and pronounce them married — permanent, together, for everyone at
+          once. In the corner, frozen under a spotlight, is a <strong>couple still standing mid-ceremony with an empty officiant's
+          chair</strong> — the officiant fainted after the vows, so they're stuck at the altar, locks still on, going nowhere. That
+          frozen couple is a transaction <strong>in-doubt</strong>, the room's cautionary tale.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Door Ahead</strong> — <span>At the back of the
+          chapel is a door labelled <strong>Day 34: The Saga Pattern</strong>. Through it you hear a different philosophy entirely: not
+          "everyone commits at the exact same instant or nobody does," but "<em>let each one commit on its own, right away — and if a
+          later step fails, we'll run an undo for each step that already happened.</em>" A chain of small promises with erasers attached,
+          instead of one big simultaneous vow. That's tomorrow.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">ACID Atomicity (Day 9)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">2PC &amp; 3PC (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Saga Pattern (Day 34)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">2PC leans on…</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Consensus / Raft (Day 32)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">CAP Theorem (Day 10)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Replication (Day 12)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Distributed Failures (Day 25)</span>
+        </div>
+        <p>Today extends the <strong>atomicity</strong> of ACID (Day 9) from one database to many — the same "all-or-nothing" promise,
+        now across a network with no shared log. It is deeply tied to <strong>consensus (Day 32)</strong> but is <em>not</em> the same
+        problem: consensus needs a <em>majority</em> and tolerates laggards, while atomic commit needs <em>unanimity</em> (one veto
+        aborts everything) — yet the modern cure for 2PC's blocking is precisely to put the coordinator's decision on a
+        <strong>Raft-replicated log</strong> so it can't be a single point of failure. The blocking problem is a direct instance of the
+        <strong>ambiguous-timeout / can't-tell-slow-from-dead</strong> lesson from <strong>Distributed Failures (Day 25)</strong> — an
+        in-doubt participant literally cannot tell whether the silent coordinator committed or aborted. And 2PC's refusal to guess
+        (pausing rather than risking a split outcome) is <strong>CAP (Day 10)</strong> made concrete: it is a <strong>CP</strong>
+        protocol. Tomorrow, <strong>Sagas (Day 34)</strong> take the opposite stance — trade atomicity for availability with local
+        commits and compensating undos.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"2PC is a consensus algorithm like Raft."</td><td>Different problem. Consensus needs a <strong>majority</strong> and
+          tolerates laggards; atomic commit needs <strong>unanimity</strong> — a single NO vetoes the commit. 2PC also <em>blocks</em> on
+          a coordinator failure; Raft keeps going as long as a majority is alive.</td></tr>
+          <tr><td>"Once a participant votes YES, it can change its mind."</td><td>No. A YES is a <strong>binding promise</strong>: the
+          participant has durably prepared and <em>must</em> be able to commit if told to. It has given up the right to decide on its
+          own — that surrender is the whole source of the blocking problem.</td></tr>
+          <tr><td>"3PC fixed 2PC, so everyone uses it."</td><td>Almost no one does. 3PC is non-blocking only if the network never
+          partitions and delays are bounded — false in reality. Under a partition it can produce a <strong>split, non-atomic
+          outcome</strong>. Production fixes 2PC's blocking with a <em>consensus-backed coordinator</em> instead.</td></tr>
+          <tr><td>"The coordinator crashing just means we retry."</td><td>If it crashes <em>in the in-doubt window</em>, participants are
+          frozen holding locks until it (or a failover) returns and reads its decision log. Meanwhile everything behind those locks
+          <strong>stalls</strong> — a crash can freeze a whole slice of the system.</td></tr>
+          <tr><td>"2PC scales fine — just add participants."</td><td>The opposite. Locks are held across network round-trips, and more
+          participants = more locks held longer, more failure modes, and availability bounded by the <em>weakest</em> participant. 2PC
+          is a throughput and availability <strong>cost</strong>, not a free one.</td></tr>
+          <tr><td>"Microservices should use 2PC for data consistency."</td><td>Usually a trap. Independent services (and third-party
+          APIs) can't all speak one transaction protocol, and the coupling/blocking is toxic to availability. The idiomatic answer is
+          the <strong>Saga pattern</strong> (Day 34): local commits + compensating undos.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ A bank runs a 2PC transfer across DB-A and DB-B. Both receive <code>PREPARE</code>,
+          both durably prepare, lock their rows, and reply <code>YES</code>. The coordinator receives both YES votes — and then crashes
+          <em>before</em> writing its decision or sending anything. Walk through what each database does, whether the money moved, and
+          how the system eventually recovers. (click to reveal)</div>
+          <div class="recall-answer"><strong>Both databases are stuck in-doubt and must block.</strong> Each voted YES, so each has a
+          durable "prepared" record and is holding its row locks, waiting for the verdict. Neither can act alone: committing risks a
+          half-commit if the verdict was actually abort; aborting risks a half-commit if the verdict was commit. So both
+          <strong>wait</strong>, locks held — and any other transaction touching those accounts <strong>queues behind the locks and
+          stalls</strong>. <u>Did the money move?</u> <strong>No</strong> — nothing was finalized; the transfer is neither committed nor
+          rolled back, it's frozen. <u>Recovery:</u> when the coordinator restarts, it reads its own durable log. Because it crashed
+          <em>before</em> recording a decision, there is no COMMIT on record, so it may <strong>safely abort</strong> the transaction
+          (nobody could have committed — the commit record was never written), tell both databases to roll back and release their locks,
+          and the system unfreezes. The production improvement: back the coordinator's decision log with <strong>Raft (Day 32)</strong>,
+          so instead of waiting for the <em>same</em> process to restart, a replica fails over, reads the replicated log, and resolves
+          the in-doubt transaction in seconds. (And note this is the <strong>ambiguous timeout</strong> of Day 25 in its purest form:
+          the databases cannot tell whether the silent coordinator committed, aborted, or simply hasn't spoken yet.)</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🗃️ XA &amp; Classic Databases</div><p>The <strong>XA standard</strong>
+          (and Java's JTA) is 2PC made concrete: a transaction manager coordinates "resource managers" (PostgreSQL, MySQL, Oracle, IBM
+          MQ) through <code>prepare</code>/<code>commit</code>/<code>rollback</code>. PostgreSQL exposes it as
+          <code>PREPARE TRANSACTION</code> / <code>COMMIT PREPARED</code>. It works, and it's where most engineers first meet in-doubt
+          ("prepared") transactions — and the DBA pain of resolving them by hand after a coordinator dies.</p></div>
+          <div class="realworld-card"><div class="rw-company">🌲 Google Spanner</div><p>Spanner runs <strong>2PC over Paxos</strong>:
+          each participant isn't a single database but a <em>Paxos/Raft group</em> (a replicated shard), and the coordinator's state is
+          itself replicated. This is the textbook cure for 2PC's single-point-of-failure — a crashed node just fails over, so the
+          blocking window nearly vanishes. Combined with TrueTime, Spanner offers externally-consistent distributed transactions at
+          global scale. The lesson: 2PC's weakness isn't the two phases, it's the <em>fragile coordinator</em> — make it fault-tolerant
+          and 2PC becomes practical.</p></div>
+          <div class="realworld-card"><div class="rw-company">📨 Kafka Transactions</div><p>Kafka's "exactly-once" producer uses a
+          2PC-flavored protocol with a <strong>transaction coordinator</strong> and a durable transaction log: messages are written,
+          then a commit/abort marker is two-phase-committed across the partitions involved, so consumers only ever see fully-committed
+          batches. A distributed-commit protocol hiding inside a message broker.</p></div>
+          <div class="realworld-card"><div class="rw-company">🧩 Microservices → Sagas</div><p>Most microservice architectures
+          <em>deliberately avoid</em> 2PC. You can't enlist Stripe, an email provider, and three internal services into one XA
+          transaction, and the blocking would wreck availability. Instead they use <strong>Sagas</strong> (Day 34): each service
+          commits locally and publishes an event; a failure later triggers <strong>compensating transactions</strong> (refund the
+          charge, cancel the reservation) to unwind. Weaker guarantee, far better availability and coupling.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What problem does Two-Phase Commit solve, and how is it different from consensus?</div>
+          <div class="fc-a">A: <strong>Atomic commitment</strong> — making N separate databases all commit or all abort one transaction.
+          Unlike consensus (which needs a <em>majority</em> and tolerates laggards), atomic commit needs <strong>unanimity</strong>: a
+          single NO vote aborts everything.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What are the two phases of 2PC?</div>
+          <div class="fc-a">A: <strong>Phase 1 — Prepare/Vote:</strong> the coordinator asks each participant to prepare; each durably
+          logs the change, locks rows, and votes YES (a binding promise) or NO. <strong>Phase 2 — Commit/Abort:</strong> if all voted
+          YES the coordinator durably records COMMIT and tells everyone to finalize; otherwise it records ABORT and everyone rolls
+          back.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is the "blocking problem," and when exactly does it strike?</div>
+          <div class="fc-a">A: If the coordinator crashes <em>after</em> a participant voted YES but <em>before</em> delivering the
+          verdict, the participant is <strong>in-doubt</strong>: it can't safely commit (maybe the verdict was abort) or abort (maybe it
+          was commit), so it <strong>blocks</strong>, holding locks and stalling everything behind them until the coordinator
+          recovers.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: How does 3PC avoid blocking, and why is it rarely used?</div>
+          <div class="fc-a">A: It adds a <strong>PreCommit</strong> phase so every participant <em>knows</em> the verdict is commit
+          before anyone commits — on a coordinator crash they can safely finish on a timeout. But it assumes <strong>no network
+          partitions</strong> and bounded delays; under a real partition it can produce a split, non-atomic outcome, so production
+          prefers a consensus-backed coordinator instead.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What's the standard production fix for 2PC's single-point-of-failure coordinator?</div>
+          <div class="fc-a">A: Make the coordinator's decision log <strong>fault-tolerant with consensus (Raft/Paxos)</strong>. Then a
+          crashed coordinator just <em>fails over</em> to a replica that reads the same replicated log and finishes the transaction —
+          Google Spanner runs <strong>2PC over Paxos</strong> for exactly this reason.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Why is atomicity "free" on one database but hard across two? What specifically disappears?</li>
+          <li>Walk through a successful 2PC transaction, naming both phases and what a participant does in each.</li>
+          <li>What does it mean for a participant to vote YES, and what right does it give up by doing so?</li>
+          <li>Describe the exact moment the "point of no return" happens in 2PC. Which log write is it?</li>
+          <li>Explain the blocking problem: when does it occur, why can't an in-doubt participant decide alone, and what does it do to
+          the rest of the system?</li>
+          <li>How does 3PC's PreCommit phase make a coordinator crash non-blocking — and what single assumption makes 3PC unsafe in the
+          real world?</li>
+          <li>How is atomic commitment different from consensus (majority vs unanimity), and how can consensus still help 2PC?</li>
+          <li>Why do microservice architectures usually avoid 2PC, and what do they use instead?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>2PC makes several databases commit atomically by voting first, then deciding — Phase 1
+          everyone prepares, locks, and promises YES or NO; Phase 2 the coordinator records one verdict (COMMIT only if all YES) and
+          everyone finalizes.</strong> The guarantee is real atomicity across systems; the price is the <strong>blocking problem</strong>
+          — a coordinator that dies in the gap after the votes leaves participants <strong>in-doubt</strong>, holding locks, stalling
+          everything behind them. <strong>3PC</strong> adds a PreCommit step to be non-blocking on a lone coordinator failure, but its
+          "no partitions" assumption makes it unsafe in practice, so production instead makes the coordinator fault-tolerant with
+          <strong>consensus</strong> (Spanner's 2PC-over-Paxos). 2PC is a <strong>CP</strong>, lock-heavy, availability-sacrificing tool:
+          use it when you truly need cross-database atomicity and can harden the coordinator — and avoid it, via the Saga pattern or a
+          single-place redesign, whenever you can. Tomorrow we take the opposite path: commit each step on its own and undo with
+          compensations — <strong>Day 34: The Saga Pattern.</strong>
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-32.html">← Day 32: Consensus — The Raft Algorithm</a>
+        <a href="day-34.html" class="coming-soon-link">Day 34: The Saga Pattern →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 33 of 90 — Distributed Transactions: 2PC &amp; 3PC</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── 2PC / 3PC distributed-transaction simulator ─────────────────────
+  // Each scenario is a list of "frames". A frame is a full snapshot of the
+  // coordinator + two participants plus a narration line, phase, and status
+  // class — so the stepper is just an index into precomputed states.
+  // node: { id, icon, sub, coord?, crashed?, state, stcls, note }
+  function coord(state, stcls, note, crashed) {
+    return { id:'Coordinator', icon:'🧭', sub:'(the referee)', coord:true, crashed:!!crashed, state:state, stcls:stcls, note:note||'' };
+  }
+  function db(letter, state, stcls, note) {
+    return { id:'DB-'+letter, icon:'🗄️', sub:'participant', state:state, stcls:stcls, note:note||'' };
+  }
+
+  var SCENARIOS = {
+    happy: {
+      label: '✅ Happy path — all vote YES, everyone commits',
+      frames: [
+        { phase:'prepare', cls:'info',
+          narr:'A client asks to move <b>$100 from A to B</b> — two separate databases. The coordinator will run 2PC so both commit or neither does.',
+          nodes:[ coord('Idle','st-idle','ready to start'), db('A','Idle','st-idle','no locks'), db('B','Idle','st-idle','no locks') ] },
+        { phase:'prepare', cls:'info',
+          narr:'<b>Phase 1 — Prepare.</b> The coordinator asks both: “Can you commit this? Prepare and lock.”',
+          nodes:[ coord('→ PREPARE','st-work','asking both'), db('A','preparing…','st-work','doing the write provisionally'), db('B','preparing…','st-work','doing the write provisionally') ] },
+        { phase:'vote', cls:'ok',
+          narr:'Both wrote the change to their <b>durable log</b>, <b>locked</b> the rows, and voted <b>YES</b>. A YES is a binding promise — they can no longer change their minds.',
+          nodes:[ coord('collecting votes','st-work','YES + YES'), db('A','prepared 🔒','st-lock','voted YES, locked'), db('B','prepared 🔒','st-lock','voted YES, locked') ] },
+        { phase:'decide', cls:'ok',
+          narr:'<b>Phase 2 — Commit.</b> All votes are YES, so the coordinator durably records <b>COMMIT</b> (the point of no return) and tells everyone to finalize.',
+          nodes:[ coord('→ COMMIT','st-ok','decision logged'), db('A','prepared 🔒','st-lock','awaiting verdict'), db('B','prepared 🔒','st-lock','awaiting verdict') ] },
+        { phase:'done', cls:'ok',
+          narr:'✅ <b>Both commit.</b> Each makes the change permanent and <b>releases its locks</b>. The transfer was atomic — $100 left A and arrived at B, together.',
+          nodes:[ coord('done ✓','st-ok','transaction complete'), db('A','committed ✅','st-ok','locks released'), db('B','committed ✅','st-ok','locks released') ] }
+      ]
+    },
+    novote: {
+      label: '❌ One votes NO — everyone aborts, atomicity preserved',
+      frames: [
+        { phase:'prepare', cls:'info',
+          narr:'Same transfer, 2PC again. The coordinator starts <b>Phase 1 — Prepare</b>.',
+          nodes:[ coord('→ PREPARE','st-work','asking both'), db('A','preparing…','st-work','doing the write'), db('B','preparing…','st-work','doing the write') ] },
+        { phase:'vote', cls:'warn',
+          narr:'DB-A prepares and votes <b>YES</b> (locked). But DB-B hits a <b>constraint</b> (insufficient funds) and votes <b>NO</b> — it rolls back immediately and locks nothing.',
+          nodes:[ coord('collecting votes','st-work','YES + NO'), db('A','prepared 🔒','st-lock','voted YES, locked'), db('B','voted NO','st-bad','cannot commit') ] },
+        { phase:'decide', cls:'bad',
+          narr:'<b>One NO vetoes the whole transaction.</b> The coordinator durably records <b>ABORT</b> and tells everyone to roll back.',
+          nodes:[ coord('→ ABORT','st-bad','decision: abort'), db('A','prepared 🔒','st-lock','awaiting verdict'), db('B','aborted','st-bad','already rolled back') ] },
+        { phase:'done', cls:'info',
+          narr:'↩️ <b>DB-A rolls back</b> its prepared change and <b>releases its lock</b>. Nothing happened anywhere — atomicity preserved, the “all-nothing” way. No money moved.',
+          nodes:[ coord('done ✓','st-idle','transaction aborted'), db('A','aborted','st-bad','rolled back, locks released'), db('B','aborted','st-bad','rolled back') ] }
+      ]
+    },
+    crash: {
+      label: '💥 Coordinator crash — the blocking problem',
+      frames: [
+        { phase:'prepare', cls:'info',
+          narr:'2PC again. The coordinator runs <b>Phase 1 — Prepare</b> and both databases start preparing.',
+          nodes:[ coord('→ PREPARE','st-work','asking both'), db('A','preparing…','st-work','doing the write'), db('B','preparing…','st-work','doing the write') ] },
+        { phase:'vote', cls:'warn',
+          narr:'Both vote <b>YES</b> and are now <b>holding locks</b>, waiting for the verdict. This is the dangerous moment.',
+          nodes:[ coord('collecting votes','st-work','YES + YES'), db('A','prepared 🔒','st-lock','locked, waiting'), db('B','prepared 🔒','st-lock','locked, waiting') ] },
+        { phase:'decide', cls:'bad',
+          narr:'💥 <b>Disaster.</b> The coordinator crashes in the gap <b>after</b> the votes, <b>before</b> it recorded or sent any decision.',
+          nodes:[ coord('💥 CRASHED','st-bad','no verdict sent', true), db('A','prepared 🔒','st-lock','still waiting…'), db('B','prepared 🔒','st-lock','still waiting…') ] },
+        { phase:'done', cls:'bad',
+          narr:'⏳ <b>Both are stuck IN-DOUBT.</b> They can’t commit (maybe the verdict was abort) and can’t abort (maybe it was commit). They can only <b>wait</b> — holding their locks.',
+          nodes:[ coord('💥 CRASHED','st-bad','must recover + read log', true), db('A','⏳ in-doubt','st-doubt','blocked, locks held'), db('B','⏳ in-doubt','st-doubt','blocked, locks held') ] },
+        { phase:'done', cls:'bad',
+          narr:'🧊 <b>The system stalls.</b> Every other transaction needing those rows <b>queues behind the locks</b>. Nothing unfreezes until the coordinator returns (and reads its log) or a human intervenes. <b>This is 2PC’s fatal flaw.</b>',
+          nodes:[ coord('💥 CRASHED','st-bad','single point of failure', true), db('A','⏳ in-doubt','st-doubt','blocking others'), db('B','⏳ in-doubt','st-doubt','blocking others') ] }
+      ]
+    },
+    threepc: {
+      label: '🔀 3PC — the same crash, recovered without blocking',
+      frames: [
+        { phase:'prepare', cls:'info',
+          narr:'<b>3PC</b> adds a middle step so a coordinator crash no longer freezes everyone. <b>Phase 1 — CanCommit?</b> both vote YES.',
+          nodes:[ coord('→ CanCommit?','st-work','asking both'), db('A','voted YES','st-work','can commit'), db('B','voted YES','st-work','can commit') ] },
+        { phase:'vote', cls:'info',
+          narr:'<b>Phase 2 — PreCommit.</b> All votes were YES, so the coordinator sends <b>PRE-COMMIT</b>: “everyone agreed — the verdict <i>will</i> be commit, get ready.” Now every participant <b>knows</b> the outcome.',
+          nodes:[ coord('→ PRE-COMMIT','st-lock','verdict is known'), db('A','pre-committed 🔒','st-lock','knows: COMMIT'), db('B','pre-committed 🔒','st-lock','knows: COMMIT') ] },
+        { phase:'decide', cls:'bad',
+          narr:'💥 <b>Same crash.</b> The coordinator dies <b>after</b> PRE-COMMIT but <b>before</b> sending the final DoCommit.',
+          nodes:[ coord('💥 CRASHED','st-bad','before DoCommit', true), db('A','pre-committed 🔒','st-lock','timer running…'), db('B','pre-committed 🔒','st-lock','timer running…') ] },
+        { phase:'done', cls:'ok',
+          narr:'✅ <b>No blocking.</b> Because both already received PRE-COMMIT, each <b>knows</b> the verdict is commit, so on a <b>timeout</b> they safely commit on their own and release locks. The coordinator wasn’t needed.',
+          nodes:[ coord('💥 CRASHED','st-bad','irrelevant now', true), db('A','committed ✅','st-ok','self-committed on timeout'), db('B','committed ✅','st-ok','self-committed on timeout') ] },
+        { phase:'done', cls:'warn',
+          narr:'⚠️ <b>The catch.</b> 3PC assumes the network never <b>partitions</b>. If a partition split the group at PreCommit, one side could commit and the other abort — a <b>split, non-atomic outcome</b>. That’s why production rarely uses 3PC and instead makes the coordinator fault-tolerant with consensus (Raft).',
+          nodes:[ coord('—','st-idle','use Raft-backed coordinator instead'), db('A','committed ✅','st-ok','(only safe without partitions)'), db('B','committed ✅','st-ok','(only safe without partitions)') ] }
+      ]
+    }
+  };
+
+  var cur = 'happy';
+  var step = 0;
+
+  var grid = document.getElementById('acc-grid');
+  var statusEl = document.getElementById('sim-status');
+  var counterEl = document.getElementById('sim-counter');
+  var trackEl = document.getElementById('phase-track');
+
+  function renderNode(n) {
+    var cls = 'acc-card' + (n.coord ? ' is-coord' : '') + (n.crashed ? ' crashed' : '');
+    return '<div class="' + cls + '">' +
+      '<div class="acc-id">' + n.icon + ' ' + n.id + '</div>' +
+      '<div class="acc-sub">' + n.sub + '</div>' +
+      '<div class="acc-state ' + n.stcls + '">' + n.state + '</div>' +
+      '<div class="acc-note">' + (n.note || '') + '</div>' +
+    '</div>';
+  }
+
+  function render() {
+    var scn = SCENARIOS[cur];
+    var frame = scn.frames[step];
+    grid.innerHTML = frame.nodes.map(renderNode).join('');
+    statusEl.className = 'q-status ' + frame.cls;
+    statusEl.innerHTML = frame.narr;
+    counterEl.textContent = 'Step ' + (step+1) + ' of ' + scn.frames.length + '  ·  ' + scn.label;
+    Array.prototype.forEach.call(trackEl.querySelectorAll('.phase-chip'), function(chip){
+      chip.classList.toggle('on', chip.getAttribute('data-ph') === frame.phase);
+    });
+    document.getElementById('sim-next').disabled = (step >= scn.frames.length - 1);
+  }
+
+  document.getElementById('sim-next').addEventListener('click', function(){
+    if (step < SCENARIOS[cur].frames.length - 1) { step++; render(); }
+  });
+  document.getElementById('sim-reset').addEventListener('click', function(){ step = 0; render(); });
+
+  Array.prototype.forEach.call(document.querySelectorAll('#scenario-toggle button'), function(btn){
+    btn.addEventListener('click', function(){
+      cur = btn.getAttribute('data-scn'); step = 0;
+      Array.prototype.forEach.call(document.querySelectorAll('#scenario-toggle button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      render();
+    });
+  });
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+  function arrow(rs, svg, x1, y1, x2, y2, col, dashed) {
+    var opts = { stroke:col, strokeWidth:1.8, roughness:0.9 };
+    if (dashed) opts.strokeLineDash = [6,5];
+    svg.appendChild(rs.line(x1, y1, x2, y2, opts));
+    var ang = Math.atan2(y2-y1, x2-x1);
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang - 0.4), y2 - 10*Math.sin(ang - 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang + 0.4), y2 - 10*Math.sin(ang + 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+  }
+
+  // Anchor: the wedding altar — officiant (coordinator) + two partners (DBs),
+  // vows then pronouncement, and the fainted-officiant blocking scene.
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 26, '💒 Two phases: both say “I do” (vote) → officiant pronounces them married (commit)', '#e2e8f0', '13', '700');
+
+    // Officiant (coordinator)
+    svg.appendChild(rs.rectangle(320, 50, 180, 92, { stroke:'#fbbf24', strokeWidth:2.2, roughness:1.1, fill:'#fbbf2410', fillStyle:'solid' }));
+    T(410, 78, '🧭', '#fcd34d', '24', '800');
+    T(410, 104, 'OFFICIANT', '#fcd34d', '11', '800');
+    T(410, 120, '(the Coordinator)', '#94a3b8', '9', '600');
+    T(410, 135, 'holds the ledger 📜', '#cbd5e1', '8.5', '600');
+
+    // Two partners (participants)
+    function partner(x, label) {
+      svg.appendChild(rs.rectangle(x, 190, 150, 96, { stroke:'#a78bfa', strokeWidth:1.8, roughness:1, fill:'#a78bfa0a', fillStyle:'solid' }));
+      T(x+75, 216, '🗄️', '#c4b5fd', '20', '800');
+      T(x+75, 240, label, '#c4b5fd', '10.5', '800');
+      T(x+75, 256, '(a database)', '#94a3b8', '8', '600');
+      T(x+75, 274, '“I do” 🔒 = prepared', '#86efac', '8.5', '700');
+    }
+    partner(150, 'Partner A');
+    partner(520, 'Partner B');
+
+    // vows arrows (participants -> officiant), dashed = the promise
+    arrow(rs, svg, 300, 210, 334, 150, '#a78bfa', true);
+    arrow(rs, svg, 520, 210, 486, 150, '#a78bfa', true);
+    T(238, 178, '“I do”', '#c4b5fd', '9.5', '800');
+    T(585, 178, '“I do”', '#c4b5fd', '9.5', '800');
+
+    // pronouncement (officiant -> both), the commit
+    svg.appendChild(rs.rectangle(300, 300, 220, 40, { stroke:'#22c55e', strokeWidth:1.6, roughness:1, fill:'#22c55e12', fillStyle:'solid' }));
+    T(410, 318, '“I now pronounce you married.”', '#86efac', '10', '800');
+    T(410, 333, '= COMMIT (official for everyone, at once)', '#86efac', '8.5', '700');
+
+    // the dark twist — fainted officiant, frozen couple
+    svg.appendChild(rs.rectangle(40, 360, 750, 62, { stroke:'#fb7185', strokeWidth:1.6, roughness:1, fill:'#fb71850a', fillStyle:'solid' }));
+    T(410, 382, '💥 If the officiant FAINTS right after the vows — before pronouncing anything —', '#fca5a5', '10.5', '800');
+    T(410, 400, 'the couple is stuck at the altar: vowed & locked, but not married, unable to leave or proceed.', '#fca5a5', '10', '700');
+    T(410, 416, 'That frozen couple = a transaction IN-DOUBT (the blocking problem). This is why 3PC exists.', '#fcd34d', '9.5', '800');
+  }
+
+  // Protocol: 2PC sequence — coordinator + two participants, with the
+  // in-doubt window marked.
+  function drawProtocolDiagram() {
+    var svg = document.getElementById('protocol-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'Two-Phase Commit — the message flow', '#e2e8f0', '13', '700');
+
+    // lifelines
+    var cX = 150, aX = 430, bX = 680, topY = 60, botY = 380;
+    function lifeline(x, label, col) {
+      svg.appendChild(rs.rectangle(x-70, topY, 140, 34, { stroke:col, strokeWidth:1.8, roughness:1, fill:col+'12', fillStyle:'solid' }));
+      T(x, topY+22, label, col, '10.5', '800');
+      svg.appendChild(rs.line(x, topY+34, x, botY, { stroke:'#475569', strokeWidth:1.2, roughness:0.8, strokeLineDash:[4,4] }));
+    }
+    lifeline(cX, '🧭 Coordinator', '#fbbf24');
+    lifeline(aX, '🗄️ DB-A', '#a78bfa');
+    lifeline(bX, '🗄️ DB-B', '#38bdf8');
+
+    // Phase 1 label
+    T(90, 112, 'PHASE 1', '#7dd3fc', '9', '800', false, 'start');
+    T(90, 124, 'Prepare / Vote', '#94a3b8', '8', '600', false, 'start');
+    // PREPARE out
+    arrow(rs, svg, cX, 118, aX, 118, '#fbbf24');
+    arrow(rs, svg, cX, 138, bX, 138, '#fbbf24');
+    T(290, 112, 'PREPARE', '#fcd34d', '9', '800');
+    // votes back
+    arrow(rs, svg, aX, 170, cX, 170, '#22c55e');
+    arrow(rs, svg, bX, 190, cX, 190, '#22c55e');
+    T(290, 164, 'YES 🔒', '#86efac', '9', '800');
+    T(415, 206, '(both now locked & prepared = promised)', '#86efac', '8', '700');
+
+    // decision point
+    svg.appendChild(rs.rectangle(cX-66, 214, 132, 32, { stroke:'#22c55e', strokeWidth:1.6, roughness:1, fill:'#22c55e14', fillStyle:'solid' }));
+    T(cX, 234, 'log COMMIT ✍️', '#86efac', '9', '800');
+    T(cX, 262, '↑ point of no return', '#86efac', '8', '700');
+
+    // Phase 2 label
+    T(90, 300, 'PHASE 2', '#7dd3fc', '9', '800', false, 'start');
+    T(90, 312, 'Commit / Abort', '#94a3b8', '8', '600', false, 'start');
+    arrow(rs, svg, cX, 306, aX, 306, '#22c55e');
+    arrow(rs, svg, cX, 326, bX, 326, '#22c55e');
+    T(290, 300, 'COMMIT', '#86efac', '9', '800');
+    arrow(rs, svg, aX, 356, cX, 356, '#64748b');
+    arrow(rs, svg, bX, 372, cX, 372, '#64748b');
+    T(290, 350, 'ACK', '#94a3b8', '9', '800');
+
+    // in-doubt window marker (between votes-collected and verdict-delivered)
+    svg.appendChild(rs.rectangle(aX+30, 196, 300, 104, { stroke:'#fbbf24', strokeWidth:1.3, roughness:1, fill:'#fbbf2408', fillStyle:'solid', strokeLineDash:[6,5] }));
+    T(aX+180, 216, '⚠️ THE IN-DOUBT WINDOW', '#fcd34d', '9.5', '800');
+    T(aX+180, 234, 'votes are in, verdict not yet delivered.', '#fcd34d', '8.5', '700');
+    T(aX+180, 250, 'A coordinator crash HERE leaves', '#fcd34d', '8.5', '700');
+    T(aX+180, 266, 'participants frozen, holding locks,', '#fcd34d', '8.5', '700');
+    T(aX+180, 282, 'unable to decide alone → blocking.', '#fcd34d', '8.5', '700');
+  }
+
+  // 2PC vs 3PC phase comparison.
+  function drawThreePCDiagram() {
+    var svg = document.getElementById('threepc-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, '2PC vs 3PC — the extra step that makes the verdict “known”', '#e2e8f0', '13', '700');
+
+    function pill(x, y, w, label, col) {
+      svg.appendChild(rs.rectangle(x, y, w, 40, { stroke:col, strokeWidth:1.8, roughness:1, fill:col+'14', fillStyle:'solid' }));
+      T(x+w/2, y+24, label, col, '10', '800');
+    }
+
+    // 2PC row
+    T(70, 86, '2PC', '#fbbf24', '12', '800', false, 'start');
+    pill(70, 100, 150, 'Prepare / Vote', '#38bdf8');
+    arrow(rs, svg, 224, 120, 266, 120, '#64748b');
+    pill(270, 100, 150, 'Commit', '#22c55e');
+    // blocking-gap marker between vote and commit
+    svg.appendChild(rs.rectangle(228, 150, 34, 60, { stroke:'#fb7185', strokeWidth:1.4, roughness:1, fill:'#fb71850a', fillStyle:'solid', strokeLineDash:[5,4] }));
+    arrow(rs, svg, 245, 150, 245, 128, '#fb7185');
+    T(470, 118, '🚫 crash in this gap → participants don’t know the', '#fca5a5', '9', '700', false, 'start');
+    T(470, 134, 'verdict → they BLOCK (in-doubt, holding locks).', '#fca5a5', '9', '700', false, 'start');
+
+    // 3PC row
+    T(70, 250, '3PC', '#a78bfa', '12', '800', false, 'start');
+    pill(70, 264, 128, 'CanCommit / Vote', '#38bdf8');
+    arrow(rs, svg, 202, 284, 236, 284, '#64748b');
+    pill(240, 264, 128, 'PreCommit', '#a78bfa');
+    arrow(rs, svg, 372, 284, 406, 284, '#64748b');
+    pill(410, 264, 128, 'DoCommit', '#22c55e');
+    T(255, 324, '↑ after PreCommit, every participant KNOWS the verdict is commit', '#c4b5fd', '8.5', '700');
+    T(255, 340, '→ a coordinator crash is non-blocking (safe commit on timeout).', '#86efac', '8.5', '800');
+
+    // the catch
+    svg.appendChild(rs.rectangle(560, 250, 230, 96, { stroke:'#fb7185', strokeWidth:1.4, roughness:1, fill:'#fb71850a', fillStyle:'solid' }));
+    T(675, 272, '⚠️ 3PC’s hidden assumption:', '#fca5a5', '9.5', '800');
+    T(675, 290, 'NO network partitions.', '#fca5a5', '9', '700');
+    T(675, 308, 'A partition at PreCommit → one side', '#fca5a5', '8.5', '700');
+    T(675, 324, 'commits, the other aborts =', '#fca5a5', '8.5', '700');
+    T(675, 340, 'split, non-atomic outcome.', '#fcd34d', '9', '800');
+  }
+
+  function drawAll() { drawAnchorDiagram(); drawProtocolDiagram(); drawThreePCDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
