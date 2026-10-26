@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 34: The Saga Pattern | System Design Mastery</title>
+  <meta name="description" content="Yesterday (Day 33) we got true atomicity across databases with Two-Phase Commit — and paid for it in blocking, held locks, and an availability-killing coordinator that can't even enlist a third-party API like Stripe. Today we take the opposite path. A Saga breaks one distributed transaction into a SEQUENCE of local transactions — each service commits to its own database immediately — and gives every step a COMPENSATING transaction that semantically undoes it. If step 4 fails, you don't roll back; you run the compensations for steps 3, 2, 1 in reverse (cancel the car, refund the hotel, refund the flight). We build the pattern from scratch: local commits, compensations, forward vs backward recovery, and the durable saga log that lets a crashed orchestrator resume instead of freezing. We cover the two coordination styles — Orchestration (a central brain issues commands and triggers compensations) vs Choreography (services react to each other's events, no central brain) — and their tradeoffs. Then the hard truth: a saga gives you ACD, not ACID — it drops ISOLATION, so other transactions can see a half-finished saga's intermediate state (dirty reads, lost updates), and the countermeasures (semantic locks, commutative updates, and the pivot-transaction ordering that puts irreversible steps last). Taught with a travel-booking memory anchor, a live saga simulator you can step through (happy path, a failure that compensates in reverse, an orchestrator crash that recovers from its log, and pure event choreography), Excalidraw-style diagrams, a Saga-vs-2PC contrast, and how Uber/Temporal, AWS Step Functions, Netflix Conductor, and Chris Richardson's Eventuate run sagas in production. The bridge from atomic commitment to eventual consistency." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .flow-step > span { font-weight:800; color: var(--accent-light); min-width:1.4rem; }
+    /* role / concept cards — colored left bar */
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card .answers { font-size:.8rem; font-weight:700; color:var(--text-primary); margin:.35rem 0; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    .pillar-card .eg { font-size:.75rem; color:var(--text-muted); margin-top:.45rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .acc-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:.9rem; margin:1.1rem 0; }
+    @media (max-width: 760px) { .acc-grid { grid-template-columns:repeat(2, 1fr); } }
+    @media (max-width: 440px) { .acc-grid { grid-template-columns:1fr; } }
+    .acc-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1rem .8rem; text-align:center; transition:all .2s; }
+    .acc-card .acc-id { font-size:1rem; font-weight:800; color:var(--text-primary); }
+    .acc-card .acc-sub { font-size:.68rem; color:var(--text-muted); margin-top:.15rem; }
+    .acc-card .acc-state { font-size:.82rem; font-weight:800; margin-top:.65rem; padding:.35rem .45rem; border-radius:7px; line-height:1.35; }
+    .acc-card .acc-note { font-size:.69rem; color:var(--text-muted); margin-top:.45rem; min-height:2.6em; line-height:1.35; }
+    .st-idle { background:#33415533; color:#94a3b8; }
+    .st-work { background:#38bdf822; color:#7dd3fc; }
+    .st-lock { background:#a78bfa22; color:#c4b5fd; }
+    .st-ok   { background:#22c55e22; color:#86efac; }
+    .st-bad  { background:#fb718522; color:#fca5a5; }
+    .st-doubt{ background:#f59e0b22; color:#fbbf24; }
+    .acc-card.is-coord { border-color:#fbbf24; box-shadow:0 0 0 1px #fbbf2455; }
+    .acc-card.crashed { opacity:.45; border-style:dashed; }
+    .sim-controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 1rem; }
+    .q-status { text-align:center; font-weight:700; font-size:.88rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; line-height:1.6; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+    .q-status.info { background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .phase-track { display:flex; gap:.4rem; justify-content:center; margin:.25rem 0 1rem; flex-wrap:wrap; }
+    .phase-chip { font-size:.68rem; font-weight:700; padding:.25rem .6rem; border-radius:20px; border:1px solid var(--border); color:var(--text-muted); }
+    .phase-chip.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .legend { display:flex; gap:1rem; justify-content:center; flex-wrap:wrap; font-size:.72rem; color:var(--text-muted); margin:.25rem 0 .5rem; }
+    .legend span { display:inline-flex; align-items:center; gap:.3rem; }
+    .legend .sw { width:11px; height:13px; border-radius:2px; display:inline-block; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phases">Phase 2: Intermediate Systems</a><span class="breadcrumb-sep">/</span>
+      <span>Day 34</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 34 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📗 Phase 2 — Intermediate Systems</span>
+      <span class="meta-pill">🗂 Week 5 — Distributed Algorithms</span>
+    </div>
+    <h1>The Saga Pattern<br><span style="color:var(--accent)">Undo-Forward Instead of Lock-and-Block</span></h1>
+    <p class="lead">
+      Yesterday, <strong>Two-Phase Commit</strong> (Day 33) bought us real atomicity across databases — and we felt the price:
+      participants hold <strong>locks</strong> across the network, a dead coordinator <strong>blocks</strong> everyone, and you
+      simply <em>cannot</em> enlist Stripe or an email provider into your two-phase commit. For a chain of independent microservices,
+      2PC is often a non-starter. So today we take the opposite stance. A <strong>Saga</strong> breaks one distributed transaction into
+      a <strong>sequence of local transactions</strong> — each service commits to its own database <em>immediately</em>, no shared
+      lock, no global pause. The catch is obvious: once step 2 has committed and step 3 fails, there is no magic rewind. So every step
+      gets a <strong>compensating transaction</strong> that <em>semantically undoes</em> it — cancel the car, refund the hotel, refund
+      the flight — run in reverse. The trade is stark and worth saying out loud: a saga gives you <strong>ACD, not ACID</strong>. You
+      keep atomicity (eventually, via compensation) and availability, but you <strong>drop isolation</strong> — and that missing letter
+      is where all the hard, interesting bugs live. We'll build sagas from scratch, step through one in a simulator (including a failure
+      that compensates in reverse and an orchestrator crash that recovers from its log), meet the two coordination styles — orchestration
+      vs choreography — and face the isolation anomalies head-on.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#why">Why This Problem Exists</a>
+        <a href="#anatomy">How a Saga Works</a>
+        <a href="#coordination">Orchestration vs Choreography</a>
+        <a href="#isolation">The Missing Letter: Isolation</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">✈️ 🏨 🚗 ↩️</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>You're booking a trip, and it takes <strong>three separate companies</strong>: an airline, a hotel, and a car-rental
+            agency. There is no master "trip" button — no shared system that books all three in one atomic click (just like you can't
+            run a two-phase commit across three companies' databases). So you walk down a row of <strong>three booking desks</strong>,
+            one at a time. At the airline desk you book the flight; they take your money and hand you a <strong>confirmed ticket</strong>.
+            That booking is <em>done</em> — committed, real, their system already changed. You carry your ticket to the hotel desk and
+            book a room: another confirmed receipt, another committed fact. Then you reach the car desk — and they're
+            <strong>sold out</strong>.</p>
+            <p>Now the crucial part. You can't <em>un-happen</em> the flight and hotel bookings. Time doesn't rewind; their systems
+            already committed and already took your money. What you <em>can</em> do is walk <strong>back down the row in reverse</strong>
+            and run an <strong>undo for each</strong>: cancel the hotel (they refund the night), cancel the flight (they refund the
+            fare). These cancellations are not a "rollback" — they are <em>new, forward actions</em>. The bookings genuinely existed for
+            a while; the refunds <strong>semantically undo</strong> them. When you're done walking back, you're whole again — as if the
+            trip was never booked, reached not by rewinding but by a careful sequence of <strong>do, do, undo, undo.</strong></p>
+            <p>Burn in the image: <strong>a row of booking desks you move through one at a time, each handing you a committed receipt —
+            and when one desk fails, you walk back down the row tearing up the previous receipts with refunds, in reverse.</strong> That
+            is a saga: a chain of local commits, each with a compensating undo, and backward recovery when a later step fails. And notice
+            the uncomfortable bit — for a few minutes, that flight and hotel were <em>really booked</em> and visible to the world. There
+            was no isolation. Hold onto that; it's the whole second half of the lesson.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="820" height="420" viewBox="0 0 820 420"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Priya</span> owned the <strong>Checkout</strong> service at a fast-growing online store. In the
+            old days it was a cozy monolith: one database, and placing an order was a single ACID transaction — insert the order, charge
+            the card, decrement inventory, create a shipment — all four writes committed together or not at all. The <strong>A</strong>
+            and <strong>I</strong> in ACID (Day 9) were simply there, free, and she never thought about them.
+          </p>
+          <p>
+            Then the company did what growing companies do: it split the monolith into services. <strong>Orders</strong>,
+            <strong>Payments</strong>, <strong>Inventory</strong>, and <strong>Shipping</strong> each became its own service with its own
+            database. Suddenly placing an order spanned four databases, and Priya's single transaction was gone. She'd just learned 2PC
+            (Day 33), so she reached for it first — and it went badly. The payment step called <strong>Stripe</strong>, which has no
+            interest in joining anyone's two-phase commit. Worse, when Inventory got slow during a flash sale, every checkout
+            <em>blocked</em> holding locks, waiting on the prepare phase, and the whole store ground to a halt. 2PC had turned four
+            independent services into one fragile, lock-step chain whose availability was that of its <em>slowest</em> member.
+          </p>
+          <p>
+            A principal engineer sketched a <strong>Saga</strong> on the whiteboard. "Stop trying to commit everything at the same
+            instant. Let each service commit <em>locally, immediately</em> — and give each step an <strong>undo</strong>." The order flow
+            became a sequence: create the order (pending) → charge the card → reserve inventory → schedule shipping → mark the order
+            confirmed. Each step committed on its own and published an event. And each had a <strong>compensating transaction</strong>:
+            if shipping couldn't be scheduled, <em>release</em> the inventory, <em>refund</em> the charge, and <em>cancel</em> the order —
+            undoing, in reverse, everything that had already happened. No locks held across services, no global pause. When Inventory got
+            slow now, checkouts didn't freeze; they just took the next step when they could. Availability came back.
+          </p>
+          <p>
+            Then the bug reports started, and they were <em>weird</em>. A customer complained their order "appeared for a second, then
+            vanished." Another was <strong>double-charged</strong>. A third saw an item go out of stock, then back in, within the same
+            minute. Priya had hit the saga's hard truth: <strong>there is no isolation.</strong> While a saga is mid-flight, its
+            half-finished state is <em>visible</em> — a reserved-then-released seat looked to another shopper like a real stockout (a
+            "dirty read"); a retried compensation that wasn't idempotent refunded, then refunded the charge a second time. Her fixes were
+            the real curriculum of this lesson: make every step and every compensation <strong>idempotent</strong> (Day 25) so retries
+            are safe; add a <strong>semantic lock</strong> — an <code>order.status = PENDING</code> flag that tells everyone else "this
+            isn't final yet, don't trust it"; and <strong>reorder</strong> the steps so the truly irreversible one (capturing the payment,
+            emailing "your order shipped!") came <em>last</em>, after the point where the saga was guaranteed to succeed.
+          </p>
+          <p>
+            Her takeaway, written on the whiteboard and never erased: <strong>a saga trades the comfort of an instantaneous, isolated,
+            all-or-nothing transaction for the availability and loose coupling you actually need across services — but you pay in
+            eventual consistency and in bugs that only exist because, for a little while, the half-done truth was visible to everyone.</strong>
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">A <strong>Saga</strong> is a distributed transaction implemented as a <strong>sequence of local
+          transactions</strong> T₁ → T₂ → … → Tₙ, each committing to a <em>single</em> service's database immediately — no shared lock,
+          no global coordinator holding everyone hostage. Because each step commits on its own, there is nothing to "roll back" once a
+          later step fails; instead, every step Tᵢ is paired with a <strong>compensating transaction</strong> Cᵢ that
+          <em>semantically undoes</em> it (refund the charge, release the reservation, cancel the booking). If step Tₖ fails, the saga
+          performs <strong>backward recovery</strong>: run Cₖ₋₁, Cₖ₋₂, … C₁ in <em>reverse</em> order. If instead a step just has a
+          transient error, the saga can do <strong>forward recovery</strong>: retry Tₖ until it succeeds. A durable <strong>saga log</strong>
+          records what has happened so a crashed coordinator can <em>resume</em> rather than freeze. Two coordination styles:
+          <strong>orchestration</strong> (a central orchestrator issues commands and decides when to compensate) and
+          <strong>choreography</strong> (services react to one another's events, no central brain). The defining trade:
+          <strong>a saga gives you ACD, not ACID — it drops Isolation.</strong> While a saga is in flight, its intermediate state is
+          <em>visible</em> to everyone else, so you get anomalies (dirty reads, lost updates, non-repeatable reads) that you must manage
+          with <strong>semantic locks</strong> (a "pending" flag), <strong>commutative</strong> updates, and <strong>pivot-transaction
+          ordering</strong> (put irreversible steps last). Compensations must be <strong>idempotent and effectively always succeed</strong>
+          — you can't compensate a compensation. One-line test: <em>2PC prevents inconsistency by locking and blocking; a saga permits a
+          temporary inconsistency and cleans it up with compensations — it chooses availability over isolation.</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — A Booking Saga</h2>
+        <div class="sim-box">
+          <p>Here is the trip-booking saga: an <strong>orchestrator</strong> (🎬) running three local transactions —
+          <strong>Flight</strong> ✈️, <strong>Hotel</strong> 🏨, <strong>Car</strong> 🚗 — each a separate service committing to its own
+          database. Pick a scenario and press <strong>Next step</strong> to walk through it one event at a time. Watch each service's
+          <strong>state</strong>: idle → booked 🔒 (local commit done, saga not yet final) → confirmed ✅, or cancelled ↩️ when a
+          compensation undoes it. The four scenarios are the four things that actually happen: everyone succeeds, a step fails and the
+          saga <em>compensates in reverse</em>, the orchestrator <em>crashes</em> and recovers from its log (no freeze!), and pure
+          event <em>choreography</em> with no orchestrator at all.</p>
+
+          <div class="mode-toggle" id="scenario-toggle">
+            <button data-scn="happy" class="active">✅ Happy path</button>
+            <button data-scn="fail">↩️ Car fails → compensate</button>
+            <button data-scn="crash">💥 Orchestrator crash</button>
+            <button data-scn="choreo">🎭 Choreography</button>
+          </div>
+
+          <div class="phase-track" id="phase-track">
+            <span class="phase-chip" data-ph="start">Start</span>
+            <span class="phase-chip" data-ph="forward">Forward (T₁→Tₙ)</span>
+            <span class="phase-chip" data-ph="decide">Outcome</span>
+            <span class="phase-chip" data-ph="done">Result</span>
+          </div>
+
+          <div class="legend">
+            <span><i class="sw" style="background:#a78bfa;border:1px solid #a78bfa;"></i> booked 🔒 (local commit, not final)</span>
+            <span><i class="sw" style="background:#22c55e;border:1px solid #22c55e;"></i> confirmed</span>
+            <span><i class="sw" style="background:#fb7185;border:1px solid #fb7185;"></i> failed / cancelled ↩️</span>
+            <span><i class="sw" style="background:#38bdf8;border:1px solid #38bdf8;"></i> working</span>
+          </div>
+
+          <div class="acc-grid" id="acc-grid"></div>
+
+          <div class="q-status info" id="sim-status">—</div>
+
+          <div class="sim-controls">
+            <button class="btn btn-primary btn-sm" id="sim-next">Next step →</button>
+            <button class="btn btn-outline btn-sm" id="sim-reset">↺ Reset scenario</button>
+            <span style="font-size:.78rem;color:var(--text-muted);" id="sim-counter"></span>
+          </div>
+
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: run <strong>Car fails → compensate</strong> to
+          the end. Flight and Hotel each commit for real (purple 🔒) — their systems changed, money moved. Then Car is sold out. There's
+          no rewind, so the saga runs <strong>compensations in reverse</strong>: Cancel Hotel (refund), then Cancel Flight (refund). Both
+          turn red ↩️ — <em>undone forward</em>, not rolled back. Now compare <strong>Orchestrator crash</strong>: the brain dies
+          mid-saga, but unlike 2PC's coordinator crash <em>nothing is frozen holding locks</em> — Flight and Hotel are plain committed
+          rows. A replacement orchestrator reads the <strong>saga log</strong> and simply <em>resumes</em>. That recoverability, bought by
+          giving up isolation, is the whole point.</p>
+        </div>
+      </section>
+
+      <section id="why">
+        <h2>Why This Problem Exists</h2>
+        <p>We ended Day 33 with 2PC's bill: participants hold <strong>locks</strong> from the moment they vote YES until the verdict
+        arrives (across network round-trips); a crashed coordinator <strong>blocks</strong> everyone in-doubt; the whole transaction is
+        only as available as its <em>least</em> available participant; and it needs every participant to speak one transaction protocol
+        (XA) — which third-party APIs and most microservices simply don't. For money moving between two databases <em>you own</em>, that
+        price can be worth paying. For a chain of independent services calling Stripe and an email provider, it's a non-starter.</p>
+        <p>So we ask a different question. Instead of <em>"how do I make all these services commit at the same instant?"</em> (2PC's
+        question), we ask <em>"what if I let each service commit on its own, right away — and accept that I'll have to clean up by hand
+        if a later step fails?"</em> That reframing is the saga. It gives up the idea of a single atomic instant and replaces it with a
+        <strong>sequence of ordinary local commits</strong>, plus an <strong>undo plan</strong> for when the sequence can't finish.</p>
+        <p>The cost of that reframing is precise and worth naming. 2PC is a <strong>CP</strong> protocol (Day 10): it prefers to pause
+        rather than show you an inconsistent state. A saga is the <strong>AP-flavored</strong> answer: it stays available and
+        loosely-coupled by <em>permitting</em> a temporary inconsistency — a window where the flight is booked but the hotel isn't yet,
+        where an order exists but hasn't been paid — and promising to converge (either forward to success or backward to a clean
+        compensated state). This is <strong>eventual consistency</strong> (Days 10–12) made operational.</p>
+
+        <div class="code-label">The same transfer, two philosophies</div>
+        <div class="code-panel"><span class="muted"># 2PC (Day 33): everyone locks, votes, then one global commit — atomic + ISOLATED,</span>
+<span class="muted"># but blocks on a coordinator crash and holds locks across the network.</span>
+PREPARE → YES 🔒 → YES 🔒 → <span class="s">log COMMIT</span> → COMMIT everywhere   <span class="b"># all-at-once, locked</span>
+
+<span class="muted"># SAGA (today): each step commits locally & immediately; undo on failure.</span>
+T1 book flight  <span class="s">✓ committed</span>
+T2 book hotel   <span class="s">✓ committed</span>
+T3 book car     <span class="b">✗ fails</span>
+C2 cancel hotel <span class="n">↩ compensate</span>      <span class="muted"># reverse order — undo-FORWARD, not rollback</span>
+C1 cancel flight <span class="n">↩ compensate</span>     <span class="muted"># available & unlocked, but visible mid-flight</span></div>
+
+        <p style="margin-top:1rem;">The through-line from Day 33: <strong>2PC and the saga are the two ends of the same spectrum.</strong>
+        One buys isolation and atomic-instant at the cost of locking and blocking; the other buys availability and loose coupling at the
+        cost of isolation and immediate consistency. Choosing between them is one of the most common <em>real</em> system-design
+        decisions you'll make.</p>
+      </section>
+
+      <section id="anatomy">
+        <h2>How a Saga Works</h2>
+        <p>A saga has three moving parts: the <strong>forward transactions</strong>, their <strong>compensations</strong>, and a
+        <strong>durable log</strong> that tracks progress so the saga can survive a crash.</p>
+
+        <div class="diagram-box">
+          <svg id="anatomy-diagram" width="820" height="430" viewBox="0 0 820 430"></svg>
+        </div>
+
+        <h3>The pieces</h3>
+        <div class="flow-box">
+          <div class="flow-step"><span>1</span><div><strong>Local transactions T₁…Tₙ.</strong> Each step is a normal, ordinary ACID
+          transaction inside <em>one</em> service's database. It commits immediately and (usually) publishes an event or returns a
+          result. There is no cross-service lock and no "prepared but uncommitted" state — the write is simply done.</div></div>
+          <div class="flow-step"><span>2</span><div><strong>Compensating transactions C₁…Cₙ₋₁.</strong> For each step that can be undone,
+          you define a compensation that <em>semantically reverses</em> it: <code>chargeCard</code> → <code>refundCard</code>,
+          <code>reserveStock</code> → <code>releaseStock</code>, <code>createOrder</code> → <code>cancelOrder</code>. A compensation is
+          itself a local transaction — it is not a database rollback; the original already committed and may have been seen.</div></div>
+          <div class="flow-step"><span>3</span><div><strong>Backward recovery.</strong> If Tₖ fails and the saga decides to abort, it runs
+          the compensations for all <em>already-completed</em> steps, <strong>in reverse order</strong>: Cₖ₋₁, then Cₖ₋₂, … down to C₁.
+          Reverse order matters — you release the inventory before you cancel the order it belonged to, just as you cancel the hotel
+          before the flight.</div></div>
+          <div class="flow-step"><span>4</span><div><strong>Forward recovery.</strong> Not every failure means abort. If a step hits a
+          <em>transient</em> error (a timeout, a service briefly down), the saga can simply <strong>retry it</strong> until it succeeds
+          and continue forward. This is why steps and compensations must be <strong>idempotent</strong> (Day 25): the same step may run
+          more than once.</div></div>
+          <div class="flow-step"><span>5</span><div><strong>The saga log.</strong> Before and after each step, the coordinator records
+          progress durably ("T₁ done, T₂ done, T₃ started…"). If the coordinator crashes, a replacement reads the log and knows exactly
+          where to resume — continue forward, or run the remaining compensations. This is the saga's answer to 2PC's blocking: a crash
+          <em>pauses</em> the saga but never freezes other transactions, because nothing is locked.</div></div>
+        </div>
+
+        <div class="code-label">A saga as code (orchestrated order checkout)</div>
+        <div class="code-panel"><span class="k">def</span> <span class="f">place_order_saga</span>(cart):
+    log = SagaLog(cart.id)                 <span class="muted"># durable — survives a crash</span>
+    <span class="k">try</span>:
+        order = orders.<span class="f">create</span>(cart, status=<span class="s">"PENDING"</span>); log.<span class="f">done</span>(<span class="s">"order"</span>)   <span class="muted"># T1 (semantic lock: PENDING)</span>
+        pay   = payments.<span class="f">authorize</span>(cart.total);        log.<span class="f">done</span>(<span class="s">"pay"</span>)      <span class="muted"># T2</span>
+        inv   = inventory.<span class="f">reserve</span>(cart.items);         log.<span class="f">done</span>(<span class="s">"inv"</span>)      <span class="muted"># T3</span>
+        ship  = shipping.<span class="f">schedule</span>(order);              log.<span class="f">done</span>(<span class="s">"ship"</span>)     <span class="muted"># T4 (pivot)</span>
+        payments.<span class="f">capture</span>(pay)                          <span class="muted"># irreversible step, LAST</span>
+        orders.<span class="f">confirm</span>(order)                          <span class="muted"># clear the semantic lock</span>
+    <span class="k">except</span> StepFailed <span class="k">as</span> e:
+        <span class="muted"># backward recovery — compensate completed steps in REVERSE</span>
+        <span class="k">if</span> log.<span class="f">has</span>(<span class="s">"inv"</span>):  inventory.<span class="f">release</span>(cart.items)   <span class="n">↩ C3</span>
+        <span class="k">if</span> log.<span class="f">has</span>(<span class="s">"pay"</span>):  payments.<span class="f">void</span>(pay)            <span class="n">↩ C2</span>
+        <span class="k">if</span> log.<span class="f">has</span>(<span class="s">"order"</span>): orders.<span class="f">cancel</span>(order)        <span class="n">↩ C1</span></div>
+      </section>
+
+      <section id="coordination">
+        <h2>Orchestration vs Choreography</h2>
+        <p>There are two ways to decide <em>who drives</em> the saga — who calls each step and who triggers the compensations. It's the
+        same distinction we met in Event-Driven Architecture (Day 21), now applied to transactions.</p>
+
+        <div class="diagram-box">
+          <svg id="coord-diagram" width="820" height="400" viewBox="0 0 820 400"></svg>
+        </div>
+
+        <div class="pillar-grid">
+          <div class="pillar-card integ">
+            <h4>🎬 Orchestration</h4>
+            <p>A central <strong>orchestrator</strong> is the brain. It calls service 1, waits, calls service 2, and so on — and if a
+            step fails, <em>it</em> decides to run the compensations. The whole workflow lives in one place.</p>
+            <p class="answers">Good: the flow is explicit and easy to see; one place to reason about failure and compensation; great for
+            complex, many-step sagas.</p>
+            <p class="eg">Risk: the orchestrator is a new component to build, run, and make fault-tolerant (it must persist its state and
+            recover — see the saga log); a thin orchestrator can drift toward being a "god service."</p>
+          </div>
+          <div class="pillar-card conf">
+            <h4>🎭 Choreography</h4>
+            <p>No central brain. Each service <strong>listens for events</strong> and reacts: Order publishes
+            <code>OrderCreated</code> → Payment hears it, charges, publishes <code>PaymentDone</code> → Inventory hears <em>that</em> and
+            reserves. Compensations are also events (<code>OrderFailed</code> → everyone undoes).</p>
+            <p class="answers">Good: no extra component, maximum loose coupling, services stay autonomous; natural fit for a few simple
+            steps.</p>
+            <p class="eg">Risk: with many services the flow becomes invisible <strong>event-spaghetti</strong> no one can trace; cyclic
+            dependencies creep in; "what's the whole workflow?" has no single answer. Observability (Day 26) becomes essential.</p>
+          </div>
+        </div>
+        <p>Rule of thumb: <strong>choreography for a couple of steps, orchestration once the workflow gets complex.</strong> Many large
+        systems end up orchestrated precisely because, at step 7 of a saga with branches and compensations, you want <em>one</em> place
+        that knows the whole story — which is exactly what tools like Temporal, AWS Step Functions, and Netflix Conductor provide.</p>
+      </section>
+
+      <section id="isolation">
+        <h2>The Missing Letter: No Isolation</h2>
+        <p>Here is the saga's defining weakness — the one that produces its strangest bugs. A single-database ACID transaction gives you
+        four guarantees. A saga, built from independent local commits, gives you only <strong>three</strong>: <strong>A</strong>tomicity
+        (eventually, via compensation), <strong>C</strong>onsistency, and <strong>D</strong>urability. The letter it drops is
+        <strong>I — Isolation.</strong> Because each step commits immediately and visibly, <em>other</em> transactions can observe a
+        saga that is only half-finished.</p>
+
+        <div class="pillar-grid">
+          <div class="pillar-card bad" style="border-left-color:#fb7185;">
+            <h4 style="color:#fca5a5;">👀 Dirty reads</h4>
+            <p>Another transaction reads data a saga wrote but that later gets <em>compensated away</em>. A shopper sees "1 seat left"
+            because a mid-flight saga reserved it — then that saga aborts and releases it. The read was of a state that "never really
+            happened."</p>
+          </div>
+          <div class="pillar-card bad" style="border-left-color:#fb7185;">
+            <h4 style="color:#fca5a5;">🔁 Lost updates</h4>
+            <p>Two sagas touch the same record concurrently; one's write silently overwrites the other's because neither held a lock for
+            the duration. The classic account-balance race, now spread across services.</p>
+          </div>
+          <div class="pillar-card bad" style="border-left-color:#fb7185;">
+            <h4 style="color:#fca5a5;">😵 Non-repeatable reads</h4>
+            <p>A saga reads a value early, and by the time a later step reads it again, another saga has changed it — so the saga makes
+            two decisions on two different versions of the same fact.</p>
+          </div>
+        </div>
+
+        <h3>Countermeasures — getting isolation back by hand</h3>
+        <p>You can't get true isolation without locks, but you can tame the anomalies with design (this is the real craft of writing
+        sagas):</p>
+        <div class="flow-box">
+          <div class="flow-step"><span>🔒</span><div><strong>Semantic lock.</strong> Add an application-level flag — <code>status =
+          PENDING</code> — on any record a saga is still working on. Other transactions see the flag and either wait, skip it, or treat
+          it as "not final." It's a lock you enforce in <em>your</em> logic, not the database's. (Priya's order-status fix.)</div></div>
+          <div class="flow-step"><span>➕</span><div><strong>Commutative updates.</strong> Design operations so order doesn't matter — e.g.
+          <code>increment(balance, +10)</code> / <code>increment(balance, −10)</code> instead of <code>set(balance, x)</code>. Then a
+          compensation that arrives "late" still produces the right total, and concurrent updates don't clobber each other.</div></div>
+          <div class="flow-step"><span>🎯</span><div><strong>Pivot transaction + reorder.</strong> Split your steps into
+          <em>compensatable</em> (can be undone), the <strong>pivot</strong> (the go/no-go step — once it commits, the saga <em>will</em>
+          finish), and <em>retriable</em> (must eventually succeed, and come after the pivot). Put <strong>irreversible</strong> steps
+          (capture payment, send "shipped!" email, launch the rocket) <em>after</em> the pivot, so you never have to undo something you
+          can't.</div></div>
+          <div class="flow-step"><span>🔂</span><div><strong>Idempotency + re-read.</strong> Make every step and compensation idempotent
+          (Day 25) so retries are safe, and have steps <em>re-read</em> current state instead of trusting a value read earlier in the
+          saga.</div></div>
+        </div>
+        <p>That last point — <strong>the pivot transaction</strong> — is the single most useful trick a senior engineer brings to saga
+        design. "Can this step be undone?" decides where it goes. Everything undoable goes first; the one irreversible decision becomes
+        the pivot; everything after the pivot is something you commit to making succeed, retrying forever if you must. Get the ordering
+        right and most isolation pain disappears.</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>Sagas buy availability and loose coupling, but they are genuinely harder to get right than a single transaction. Know the
+        costs before you reach for one.</p>
+
+        <h3>Some things can't be compensated</h3>
+        <p>A refund undoes a charge; nothing undoes a <em>sent email</em>, a <em>launched missile</em>, or a <em>physical package on a
+        truck</em>. For these you either accept a <strong>semantic</strong> compensation (send a correction/apology email, recall the
+        shipment) or — far better — <strong>order the saga so the irreversible step is the pivot or comes after it</strong>, where you'll
+        never need to undo it. "Don't send the confirmation email until the saga is guaranteed to succeed" is this rule in one sentence.</p>
+
+        <h3>Compensations must effectively always succeed</h3>
+        <p>You can run a compensation for a forward step — but <em>what compensates the compensation?</em> Nothing. So compensations must
+        be designed to be <strong>idempotent and retriable until they succeed</strong>: a refund that fails is retried, not abandoned.
+        This is why compensations are usually simple, well-tested, and backed by a retry-forever mechanism (a dead-letter queue, a
+        durable workflow engine). A compensation that can permanently fail is a design bug.</p>
+
+        <h3>No isolation → anomalies you must design around</h3>
+        <p>As the previous section covered: dirty reads, lost updates, and non-repeatable reads are <em>possible by construction</em>.
+        Semantic locks, commutative operations, and careful ordering are not optional polish — they're part of making a saga correct.
+        The absence of isolation is the price of the absence of locking.</p>
+
+        <h3>Observability and debugging get harder</h3>
+        <p>A monolithic transaction has one stack trace. A saga's story is spread across four services, a message bus, a saga log, and
+        time. "Why is this order stuck?" requires correlation IDs and distributed tracing (Day 26) to answer. Choreographed sagas are the
+        worst here — no single place describes the whole flow — which is a major reason complex sagas migrate to orchestration.</p>
+
+        <h3>When NOT to use a saga</h3>
+        <p>If all the data lives in <strong>one database</strong>, use a <em>plain local ACID transaction</em> — don't invent a saga to
+        solve a problem you don't have. Sagas are for when a business operation genuinely spans multiple services/databases
+        <em>and</em> you need availability and loose coupling more than you need isolation. If you truly need cross-database atomicity
+        <em>with</em> isolation and can harden the coordinator, that's 2PC's job (Day 33). The art is knowing which problem you actually
+        have.</p>
+
+        <p style="margin-top:1rem;">The through-line: <strong>a saga is not a weaker transaction — it's a different deal.</strong> You
+        trade the database's automatic isolation and instant atomicity for availability, loose coupling, and the ability to include
+        services you don't control — and you pay for it with compensations, idempotency, semantic locks, and careful step ordering that
+        you now own, by hand.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">🧳</span><div><strong>Through the Chapel Door — The Travel Agency</strong>
+          — <span>You step out the back of the Wedding Chapel (Day 33, 2PC) — where a couple sat frozen in-doubt, holding their locks —
+          and into a bright, busy <strong>travel agency</strong>, still on the <strong>first floor (Phase 2)</strong>. The contrast is
+          the lesson. There are <strong>three booking desks</strong> in a row — ✈️ Flight, 🏨 Hotel, 🚗 Car — and nobody is frozen;
+          each desk stamps your receipt and hands it back <em>immediately</em>. A clerk with a clipboard (the <strong>orchestrator</strong>)
+          walks you down the row, writing each booking in a <strong>logbook</strong> as it's done. When the car desk is sold out, the
+          clerk doesn't panic or freeze the agency — she simply <strong>walks you back down the row</strong>, tearing a big red
+          <strong>REFUNDED ↩️</strong> stamp across the hotel receipt, then the flight receipt, in reverse. On the wall, a sign reads:
+          <em>"We book one at a time. If something fails, we undo — forward."</em> And under it, in smaller print, the warning:
+          <em>"While your trip is half-booked, those seats really are taken."</em> (No isolation.)</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Door Ahead</strong> — <span>Past the booking desks
+          is a door labelled <strong>Day 35: Vector Clocks &amp; Causality</strong>. Through it you hear a new question — not "did
+          everyone commit?" but "<em>which thing happened before which?</em>" With services committing independently and no global
+          clock, how do you even <em>order</em> events and tell cause from coincidence? That's where we go next.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">2PC &amp; 3PC (Day 33)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Saga Pattern (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Vector Clocks (Day 35)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">A saga leans on…</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Event-Driven Arch (Day 21)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Idempotency (Day 25)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Eventual Consistency (Days 10–12)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Observability (Day 26)</span>
+        </div>
+        <p>Today is the <em>other half</em> of yesterday: where <strong>2PC (Day 33)</strong> chose isolation and atomic-instant at the
+        cost of locking and blocking, the saga chooses availability and loose coupling at the cost of isolation — the same spectrum, the
+        opposite end. Its machinery is pure <strong>Event-Driven Architecture (Day 21)</strong>: choreographed sagas <em>are</em> pub/sub
+        chains, and even orchestrated ones publish and consume events. It depends utterly on <strong>idempotency (Day 25)</strong>,
+        because retries and duplicate messages are guaranteed, and a compensation that double-runs must be harmless. The "temporary
+        window where the truth is half-done" is <strong>eventual consistency (Days 10–12)</strong> in action, and tracing a saga across
+        services is exactly the job of <strong>observability (Day 26)</strong>. Next, <strong>Vector Clocks (Day 35)</strong> give us the
+        tool to reason about <em>ordering and causality</em> once events are flying between independently-committing services with no
+        shared clock.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"A compensation is just a rollback."</td><td>No. A rollback erases an uncommitted change as if it never happened. A
+          compensation is a <strong>new, forward transaction</strong> that <em>semantically</em> reverses a step that already committed
+          and was already visible (and may have had side effects). You refund a charge; you don't un-charge it.</td></tr>
+          <tr><td>"A saga is just a slower ACID transaction."</td><td>It's <strong>ACD, not ACID</strong> — it drops
+          <strong>Isolation</strong>. Its intermediate state is visible to others, so dirty reads, lost updates, and non-repeatable reads
+          are possible by design and must be managed with semantic locks and ordering.</td></tr>
+          <tr><td>"Choreography is always simpler, so prefer it."</td><td>Simpler for 2–3 steps. At scale it becomes
+          <strong>event-spaghetti</strong> with no single place describing the flow, cyclic dependencies, and brutal debugging. Complex
+          sagas usually want <strong>orchestration</strong>.</td></tr>
+          <tr><td>"If a compensation fails, that's fine — just abort."</td><td>There is <strong>nothing to compensate a compensation
+          with</strong>. Compensations must be <strong>idempotent and retried until they succeed</strong>. A compensation that can
+          permanently fail is a design bug, not an accepted outcome.</td></tr>
+          <tr><td>"Order of steps doesn't matter; just undo everything on failure."</td><td>Order is everything. Put
+          <strong>irreversible</strong> steps (send email, capture payment) <em>after</em> the <strong>pivot</strong>, and run
+          compensations in <strong>reverse</strong>. Bad ordering forces you to "undo" things you physically can't.</td></tr>
+          <tr><td>"Use sagas everywhere instead of transactions."</td><td>If the data is in <strong>one database</strong>, use a plain
+          local ACID transaction. Sagas exist to cross service/database boundaries where a single transaction is impossible — not to
+          replace transactions you can still have.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ An e-commerce checkout saga runs: (1) create order, (2) charge the card, (3) reserve
+          inventory, (4) schedule shipping. Step 4 fails because the shipping provider is down and won't recover. Walk through exactly
+          what the saga does, in what order, and name two things that could go wrong <em>because a saga has no isolation</em>. (click to
+          reveal)</div>
+          <div class="recall-answer"><strong>The saga performs backward recovery — compensations in reverse order.</strong> Steps 1–3
+          already committed (order created, card charged, inventory reserved), each in its own database; there's nothing to "roll back."
+          So the saga runs: <strong>C₃ release the inventory</strong> → <strong>C₂ refund (or void) the charge</strong> →
+          <strong>C₁ cancel the order</strong> — reverse of the order they ran in. Each compensation is a new local transaction and must be
+          <strong>idempotent</strong>, because the saga might retry it (e.g. if the refund call times out). The customer ends up fully
+          refunded with no order, as if nothing happened — reached by <em>undo-forward</em>, not rewind.
+          <br><br><u>Two things that can go wrong from the lack of isolation:</u> (a) a <strong>dirty read</strong> — while inventory was
+          reserved in step 3, another shopper saw the item as out of stock and gave up, even though the reservation was about to be
+          released; the stockout they saw "never really happened." (b) a <strong>double refund / non-idempotent compensation</strong> —
+          if C₂ runs twice (retry after a timeout) and isn't idempotent, the customer is refunded twice. The fixes are the lesson's
+          countermeasures: a <strong>semantic lock</strong> (<code>order.status = PENDING</code>, item shown as "reserved, not sold"),
+          <strong>idempotent compensations</strong> keyed by a transaction ID (Day 25), and putting the truly irreversible step (capturing
+          payment, emailing "shipped!") <em>after</em> the pivot so it's never compensated.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">⏱️ Uber Cadence / Temporal</div><p>Uber built <strong>Cadence</strong> (now
+          the open-source <strong>Temporal</strong>) specifically to run orchestrated sagas as durable, crash-proof
+          <strong>workflows</strong>. You write the saga as ordinary code; the engine persists every step to a durable log and
+          <em>resumes</em> after any crash — exactly the "saga log" from this lesson, productized. Compensations are just more workflow
+          steps. It's the modern default for complex orchestration.</p></div>
+          <div class="realworld-card"><div class="rw-company">🪜 AWS Step Functions</div><p>Amazon's managed
+          <strong>orchestrator</strong>: you define a state machine of steps, and Step Functions calls each, handles retries, and runs
+          <strong>catch/compensation</strong> branches on failure. It's the cloud-native way to turn "call these five services, undo on
+          failure" into a visible, debuggable diagram instead of event-spaghetti.</p></div>
+          <div class="realworld-card"><div class="rw-company">🎬 Netflix Conductor</div><p>Netflix open-sourced
+          <strong>Conductor</strong> to orchestrate the many-step workflows behind encoding, content setup, and more — a central engine
+          that sequences tasks across services and handles failure/compensation centrally, chosen precisely because choreography didn't
+          scale to their workflow complexity.</p></div>
+          <div class="realworld-card"><div class="rw-company">🧩 Eventuate &amp; Seata</div><p>Chris Richardson's
+          <strong>Eventuate Tram</strong> (which popularized the saga pattern for microservices) and Alibaba's <strong>Seata</strong>
+          provide saga frameworks with both orchestration and choreography, transactional outbox for reliable event publishing, and
+          built-in compensation handling. The transactional <em>outbox</em> — write the event in the <em>same</em> local transaction as
+          the data — is how sagas avoid the "committed but event never published" failure.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is a saga, in one sentence?</div>
+          <div class="fc-a">A: A distributed transaction implemented as a <strong>sequence of local transactions</strong>, each
+          committing to one service's database immediately, where each step has a <strong>compensating transaction</strong> that
+          semantically undoes it if a later step fails.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: How is a compensating transaction different from a rollback?</div>
+          <div class="fc-a">A: A rollback erases an <em>uncommitted</em> change as if it never happened. A compensation is a
+          <strong>new forward transaction</strong> that reverses a step which <em>already committed and was visible</em> (e.g. refund a
+          charge). The original really happened; the compensation semantically cancels it.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Which ACID property does a saga give up, and what does that cause?</div>
+          <div class="fc-a">A: <strong>Isolation</strong> (a saga is ACD, not ACID). Because each step commits visibly, other
+          transactions can see half-finished sagas → <strong>dirty reads, lost updates, non-repeatable reads</strong>. Managed with
+          semantic locks, commutative updates, and careful ordering.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Orchestration vs choreography — what's the difference and when do you use each?</div>
+          <div class="fc-a">A: <strong>Orchestration</strong> = a central brain issues commands and triggers compensations (explicit,
+          best for complex sagas). <strong>Choreography</strong> = services react to each other's events, no central brain (loose, best
+          for 2–3 simple steps; becomes event-spaghetti at scale).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is a "pivot transaction" and why does it matter?</div>
+          <div class="fc-a">A: The go/no-go step: before it, steps are <strong>compensatable</strong>; after it, the saga
+          <strong>will</strong> finish (retriable steps). Put <strong>irreversible</strong> actions (capture payment, send "shipped!"
+          email) at or after the pivot so you never have to undo something you physically can't.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Why can't you use a plain database rollback when step 4 of a 5-step distributed transaction fails? What do you do instead?</li>
+          <li>Walk through a saga that books Flight → Hotel → Car when the car step fails. In what order do the compensations run, and why that order?</li>
+          <li>A saga is ACD, not ACID. Which letter is missing, and name two concrete anomalies the missing letter allows.</li>
+          <li>Explain the difference between <em>forward recovery</em> and <em>backward recovery</em>, and when you'd use each.</li>
+          <li>Contrast orchestration and choreography. Why do complex sagas tend to end up orchestrated?</li>
+          <li>Why must compensations be idempotent and "effectively always succeed"? What compensates a failed compensation?</li>
+          <li>What is a pivot transaction, and how does ordering steps around it let you handle irreversible actions like sending an email?</li>
+          <li>Compare a saga to 2PC (Day 33): what does each buy, and what does each cost? When would you pick one over the other?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>a saga turns one distributed transaction into a sequence of local commits, each with a
+          compensating undo — on failure it runs those compensations in reverse (undo-forward, not rollback), and it recovers from a
+          durable saga log instead of blocking.</strong> It's the opposite trade from 2PC: you gain availability and loose coupling (and
+          the ability to include services you don't control), and you give up <strong>isolation</strong> — so a saga is <strong>ACD, not
+          ACID</strong>, its half-done state is visible, and the real work is managing that with idempotent compensations, semantic locks,
+          and putting irreversible steps after the pivot. Use a saga when a business operation genuinely spans services and you need
+          availability over isolation; use a plain local transaction when the data is in one database; use 2PC when you truly need
+          cross-database atomicity <em>with</em> isolation and can harden the coordinator. Next, we stop asking "did everyone commit?" and
+          start asking "which event happened before which?" — <strong>Day 35: Vector Clocks &amp; Causality.</strong>
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-33.html">← Day 33: Distributed Transactions — 2PC &amp; 3PC</a>
+        <a href="day-35.html" class="coming-soon-link">Day 35: Vector Clocks &amp; Causality →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 34 of 90 — The Saga Pattern</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── Saga simulator ───────────────────────────────────────────────────
+  // Each scenario is a list of "frames". A frame is a full snapshot of the
+  // orchestrator + three service participants plus a narration line, phase,
+  // and status class — so the stepper is just an index into precomputed states.
+  // node: { id, icon, sub, coord?, crashed?, hide?, state, stcls, note }
+  function orch(state, stcls, note, crashed) {
+    return { id:'Orchestrator', icon:'🎬', sub:'(the brain)', coord:true, crashed:!!crashed, state:state, stcls:stcls, note:note||'' };
+  }
+  function svc(id, icon, state, stcls, note) {
+    return { id:id, icon:icon, sub:'local DB', state:state, stcls:stcls, note:note||'' };
+  }
+
+  var SCENARIOS = {
+    happy: {
+      label: '✅ Happy path — every step commits, saga confirms',
+      frames: [
+        { phase:'start', cls:'info',
+          narr:'Book a trip: <b>Flight → Hotel → Car</b>. Three separate companies, three separate databases — no shared transaction is possible. A saga does each as its own <b>local commit</b>, in order.',
+          nodes:[ orch('idle','st-idle','ready to start'), svc('Flight','✈️','idle','st-idle','no booking'), svc('Hotel','🏨','idle','st-idle','no booking'), svc('Car','🚗','idle','st-idle','no booking') ] },
+        { phase:'forward', cls:'info',
+          narr:'<b>T₁ — Book Flight.</b> The orchestrator calls the airline; it books locally and <b>commits immediately</b> (money moved, no lock held).',
+          nodes:[ orch('→ book flight','st-work','step 1 of 3'), svc('Flight','✈️','booked 🔒','st-lock','local commit done'), svc('Hotel','🏨','idle','st-idle','waiting'), svc('Car','🚗','idle','st-idle','waiting') ] },
+        { phase:'forward', cls:'info',
+          narr:'<b>T₂ — Book Hotel.</b> Next desk: the hotel books a room and commits. Two independent commits now stand, each fully visible to the outside world.',
+          nodes:[ orch('→ book hotel','st-work','step 2 of 3'), svc('Flight','✈️','booked 🔒','st-lock','committed'), svc('Hotel','🏨','booked 🔒','st-lock','local commit done'), svc('Car','🚗','idle','st-idle','waiting') ] },
+        { phase:'forward', cls:'ok',
+          narr:'<b>T₃ — Book Car.</b> The rental agency has a car; it books and commits. All three local transactions succeeded.',
+          nodes:[ orch('→ book car','st-work','step 3 of 3'), svc('Flight','✈️','booked 🔒','st-lock','committed'), svc('Hotel','🏨','booked 🔒','st-lock','committed'), svc('Car','🚗','booked 🔒','st-lock','local commit done') ] },
+        { phase:'done', cls:'ok',
+          narr:'✅ <b>Saga complete.</b> The orchestrator confirms the trip. Notice: there was never a global lock and never a pause — each company committed on its own, immediately. Atomicity by <i>sequence</i>, not by simultaneous commit.',
+          nodes:[ orch('saga complete ✓','st-ok','trip booked'), svc('Flight','✈️','confirmed ✅','st-ok','final'), svc('Hotel','🏨','confirmed ✅','st-ok','final'), svc('Car','🚗','confirmed ✅','st-ok','final') ] }
+      ]
+    },
+    fail: {
+      label: '↩️ Car fails — compensate in reverse',
+      frames: [
+        { phase:'forward', cls:'info',
+          narr:'Same trip. <b>T₁ — Book Flight</b> commits. <b>T₂ — Book Hotel</b> commits. Both are real, committed facts — money has moved.',
+          nodes:[ orch('→ booking…','st-work','steps 1–2 done'), svc('Flight','✈️','booked 🔒','st-lock','committed'), svc('Hotel','🏨','booked 🔒','st-lock','committed'), svc('Car','🚗','idle','st-idle','next') ] },
+        { phase:'forward', cls:'bad',
+          narr:'<b>T₃ — Book Car FAILS.</b> The agency is sold out. There is <b>no rewind</b> — Flight and Hotel already committed and are visible. The saga must <b>undo forward</b> with compensations, in <b>reverse</b> order.',
+          nodes:[ orch('✗ step 3 failed','st-bad','must compensate'), svc('Flight','✈️','booked 🔒','st-lock','still committed'), svc('Hotel','🏨','booked 🔒','st-lock','still committed'), svc('Car','🚗','✗ sold out','st-bad','no booking made') ] },
+        { phase:'decide', cls:'warn',
+          narr:'<b>C₂ — Cancel Hotel.</b> A <i>new forward transaction</i> that refunds the night. This is <b>not a rollback</b> — the booking genuinely existed; the cancellation semantically reverses it.',
+          nodes:[ orch('↩ compensating','st-work','reverse order: C₂ first'), svc('Flight','✈️','booked 🔒','st-lock','awaiting C₁'), svc('Hotel','🏨','cancelled ↩️','st-bad','refunded (compensated)'), svc('Car','🚗','✗ sold out','st-bad','—') ] },
+        { phase:'decide', cls:'warn',
+          narr:'<b>C₁ — Cancel Flight.</b> Refund the fare. Compensations run in the <b>reverse</b> of the order the steps ran — last booked, first cancelled.',
+          nodes:[ orch('↩ compensating','st-work','now C₁'), svc('Flight','✈️','cancelled ↩️','st-bad','refunded (compensated)'), svc('Hotel','🏨','cancelled ↩️','st-bad','refunded'), svc('Car','🚗','✗ sold out','st-bad','—') ] },
+        { phase:'done', cls:'info',
+          narr:'↩️ <b>Saga aborted — cleanly.</b> Every committed step was semantically undone in reverse; the traveler is fully refunded, as if nothing happened. The catch: for a few minutes the flight &amp; hotel were <b>really booked and visible to others</b> — there was no isolation.',
+          nodes:[ orch('saga aborted ↩️','st-idle','compensated, consistent'), svc('Flight','✈️','cancelled ↩️','st-bad','whole again'), svc('Hotel','🏨','cancelled ↩️','st-bad','whole again'), svc('Car','🚗','—','st-idle','never booked') ] }
+      ]
+    },
+    crash: {
+      label: '💥 Orchestrator crash — recover from the saga log',
+      frames: [
+        { phase:'forward', cls:'info',
+          narr:'The saga’s secret weapon is a durable <b>saga log</b>. <b>T₁ Flight</b> commits and is <b>logged</b>. <b>T₂ Hotel</b> commits and is <b>logged</b>.',
+          nodes:[ orch('log: flight, hotel','st-work','persisting each step'), svc('Flight','✈️','booked 🔒','st-lock','committed + logged'), svc('Hotel','🏨','booked 🔒','st-lock','committed + logged'), svc('Car','🚗','idle','st-idle','not started') ] },
+        { phase:'decide', cls:'bad',
+          narr:'💥 <b>The orchestrator crashes</b> — right after Hotel, before Car. Unlike 2PC’s coordinator crash (Day 33), <b>nothing freezes</b>: Flight &amp; Hotel are plain committed rows, fully available to everyone. The saga is simply <b>paused</b>.',
+          nodes:[ orch('💥 CRASHED','st-bad','but holds no locks', true), svc('Flight','✈️','booked 🔒','st-lock','available, not locked'), svc('Hotel','🏨','booked 🔒','st-lock','available, not locked'), svc('Car','🚗','idle','st-idle','pending') ] },
+        { phase:'decide', cls:'info',
+          narr:'▶ <b>Recovery.</b> A replacement orchestrator reads the durable <b>saga log</b>, sees exactly where it stopped — <code>{flight ✓, hotel ✓, car pending}</code> — and <b>resumes</b>. No human, no frozen system.',
+          nodes:[ orch('▶ resumed from log','st-work','knows where it was'), svc('Flight','✈️','booked 🔒','st-lock','intact'), svc('Hotel','🏨','booked 🔒','st-lock','intact'), svc('Car','🚗','→ booking','st-work','continuing forward') ] },
+        { phase:'done', cls:'ok',
+          narr:'✅ <b>Saga completes.</b> It booked the car and confirmed the trip. The key contrast with 2PC: a crash <b>pauses</b> a saga but never <b>blocks</b> other transactions, because nothing was ever locked. That recoverability is what giving up isolation buys you.',
+          nodes:[ orch('saga complete ✓','st-ok','resumed & finished'), svc('Flight','✈️','confirmed ✅','st-ok','final'), svc('Hotel','🏨','confirmed ✅','st-ok','final'), svc('Car','🚗','confirmed ✅','st-ok','final') ] }
+      ]
+    },
+    choreo: {
+      label: '🎭 Choreography — no orchestrator, services react to events',
+      frames: [
+        { phase:'start', cls:'info',
+          narr:'<b>No central brain.</b> Each service listens for events and reacts (Day 21’s choreography). There is no orchestrator card — the services coordinate themselves.',
+          nodes:[ orch('— none —','st-idle','no orchestrator', true), svc('Flight','✈️','idle','st-idle','will start the chain'), svc('Hotel','🏨','idle','st-idle','listening'), svc('Car','🚗','idle','st-idle','listening') ] },
+        { phase:'forward', cls:'info',
+          narr:'<b>Flight</b> books, commits, and <b>publishes <code>FlightBooked</code></b>. No one told it to — it just started the chain.',
+          nodes:[ orch('— none —','st-idle','(events only)', true), svc('Flight','✈️','booked → emits','st-lock','FlightBooked ▶'), svc('Hotel','🏨','idle','st-idle','about to hear it'), svc('Car','🚗','idle','st-idle','listening') ] },
+        { phase:'forward', cls:'info',
+          narr:'<b>Hotel</b> hears <code>FlightBooked</code>, books, commits, and <b>publishes <code>HotelBooked</code></b>. Each service knows only "what event do I react to, and what do I emit?"',
+          nodes:[ orch('— none —','st-idle','(events only)', true), svc('Flight','✈️','booked 🔒','st-lock','done'), svc('Hotel','🏨','booked → emits','st-lock','HotelBooked ▶'), svc('Car','🚗','idle','st-idle','about to hear it') ] },
+        { phase:'done', cls:'ok',
+          narr:'✅ <b>Car</b> hears <code>HotelBooked</code> and books — the saga completed with <b>no orchestrator at all</b>. Great for a few steps. But with many services this becomes <b>event-spaghetti</b> no one can trace, and failure (<code>TripFailed</code> → everyone compensates) must <i>also</i> be wired as events.',
+          nodes:[ orch('— none —','st-idle','never existed', true), svc('Flight','✈️','confirmed ✅','st-ok','final'), svc('Hotel','🏨','confirmed ✅','st-ok','final'), svc('Car','🚗','confirmed ✅','st-ok','final') ] }
+      ]
+    }
+  };
+
+  var cur = 'happy';
+  var step = 0;
+
+  var grid = document.getElementById('acc-grid');
+  var statusEl = document.getElementById('sim-status');
+  var counterEl = document.getElementById('sim-counter');
+  var trackEl = document.getElementById('phase-track');
+
+  function renderNode(n) {
+    var cls = 'acc-card' + (n.coord ? ' is-coord' : '') + (n.crashed ? ' crashed' : '');
+    return '<div class="' + cls + '">' +
+      '<div class="acc-id">' + n.icon + ' ' + n.id + '</div>' +
+      '<div class="acc-sub">' + n.sub + '</div>' +
+      '<div class="acc-state ' + n.stcls + '">' + n.state + '</div>' +
+      '<div class="acc-note">' + (n.note || '') + '</div>' +
+    '</div>';
+  }
+
+  function render() {
+    var scn = SCENARIOS[cur];
+    var frame = scn.frames[step];
+    grid.innerHTML = frame.nodes.map(renderNode).join('');
+    statusEl.className = 'q-status ' + frame.cls;
+    statusEl.innerHTML = frame.narr;
+    counterEl.textContent = 'Step ' + (step+1) + ' of ' + scn.frames.length + '  ·  ' + scn.label;
+    Array.prototype.forEach.call(trackEl.querySelectorAll('.phase-chip'), function(chip){
+      chip.classList.toggle('on', chip.getAttribute('data-ph') === frame.phase);
+    });
+    document.getElementById('sim-next').disabled = (step >= scn.frames.length - 1);
+  }
+
+  document.getElementById('sim-next').addEventListener('click', function(){
+    if (step < SCENARIOS[cur].frames.length - 1) { step++; render(); }
+  });
+  document.getElementById('sim-reset').addEventListener('click', function(){ step = 0; render(); });
+
+  Array.prototype.forEach.call(document.querySelectorAll('#scenario-toggle button'), function(btn){
+    btn.addEventListener('click', function(){
+      cur = btn.getAttribute('data-scn'); step = 0;
+      Array.prototype.forEach.call(document.querySelectorAll('#scenario-toggle button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      render();
+    });
+  });
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+  function arrow(rs, svg, x1, y1, x2, y2, col, dashed) {
+    var opts = { stroke:col, strokeWidth:1.8, roughness:0.9 };
+    if (dashed) opts.strokeLineDash = [6,5];
+    svg.appendChild(rs.line(x1, y1, x2, y2, opts));
+    var ang = Math.atan2(y2-y1, x2-x1);
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang - 0.4), y2 - 10*Math.sin(ang - 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang + 0.4), y2 - 10*Math.sin(ang + 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+  }
+
+  // Anchor: the row of booking desks — forward commits (green) and the
+  // reverse compensation path (red) when the last desk fails.
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 26, '🧳 Walk the row: commit each step forward → if one fails, undo backward (compensate)', '#e2e8f0', '13', '700');
+
+    // three booking desks
+    var desks = [ {x:70,  icon:'✈️', label:'Flight desk'},
+                  {x:320, icon:'🏨', label:'Hotel desk'},
+                  {x:570, icon:'🚗', label:'Car desk'} ];
+    desks.forEach(function(d, i){
+      var failed = (i === 2);
+      var col = failed ? '#fb7185' : '#a78bfa';
+      svg.appendChild(rs.rectangle(d.x, 70, 180, 92, { stroke:col, strokeWidth:2, roughness:1.05, fill:col+'10', fillStyle:'solid' }));
+      T(d.x+90, 100, d.icon, failed ? '#fca5a5' : '#c4b5fd', '22', '800');
+      T(d.x+90, 126, 'T'+(i+1)+' · '+d.label, failed ? '#fca5a5' : '#c4b5fd', '10.5', '800');
+      T(d.x+90, 144, failed ? '✗ SOLD OUT' : 'commits locally 🔒', failed ? '#fca5a5' : '#86efac', '9', '700');
+    });
+
+    // forward arrows (green) between desks
+    arrow(rs, svg, 250, 116, 318, 116, '#22c55e');
+    arrow(rs, svg, 500, 116, 568, 116, '#22c55e');
+    T(284, 106, 'then', '#86efac', '8.5', '700');
+    T(534, 106, 'then', '#86efac', '8.5', '700');
+
+    // reverse compensation arrows (red, dashed) — Car fails → cancel Hotel → cancel Flight
+    arrow(rs, svg, 570, 210, 500, 210, '#fb7185', true);
+    arrow(rs, svg, 320, 210, 250, 210, '#fb7185', true);
+    T(630, 200, 'C₂ cancel hotel ↩', '#fca5a5', '9', '800');
+    T(380, 200, 'C₁ cancel flight ↩', '#fca5a5', '9', '800');
+    T(660, 232, '(refund — reverse order)', '#fca5a5', '8', '600');
+
+    // the key insight band
+    svg.appendChild(rs.rectangle(40, 262, 750, 54, { stroke:'#fbbf24', strokeWidth:1.6, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(410, 284, 'A compensation is NOT a rollback — the step really committed & was visible. It is a NEW forward action', '#fcd34d', '10.5', '800');
+    T(410, 302, '(a refund / cancellation) that semantically undoes it. Reached by do, do, undo, undo — never by rewinding time.', '#fcd34d', '10', '700');
+
+    // the no-isolation warning band
+    svg.appendChild(rs.rectangle(40, 330, 750, 62, { stroke:'#fb7185', strokeWidth:1.6, roughness:1, fill:'#fb71850a', fillStyle:'solid' }));
+    T(410, 352, '⚠️ While the trip is half-booked, those seats REALLY ARE taken — visible to everyone else.', '#fca5a5', '10.5', '800');
+    T(410, 370, 'Each step committed immediately, so there is no isolation: a saga is ACD, not ACID.', '#fca5a5', '10', '700');
+    T(410, 386, 'That missing “I” is the source of a saga’s strangest bugs — and the second half of this lesson.', '#fcd34d', '9.5', '800');
+  }
+
+  // Anatomy: the saga as a forward chain of local commits + a reverse
+  // chain of compensations, with the pivot marked.
+  function drawAnatomyDiagram() {
+    var svg = document.getElementById('anatomy-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'A saga: a forward chain of local commits, a reverse chain of compensations', '#e2e8f0', '13', '700');
+
+    // forward row (T1..T4)
+    var steps = [ {x:40,  t:'T₁', s:'create order', k:'comp'},
+                  {x:235, t:'T₂', s:'charge card', k:'comp'},
+                  {x:430, t:'T₃', s:'reserve stock', k:'pivot'},
+                  {x:625, t:'T₄', s:'schedule ship', k:'retry'} ];
+    T(70, 66, 'FORWARD →  each step is an ordinary local ACID commit', '#7dd3fc', '9.5', '800', false, 'start');
+    steps.forEach(function(st, i){
+      var col = st.k === 'pivot' ? '#fbbf24' : (st.k === 'retry' ? '#22c55e' : '#a78bfa');
+      svg.appendChild(rs.rectangle(st.x, 78, 150, 58, { stroke:col, strokeWidth:1.9, roughness:1, fill:col+'12', fillStyle:'solid' }));
+      T(st.x+75, 100, st.t + ' · ' + st.s, col, '10', '800');
+      var tag = st.k === 'pivot' ? '◆ PIVOT (go/no-go)' : (st.k === 'retry' ? 'retriable →' : 'compensatable');
+      T(st.x+75, 120, tag, col, '8.5', '700');
+      if (i < steps.length-1) arrow(rs, svg, st.x+150, 107, st.x+194, 107, '#64748b');
+    });
+
+    // compensation row (C1..C3) under the compensatable steps, reverse arrows
+    T(70, 196, '← BACKWARD   if a step aborts, run compensations in REVERSE', '#fca5a5', '9.5', '800', false, 'start');
+    var comps = [ {x:40,  t:'C₁', s:'cancel order'},
+                  {x:235, t:'C₂', s:'refund card'},
+                  {x:430, t:'C₃', s:'release stock'} ];
+    comps.forEach(function(c){
+      svg.appendChild(rs.rectangle(c.x, 210, 150, 50, { stroke:'#fb7185', strokeWidth:1.7, roughness:1, fill:'#fb71850a', fillStyle:'solid' }));
+      T(c.x+75, 230, c.t + ' ↩ ' + c.s, '#fca5a5', '9.5', '800');
+      T(c.x+75, 247, 'idempotent · must succeed', '#fca5a5', '7.5', '600');
+    });
+    // reverse flow arrows C3 -> C2 -> C1
+    arrow(rs, svg, 430, 235, 386, 235, '#fb7185', true);
+    arrow(rs, svg, 235, 235, 191, 235, '#fb7185', true);
+    // dashed links from each step down to its compensation
+    [115, 310, 505].forEach(function(x){
+      svg.appendChild(rs.line(x, 136, x, 210, { stroke:'#475569', strokeWidth:1.1, roughness:0.8, strokeLineDash:[4,4] }));
+    });
+
+    // pivot note
+    svg.appendChild(rs.rectangle(430, 150, 345, 36, { stroke:'#fbbf24', strokeWidth:1.3, roughness:1, fill:'#fbbf2408', fillStyle:'solid', strokeLineDash:[5,4] }));
+    T(602, 172, 'After the pivot the saga WILL finish → put irreversible steps here', '#fcd34d', '8.5', '700');
+
+    // saga log band
+    svg.appendChild(rs.rectangle(40, 300, 735, 92, { stroke:'#38bdf8', strokeWidth:1.6, roughness:1, fill:'#38bdf808', fillStyle:'solid' }));
+    T(407, 322, '📒 The durable SAGA LOG — records progress before/after every step', '#7dd3fc', '11', '800');
+    T(407, 344, 'T₁ ✓   T₂ ✓   T₃ started…   ← if the coordinator crashes, a replacement reads the log and RESUMES', '#cbd5e1', '9.5', '700', true);
+    T(407, 366, 'A crash PAUSES the saga — it never BLOCKS others, because nothing is locked (contrast 2PC, Day 33).', '#86efac', '9.5', '800');
+    T(407, 382, 'Forward recovery = retry the step · Backward recovery = compensate completed steps in reverse.', '#94a3b8', '9', '600');
+  }
+
+  // Orchestration vs Choreography comparison.
+  function drawCoordDiagram() {
+    var svg = document.getElementById('coord-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'Who drives the saga? — Orchestration vs Choreography', '#e2e8f0', '13', '700');
+
+    // ---- Orchestration (left) ----
+    T(200, 56, '🎬 ORCHESTRATION', '#c4b5fd', '11.5', '800');
+    T(200, 72, 'a central brain issues commands', '#94a3b8', '8.5', '600');
+    // orchestrator box
+    svg.appendChild(rs.rectangle(130, 88, 140, 44, { stroke:'#fbbf24', strokeWidth:2, roughness:1.05, fill:'#fbbf2410', fillStyle:'solid' }));
+    T(200, 114, '🎬 Orchestrator', '#fcd34d', '10', '800');
+    // three services
+    var oy = 230;
+    [ {x:70, l:'✈️ Flight'}, {x:165, l:'🏨 Hotel'}, {x:260, l:'🚗 Car'} ].forEach(function(s){
+      svg.appendChild(rs.rectangle(s.x, oy, 78, 40, { stroke:'#a78bfa', strokeWidth:1.6, roughness:1, fill:'#a78bfa0a', fillStyle:'solid' }));
+      T(s.x+39, oy+24, s.l, '#c4b5fd', '9', '800');
+      arrow(rs, svg, 200, 134, s.x+39, oy-2, '#fbbf24');   // command down
+    });
+    T(200, 186, 'commands ↓  (and triggers compensations)', '#fcd34d', '8', '700');
+    svg.appendChild(rs.rectangle(55, oy+54, 290, 30, { stroke:'#a78bfa', strokeWidth:1.2, roughness:1, fill:'#a78bfa08', fillStyle:'solid' }));
+    T(200, oy+73, 'flow lives in ONE place → best for complex sagas', '#c4b5fd', '8.5', '700');
+
+    // divider
+    svg.appendChild(rs.line(410, 46, 410, 360, { stroke:'#334155', strokeWidth:1.4, roughness:0.8, strokeLineDash:[5,5] }));
+
+    // ---- Choreography (right) ----
+    T(620, 56, '🎭 CHOREOGRAPHY', '#7dd3fc', '11.5', '800');
+    T(620, 72, 'no brain — services react to events', '#94a3b8', '8.5', '600');
+    var cy = 150;
+    var nodes = [ {x:470, l:'✈️ Flight'}, {x:580, l:'🏨 Hotel'}, {x:690, l:'🚗 Car'} ];
+    nodes.forEach(function(s){
+      svg.appendChild(rs.rectangle(s.x, cy, 90, 44, { stroke:'#38bdf8', strokeWidth:1.7, roughness:1, fill:'#38bdf80a', fillStyle:'solid' }));
+      T(s.x+45, cy+27, s.l, '#7dd3fc', '9.5', '800');
+    });
+    // event arrows between services
+    arrow(rs, svg, 560, cy+22, 578, cy+22, '#22c55e');
+    arrow(rs, svg, 670, cy+22, 688, cy+22, '#22c55e');
+    T(515, cy-6, 'FlightBooked ▶', '#86efac', '8', '700');
+    T(635, cy-6, 'HotelBooked ▶', '#86efac', '8', '700');
+    svg.appendChild(rs.rectangle(465, cy+70, 320, 48, { stroke:'#38bdf8', strokeWidth:1.2, roughness:1, fill:'#38bdf808', fillStyle:'solid' }));
+    T(625, cy+90, 'each service knows only "react to X, emit Y"', '#7dd3fc', '8.5', '700');
+    T(625, cy+108, 'simple for few steps · event-spaghetti at scale', '#fca5a5', '8.5', '700');
+  }
+
+  function drawAll() { drawAnchorDiagram(); drawAnatomyDiagram(); drawCoordDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
