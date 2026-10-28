@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 35: Vector Clocks &amp; Causality | System Design Mastery</title>
+  <meta name="description" content="Yesterday (Day 34) we let independent services commit on their own, with events flying between them — but that raises a quiet, deep question: when two events happen on two machines, which one happened FIRST? And worse — did one actually CAUSE the other, or did they just happen around the same time? You cannot answer with a wall clock: clocks on different machines drift, NTP skews them, and 'later timestamp wins' silently deletes real data (the resurrected shopping-cart item). Today we build the tools distributed systems actually use to reason about time: Lamport's happened-before relation (→), scalar Lamport logical clocks (a counter per process; a→b implies C(a)<C(b), but NOT the reverse — so they can order events but can't tell you two were concurrent), and finally vector clocks — one counter per process, merged element-wise on every message — which capture causality EXACTLY: V(a)<V(b) if and only if a happened-before b, and 'incomparable' means genuinely concurrent. That ability to DETECT concurrency is why Amazon Dynamo and Riak use vector clocks to catch conflicting writes and keep them as siblings instead of silently dropping one. Taught with a three-friends-passing-notes memory anchor, a live vector-clock simulator you can step through (a causal chain, a concurrent conflict, and the case where a single Lamport number lies to you), Excalidraw-style space-time diagrams, the scalar-vs-vector tradeoff, and how real stores use version vectors in production. The tool for ordering a world with no global clock." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .flow-step > span { font-weight:800; color: var(--accent-light); min-width:1.4rem; }
+    /* role / concept cards — colored left bar */
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card .answers { font-size:.8rem; font-weight:700; color:var(--text-primary); margin:.35rem 0; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    .pillar-card .eg { font-size:.75rem; color:var(--text-muted); margin-top:.45rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .acc-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:.9rem; margin:1.1rem 0; }
+    @media (max-width: 560px) { .acc-grid { grid-template-columns:1fr; } }
+    .acc-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:1rem .8rem; text-align:center; transition:all .2s; }
+    .acc-card .acc-id { font-size:1rem; font-weight:800; color:var(--text-primary); }
+    .acc-card .acc-sub { font-size:.68rem; color:var(--text-muted); margin-top:.15rem; }
+    .acc-card .acc-state { font-size:1.05rem; font-weight:800; margin-top:.65rem; padding:.4rem .45rem; border-radius:7px; line-height:1.35; font-family:'JetBrains Mono',monospace; letter-spacing:1px; }
+    .acc-card .acc-scalar { font-size:.68rem; font-weight:700; margin-top:.4rem; color:var(--text-muted); }
+    .acc-card .acc-scalar b { color:#fbbf24; font-family:'JetBrains Mono',monospace; }
+    .acc-card .acc-note { font-size:.69rem; color:var(--text-muted); margin-top:.45rem; min-height:2.6em; line-height:1.35; }
+    .st-idle { background:#33415533; color:#94a3b8; }
+    .st-work { background:#38bdf822; color:#7dd3fc; }
+    .st-lock { background:#a78bfa22; color:#c4b5fd; }
+    .st-ok   { background:#22c55e22; color:#86efac; }
+    .st-bad  { background:#fb718522; color:#fca5a5; }
+    .st-doubt{ background:#f59e0b22; color:#fbbf24; }
+    .sim-controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 1rem; }
+    .q-status { text-align:center; font-weight:700; font-size:.88rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.25rem 0 1rem; line-height:1.6; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+    .q-status.info { background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .phase-track { display:flex; gap:.4rem; justify-content:center; margin:.25rem 0 1rem; flex-wrap:wrap; }
+    .phase-chip { font-size:.68rem; font-weight:700; padding:.25rem .6rem; border-radius:20px; border:1px solid var(--border); color:var(--text-muted); }
+    .phase-chip.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .legend { display:flex; gap:1rem; justify-content:center; flex-wrap:wrap; font-size:.72rem; color:var(--text-muted); margin:.25rem 0 .5rem; }
+    .legend span { display:inline-flex; align-items:center; gap:.3rem; }
+    .legend .sw { width:11px; height:13px; border-radius:2px; display:inline-block; }
+    .rule-box { background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius); padding:.9rem 1.1rem; margin:1rem 0; font-size:.84rem; }
+    .rule-box code { font-family:'JetBrains Mono',monospace; color:#7dd3fc; }
+    .rule-box .cc { color:#fca5a5; font-weight:700; } .rule-box .hb { color:#86efac; font-weight:700; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phases">Phase 2: Intermediate Systems</a><span class="breadcrumb-sep">/</span>
+      <span>Day 35</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 35 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📗 Phase 2 — Intermediate Systems</span>
+      <span class="meta-pill">🗂 Week 5 — Distributed Algorithms</span>
+    </div>
+    <h1>Vector Clocks &amp; Causality<br><span style="color:var(--accent)">Ordering a World With No Clock</span></h1>
+    <p class="lead">
+      Yesterday's <strong>Saga</strong> (Day 34) let four services commit on their own and gossip via events — which quietly
+      raised a bottomless question: when two things happen on two different machines, <strong>which happened first?</strong> And the
+      sharper one: did one <em>cause</em> the other, or did they just happen around the same time? You cannot answer with a wall clock
+      — clocks on different machines <strong>drift</strong>, NTP nudges them backwards, and "latest timestamp wins" will cheerfully
+      <em>delete real data</em> (the shopping-cart item that comes back from the dead). So distributed systems don't trust wall time
+      for ordering. They use <strong>logical clocks</strong>. We'll build the idea from the ground up: Lamport's
+      <strong>happened-before</strong> relation (<code>→</code>), then <strong>scalar Lamport clocks</strong> (a single counter per
+      process — enough to put events in a consistent order, but <em>unable to tell you two were concurrent</em>), and finally
+      <strong>vector clocks</strong>: one counter per process, merged element-wise on every message, which capture causality
+      <em>exactly</em> — <code>V(a) &lt; V(b)</code> <strong>if and only if</strong> <code>a → b</code>, and "incomparable" means
+      genuinely <strong>concurrent</strong>. That one superpower — <em>detecting</em> concurrency — is why Amazon Dynamo and Riak use
+      vector clocks to catch conflicting writes and keep them as <strong>siblings</strong> instead of silently losing one. We'll step
+      through a live simulator, draw the classic space-time diagram, and feel exactly where a single number lies to you.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#why">Why This Problem Exists</a>
+        <a href="#happened">Happened-Before</a>
+        <a href="#lamport">Lamport Clocks</a>
+        <a href="#vector">Vector Clocks</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">📝 📨 📝 ⚖️</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Three friends — <strong>Aisha, Ben, and Chloe</strong> — are planning a surprise party, but they're forbidden from
+            using phones, clocks, or a group chat. They can only pass <strong>handwritten notes</strong>. There is <em>no clock on the
+            wall anyone trusts</em>, so "what time did you decide that?" is a useless question. Instead, each friend carries a little
+            <strong>tally sheet</strong> with one row per person: <em>"how many updates have I heard from Aisha / from Ben / from
+            Chloe?"</em> Every time Aisha does something herself, she adds a tick to <em>her own</em> row. When she passes a note to
+            Ben, she <strong>copies her entire tally sheet onto the note</strong>. When Ben reads it, he updates his sheet to the
+            <strong>bigger number in each row</strong> (he now knows at least as much as Aisha did), then adds a tick to <em>his
+            own</em> row for the act of reading.</p>
+            <p>Here is the whole trick. To find out whether one moment "knew about" another, you don't compare timestamps — you
+            <strong>compare the two tally sheets, row by row</strong>. If every number on Aisha's old sheet is <em>less-than-or-equal</em>
+            to Ben's sheet (and Ben's is bigger somewhere), then Aisha's moment <strong>happened-before</strong> Ben's — her knowledge
+            is a <em>subset</em> of his, so she's clearly "earlier" in the story. But if each sheet has a tick the other is
+            <em>missing</em> — Aisha heard something Ben didn't, and Ben heard something Aisha didn't — then neither came first. Their
+            notes <strong>crossed in the mail.</strong> They are <strong>concurrent</strong>: two things that happened without either
+            knowing about the other, no matter what a wall clock would have said.</p>
+            <p>Burn in the image: <strong>three friends, each with a tally sheet counting how much of everyone's story they've heard;
+            every note carries a copy of the sheet; you merge by taking the bigger number in each row and ticking yourself; and you
+            compare two moments by asking "is one sheet entirely ≤ the other, or does each know a secret the other doesn't?"</strong>
+            That is a vector clock. The "one sheet is a subset of the other" case is <em>causality</em> (one truly came before the
+            other); the "notes crossed" case is <em>concurrency</em> (a genuine conflict). Everything today is learning to read those
+            tally sheets.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="820" height="450" viewBox="0 0 820 450"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Maya</span> built the <strong>shopping cart</strong> for a huge online store. To stay
+            available during outages (Day 10's CAP, Day 34's sagas), the cart was <strong>replicated</strong> across data centers, and
+            — crucially — a customer could write to <em>any</em> replica. Add socks on your phone (which hits the US-East replica),
+            delete a book on your laptop (which hits US-West), and the two replicas sync up later. Simple, until it wasn't.
+          </p>
+          <p>
+            Her first instinct was the obvious one: <strong>timestamp every write with the wall clock, and on conflict, latest wins</strong>
+            (LWW). It worked in testing and fell apart in production. A customer added a $200 pair of headphones from their phone at
+            what their phone <em>thought</em> was 14:03:06. A half-second later they removed an old item from their laptop — whose clock,
+            thanks to <strong>NTP drift</strong>, read 14:03:05. When the replicas merged, the <em>remove</em> had the "later"
+            timestamp and won; the headphones <strong>silently vanished</strong> from the cart. Worse was the mirror case: a
+            <em>deleted</em> item whose delete had an "earlier" wall-clock time than an unrelated add — the delete lost, and the item
+            <strong>rose from the dead.</strong> Maya learned the first hard law of distributed time: <strong>wall clocks on different
+            machines are not comparable, and "latest timestamp wins" doesn't order events — it <em>destroys</em> them.</strong>
+          </p>
+          <p>
+            A senior engineer pointed her at <strong>Lamport clocks</strong>: forget wall time, give each replica a simple
+            <strong>counter</strong> that ticks on every event and travels along with every message, and set it to
+            <code>max(mine, yours) + 1</code> whenever you receive. Now there were no more impossible orderings — the counters
+            respected cause and effect: if write A's message influenced write B, then A's number was smaller. Maya shipped it and the
+            resurrected-item bugs stopped… but a subtler one remained. Two customers' devices made genuinely independent edits that had
+            <em>never communicated</em> — and the Lamport counters still handed back "7 is less than 8," so her code picked a winner and
+            dropped the other edit. The scalar clock had <strong>ordered two things that were never meant to be ordered.</strong> It
+            could sequence events but <em>could not tell her when two were concurrent</em> — so it was still, quietly, losing data in
+            exactly the case that mattered.
+          </p>
+          <p>
+            The fix was <strong>vector clocks</strong>. Instead of one counter, each replica carried a <em>vector</em> — one counter per
+            replica — merged element-wise on every sync. Suddenly Maya could ask the question she'd needed all along: not "which number
+            is bigger?" but "<strong>does one write's vector fully contain the other's, or does each know something the other
+            doesn't?</strong>" When one contained the other, it was a real update — apply it. When neither contained the other, the two
+            writes were <strong>concurrent</strong> — a true conflict — and instead of silently choosing, her system kept
+            <strong>both as siblings</strong> and handed them to the app to merge (union the carts: keep the headphones <em>and</em>
+            honor the delete). No data lost, ever.
+          </p>
+          <p>
+            Her takeaway, taped to the monitor: <strong>a wall clock tells you what time a machine thinks it is; a logical clock tells
+            you what a machine could possibly have known. For ordering events across machines, only the second one is true — and only a
+            vector clock can tell the difference between "A caused B" and "A and B just happened to collide."</strong>
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">There is <strong>no global clock</strong> in a distributed system, so you order events by
+          <strong>causality</strong>, not wall time. Lamport's <strong>happened-before</strong> relation <code>a → b</code> holds if
+          a and b are on the same process with a first, or a is a message <em>send</em> and b its <em>receive</em>, or by transitivity
+          — and if <em>neither</em> <code>a → b</code> nor <code>b → a</code>, the two events are <strong>concurrent</strong>
+          (<code>a ∥ b</code>). A <strong>scalar Lamport clock</strong> is one counter per process: tick on every event, send it with
+          every message, and on receive set <code>C = max(local, received) + 1</code>. Its guarantee is one-directional:
+          <code>a → b ⟹ C(a) &lt; C(b)</code>, but <strong>NOT the reverse</strong> — <code>C(a) &lt; C(b)</code> does <em>not</em>
+          mean a caused b. So scalar clocks give a consistent <em>total order</em> but <strong>cannot detect concurrency</strong>, and
+          "latest wins" on them silently drops conflicting writes. A <strong>vector clock</strong> is one counter per process
+          <code>V[1..n]</code>: tick your <em>own</em> entry on every event, send the whole vector, and on receive take the
+          <strong>element-wise max</strong> then tick your own entry. Now the guarantee is <strong>exact and two-directional</strong>:
+          <code>V(a) &lt; V(b) ⟺ a → b</code> (≤ in every entry, &lt; in at least one), and if the two vectors are
+          <strong>incomparable</strong> (each is bigger somewhere) the events are <strong>concurrent</strong> — a conflict you can now
+          <em>see</em> and handle (keep both as <strong>siblings</strong>, merge them). The price: a vector is <code>O(n)</code> entries
+          and grows with the number of nodes. One-line test: <em>a scalar clock can put events in order but can't tell you two were
+          concurrent; a vector clock tells you exactly when one event caused another and when they merely collided.</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Three Friends, No Clock</h2>
+        <div class="sim-box">
+          <p>Here are our three friends as three processes — <strong>Aisha</strong>, <strong>Ben</strong>, <strong>Chloe</strong> —
+          each holding a <strong>vector clock</strong> written <code>[A, B, C]</code> (Aisha's count, Ben's count, Chloe's count). Pick
+          a scenario and press <strong>Next step</strong> to walk through it one event at a time. The three events that can happen:
+          a <strong>local event</strong> (tick your own entry), a <strong>send</strong> (tick, then attach your whole vector to the
+          note), and a <strong>receive</strong> (take the bigger number in each row, then tick your own). Watch when two events turn out
+          <strong>causally ordered</strong> (one vector ≤ the other) versus <strong>concurrent</strong> (each knows something the other
+          doesn't). The third scenario shows the moment a <em>single Lamport number</em> lies to you.</p>
+
+          <div class="mode-toggle" id="scenario-toggle">
+            <button data-scn="chain" class="active">🔗 Causal chain</button>
+            <button data-scn="concurrent">⚡ Concurrent writes</button>
+            <button data-scn="lamport">🔢 When a number lies</button>
+          </div>
+
+          <div class="phase-track" id="phase-track">
+            <span class="phase-chip" data-ph="start">Start</span>
+            <span class="phase-chip" data-ph="events">Local &amp; message events</span>
+            <span class="phase-chip" data-ph="compare">Compare</span>
+            <span class="phase-chip" data-ph="done">Verdict</span>
+          </div>
+
+          <div class="legend">
+            <span><i class="sw" style="background:#38bdf8;border:1px solid #38bdf8;"></i> just updated</span>
+            <span><i class="sw" style="background:#a78bfa;border:1px solid #a78bfa;"></i> holds / sent a note 📨</span>
+            <span><i class="sw" style="background:#22c55e;border:1px solid #22c55e;"></i> on the causal path / merged</span>
+            <span><i class="sw" style="background:#fb7185;border:1px solid #fb7185;"></i> concurrent ∥ (conflict)</span>
+          </div>
+
+          <div class="acc-grid" id="acc-grid"></div>
+
+          <div class="q-status info" id="sim-status">—</div>
+
+          <div class="sim-controls">
+            <button class="btn btn-primary btn-sm" id="sim-next">Next step →</button>
+            <button class="btn btn-outline btn-sm" id="sim-reset">↺ Reset scenario</button>
+            <span style="font-size:.78rem;color:var(--text-muted);" id="sim-counter"></span>
+          </div>
+
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:.75rem;">Try this: run <strong>Concurrent writes</strong> to the
+          end. Aisha sets the cake to chocolate (<code>[1,0,0]</code>) while Ben — who has <em>not</em> heard from her — sets the venue
+          to the park (<code>[0,1,0]</code>). Compare: Aisha's first entry is bigger, Ben's second entry is bigger, so <em>neither
+          vector ≤ the other</em> → <strong>concurrent</strong>. Their notes crossed in the mail. A wall clock would have forced a
+          "winner" and deleted one decision; the vector clock <em>detects</em> that both are real and keeps them as
+          <strong>siblings</strong> to merge. Now run <strong>When a number lies</strong>: a scalar Lamport clock reports
+          <code>1 &lt; 2</code> and tempts you to believe one caused the other — but the vectors prove they're concurrent. That gap is
+          the entire reason vector clocks exist.</p>
+        </div>
+      </section>
+
+      <section id="why">
+        <h2>Why This Problem Exists</h2>
+        <p>Every lesson in Phase 2 has quietly assumed we can talk about <em>when</em> things happen — a saga's steps run "in order," a
+        replica applies writes "in the right sequence." But stop and ask: <strong>whose clock?</strong> On one machine, time is easy —
+        the CPU executes instructions one after another, and "before" is obvious. The instant you have <em>two</em> machines, there is
+        no shared "now." Each has its own quartz crystal ticking at a slightly different rate (<strong>clock drift</strong>), and the
+        background sync service (NTP) periodically yanks each one forward <em>or backward</em> to correct it. Two servers can disagree
+        by tens of milliseconds routinely — and milliseconds are an eternity when thousands of events happen per second.</p>
+        <p>So the naive fix — <strong>stamp every event with the local wall clock and sort by timestamp</strong> — is broken at the
+        root. It produces orderings that violate cause and effect (an effect timestamped <em>before</em> its cause), and when you use
+        it to resolve conflicts with <strong>last-write-wins</strong>, it doesn't merge data — it <em>deletes</em> it, picking a
+        "winner" based on whose crystal happened to be running fast.</p>
+
+        <div class="code-label">Why "latest timestamp wins" loses data</div>
+        <div class="code-panel"><span class="muted"># Replica US-EAST (phone)         Replica US-WEST (laptop)</span>
+<span class="muted"># clock drifted +600ms            clock is accurate</span>
+
+14:03:06.0  <span class="f">ADD</span> headphones   <span class="muted"># really happened FIRST, but stamped LATE-looking? no…</span>
+                                 14:03:05.4  <span class="f">REMOVE</span> old_book  <span class="muted"># really happened SECOND</span>
+
+<span class="muted"># merge, "latest wins":  14:03:06.0 (ADD) &gt; 14:03:05.4 (REMOVE)</span>
+<span class="muted"># …but swap the drift and the REMOVE wins instead — the outcome depends on</span>
+<span class="muted"># whose crystal ran fast, NOT on what the user actually did.</span>
+result = <span class="b">whichever timestamp is bigger</span>   <span class="b"># ⇒ silently drops a real write</span></div>
+
+        <p style="margin-top:1rem;">The way out is to stop pretending we know the <em>absolute</em> time and instead track only what we
+        can actually know for certain: <strong>causality</strong> — "this event could have been influenced by that one, because
+        information flowed from one to the other." Information only flows through <strong>messages</strong>. If no message (direct or
+        relayed) connects two events, then <em>by definition</em> neither could have affected the other, and asking which came "first"
+        is meaningless — they are <strong>concurrent</strong>. Logical clocks are machines for tracking exactly this flow of knowledge,
+        and nothing more. That modest goal is also why they <em>work</em> where wall clocks fail.</p>
+      </section>
+
+      <section id="happened">
+        <h2>The Happened-Before Relation (→)</h2>
+        <p>In 1978 Leslie Lamport defined the only notion of "time" a distributed system can trust, written <code>a → b</code>
+        ("a happened-before b"). It has just three rules:</p>
+
+        <div class="flow-box">
+          <div class="flow-step"><span>1</span><div><strong>Same process, in order.</strong> If a and b happen on the
+          <em>same</em> process and a comes before b in that process's own sequence, then <code>a → b</code>. (One machine's own
+          order is never in doubt.)</div></div>
+          <div class="flow-step"><span>2</span><div><strong>Send before receive.</strong> If a is the <em>sending</em> of a message
+          and b is the <em>receiving</em> of that same message, then <code>a → b</code>. (A message cannot be received before it is
+          sent — information flows one way.)</div></div>
+          <div class="flow-step"><span>3</span><div><strong>Transitivity.</strong> If <code>a → b</code> and <code>b → c</code>, then
+          <code>a → c</code>. (Knowledge chains along: if a could influence b and b could influence c, then a could influence c.)</div></div>
+        </div>
+
+        <p>And the definition that makes it all interesting: if <strong>neither</strong> <code>a → b</code> <strong>nor</strong>
+        <code>b → a</code>, then a and b are <strong>concurrent</strong>, written <code>a ∥ b</code>. Concurrent does <em>not</em> mean
+        "at the same wall-clock instant" — it means <strong>causally independent</strong>: no chain of messages connects them, so
+        neither could possibly have known about the other. This is why <code>→</code> is a <strong>partial order</strong>, not a total
+        one: some pairs of events are simply unordered, and pretending otherwise (as a wall clock does) is the mistake.</p>
+
+        <div class="diagram-box">
+          <svg id="spacetime-diagram" width="820" height="420" viewBox="0 0 820 420"></svg>
+        </div>
+
+        <p>This space-time diagram is <em>the</em> canonical picture of a distributed system: each process is a horizontal line, events
+        are dots, and messages are diagonal arrows. You can trace causality by <strong>following the lines and arrows</strong>: if you
+        can get from one event to another by moving right along a process line or forward along a message arrow, the first
+        happened-before the second. If you can't reach one from the other in either direction, they're concurrent. The vector clock,
+        next, is simply a way to compute this reachability <em>locally</em>, by reading two numbers, without ever drawing the diagram.</p>
+      </section>
+
+      <section id="lamport">
+        <h2>Lamport Clocks — One Number, and Its Fatal Gap</h2>
+        <p>A <strong>scalar Lamport clock</strong> turns happened-before into arithmetic with a single integer counter per process. The
+        rules are beautifully small:</p>
+
+        <div class="code-label">Lamport clock — the whole algorithm</div>
+        <div class="code-panel"><span class="muted"># each process keeps one integer:  C = 0</span>
+
+<span class="k">on</span> local_event:        C = C + 1
+<span class="k">on</span> send(msg):          C = C + 1;  msg.ts = C          <span class="muted"># attach counter to the message</span>
+<span class="k">on</span> receive(msg):       C = <span class="f">max</span>(C, msg.ts) + 1       <span class="muted"># catch up, then tick</span></div>
+
+        <p style="margin-top:1rem;">That <code>max(C, msg.ts) + 1</code> is the key move: when you hear from someone ahead of you, you
+        jump to their count before continuing, so your counter can never fall behind an event that influenced you. The result is a
+        genuine guarantee:</p>
+
+        <div class="rule-box">
+          <span class="hb">✔ If a → b, then C(a) &lt; C(b).</span> &nbsp; Cause always has a smaller number than effect — so sorting by
+          the counter never puts an effect before its cause.<br>
+          <span class="cc">✘ But C(a) &lt; C(b) does NOT imply a → b.</span> &nbsp; A smaller number can happen for two
+          <em>unrelated</em> events that never communicated. The implication runs one way only.
+        </div>
+
+        <p>That one-way gap is the whole problem. A Lamport clock gives you a <strong>total order</strong> (break ties with the process
+        ID and every event gets a distinct, globally-consistent rank) — which is genuinely useful when you just need <em>some</em>
+        agreed sequence, like ordering requests at a lock server. But it <strong>cannot tell you whether two events were concurrent.</strong>
+        If you see <code>C(a) = 3</code> and <code>C(b) = 5</code>, you know b's number is bigger — but you have <em>no idea</em> whether
+        b actually descended from a, or whether they happened on two machines that never exchanged a single message. The counter
+        <em>flattened</em> that distinction away.</p>
+
+        <p>For conflict resolution, that gap is fatal. If you use "bigger Lamport number wins" to merge two writes, you will happily
+        pick a winner between two <strong>concurrent</strong> writes that were never meant to be ordered — and <em>silently drop the
+        loser.</em> You've turned a visible conflict (which you could have merged) into invisible data loss. To <em>detect</em> the
+        conflict, you need to preserve the one thing the scalar threw away: <strong>which process contributed what.</strong></p>
+      </section>
+
+      <section id="vector">
+        <h2>Vector Clocks — Capturing Causality Exactly</h2>
+        <p>A <strong>vector clock</strong> keeps the information a scalar discards. Instead of one counter, each process holds a
+        <strong>vector</strong> of counters — one slot per process — and that vector is a complete record of "how many events I know
+        about from each participant." The update rules are the scalar rules, applied per-slot:</p>
+
+        <div class="code-label">Vector clock — the whole algorithm</div>
+        <div class="code-panel"><span class="muted"># process i keeps a vector V with one entry per process, all 0 to start</span>
+
+<span class="k">on</span> local_event:     V[i] = V[i] + 1                     <span class="muted"># tick MY OWN slot</span>
+<span class="k">on</span> send(msg):       V[i] = V[i] + 1;  msg.v = <span class="f">copy</span>(V)    <span class="muted"># tick, attach the whole vector</span>
+<span class="k">on</span> receive(msg):    <span class="k">for</span> each j:  V[j] = <span class="f">max</span>(V[j], msg.v[j])  <span class="muted"># element-wise max</span>
+                     V[i] = V[i] + 1                     <span class="muted"># then tick my own slot</span>
+
+<span class="muted"># comparing two vector timestamps u and v:</span>
+u <span class="f">≤</span> v        <span class="k">iff</span>  u[j] ≤ v[j] <span class="k">for every</span> j
+u <span class="f">&lt;</span> v (a→b) <span class="k">iff</span>  u ≤ v <span class="k">and</span> u ≠ v           <span class="s"># a happened-before b</span>
+u <span class="b">∥</span> v (conc.) <span class="k">iff</span>  <span class="k">not</span>(u ≤ v) <span class="k">and not</span>(v ≤ u)  <span class="b"># concurrent — a real conflict</span></div>
+
+        <p style="margin-top:1rem;">Now the guarantee is <strong>exact and runs both ways</strong>, which is the entire payoff:</p>
+
+        <div class="rule-box">
+          <span class="hb">✔ a → b &nbsp;⟺&nbsp; V(a) &lt; V(b)</span> &nbsp; (≤ in every slot, and strictly &lt; in at least one). Both
+          directions hold, so you can <em>read causality straight off the two vectors</em>.<br>
+          <span class="cc">✔ a ∥ b &nbsp;⟺&nbsp; the vectors are incomparable</span> &nbsp; — each is bigger in some slot. That is
+          exactly the "notes crossed in the mail" case, and now it's <strong>detectable</strong>.
+        </div>
+
+        <div class="diagram-box">
+          <svg id="compare-diagram" width="820" height="400" viewBox="0 0 820 400"></svg>
+        </div>
+
+        <p>Why does it work when the scalar didn't? Because the vector never loses track of <em>who did what</em>. If <code>V(a) =
+        [1,0,0]</code> (one event from Aisha, nothing from Ben or Chloe) and <code>V(b) = [0,1,0]</code> (one from Ben, nothing from
+        anyone else), you can see at a glance that a knows something b doesn't (Aisha's event) <em>and</em> b knows something a doesn't
+        (Ben's event). Neither is a subset of the other → concurrent. A scalar would have collapsed both to "1" and told you nothing. The
+        vector's extra slots are precisely the memory that makes concurrency visible.</p>
+
+        <h3>What you do once you can see a conflict</h3>
+        <p>Detecting concurrency is only useful because of what it unlocks: <strong>safe conflict handling.</strong> When a replica
+        receives a write whose vector is <em>strictly greater</em> than what it has, that write is a legitimate newer version — apply
+        it. When the incoming vector is <em>incomparable</em> to the stored one, the two are concurrent: don't pick a winner — keep
+        <strong>both versions as siblings</strong> and let the application (or a <strong>CRDT</strong>, a later lesson) merge them
+        meaningfully (union two shopping carts, concatenate two edits, take the max of two counters). This is exactly how Amazon Dynamo
+        and Riak avoid the resurrected-item bug: the vector clock turns "mystery data loss" into "a conflict the app gets to resolve
+        correctly."</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>Vector clocks are the <em>right</em> tool for causality — but they are not free, and they don't solve every problem. Know
+        the costs before you reach for them.</p>
+
+        <h3>They grow with the number of nodes — O(n)</h3>
+        <p>A vector has one entry per process that has ever participated, so in a system with thousands of clients writing to a store,
+        a naive vector clock becomes a thousand-entry vector attached to every value. Real systems fight this hard: they keep vectors
+        <strong>per-replica, not per-client</strong> (Dynamo clocks the handful of storage nodes, not the millions of users), they
+        <strong>prune</strong> old entries with timestamps, and they use refinements like <strong>dotted version vectors</strong> that
+        stay compact even with many concurrent clients. "Which identities get a slot?" is the central design decision.</p>
+
+        <h3>They tell you THAT there's a conflict, not HOW to resolve it</h3>
+        <p>A vector clock will faithfully report "these two writes are concurrent" — and then go quiet. <em>Resolving</em> the conflict
+        is the application's job: union the carts, pick by business rule, prompt the user, or use a data type that merges automatically.
+        Vector clocks are the <strong>detector</strong>, not the <strong>resolver</strong>. Treating "I detected a conflict" as "I
+        handled a conflict" is a classic mistake.</p>
+
+        <h3>They don't give you a single global order</h3>
+        <p>Causality is a <strong>partial</strong> order — concurrent events are genuinely unordered, and vector clocks preserve that
+        honestly. If you need a <em>total</em> order that everyone agrees on (every replica applies the exact same sequence of
+        operations), causality alone isn't enough — you need <strong>consensus</strong> (Paxos/Raft, Days 31–32) to <em>impose</em> an
+        order, or a Lamport clock's tie-broken total order if a consistent-but-arbitrary sequence is acceptable. Vector clocks tell you
+        the <em>true</em> ordering constraints; they don't invent extra ones.</p>
+
+        <h3>They're logical, not physical — no wall-clock answers</h3>
+        <p>A vector clock can tell you a comment was written <em>after</em> the post it replies to, but it can't tell you it was written
+        "at 2:05 PM" or "three seconds later." For human-facing timestamps and timeouts you still need physical clocks. Systems that
+        need <em>both</em> causal correctness and tight real-time ordering use <strong>hybrid logical clocks</strong> (HLC, as in
+        CockroachDB) or specialized hardware like Google's <strong>TrueTime</strong> (Spanner) — logical-clock ideas fused with
+        carefully-bounded physical time.</p>
+
+        <p style="margin-top:1rem;">The through-line: <strong>a vector clock is an honest instrument.</strong> It measures exactly the
+        causal relationships that really exist — no more, no less — which is both its power (it never fabricates an order, so it never
+        hides a conflict) and its limit (it won't hand you a global order or a resolution you have to decide for yourself). Reach for it
+        when you need to <em>know what could have influenced what</em>; reach for consensus when you need everyone to <em>agree on one
+        sequence.</em></p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">🕵️</span><div><strong>Through the Agency's Back Door — The Gossip Parlor</strong>
+          — <span>You leave the Travel Agency (Day 34, Sagas) through a door marked "who knew what, when?" and step into a cosy
+          <strong>gossip parlor</strong>, still on the <strong>first floor (Phase 2)</strong>. There are no clocks on any wall — only
+          <strong>three friends</strong> (Aisha, Ben, Chloe), each in an armchair with a <strong>tally sheet</strong> that has a row per
+          friend. Notes travel between them on a little <strong>pneumatic tube</strong>, and every note carries a carbon-copy of the
+          sender's whole sheet. When a friend reads a note they run a finger down the rows, <strong>keeping the bigger number in each</strong>,
+          then add one tick of their own. On the mantelpiece a brass sign reads: <em>"To compare two moments, lay their sheets
+          side by side. If one is entirely ≤ the other, that one came first. If each sheet has a tick the other lacks — the notes
+          crossed; they're concurrent."</em> On the back wall hangs a <strong>space-time chart</strong> — three horizontal lines, dots
+          for events, diagonal strings for notes — with one green thread tracing a causal chain and two dots circled in red and labelled
+          <strong>"∥ they never met."</strong></span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Door Ahead</strong> — <span>Past the armchairs is a
+          door labelled <strong>Day 36: Bloom Filters &amp; HyperLogLog</strong>. Through the keyhole you glimpse a room full of tiny
+          magical <em>sketches</em> — thumbnail-sized scribbles that somehow remember whether they've seen a billion items, or roughly
+          how many unique ones there were, using almost no space. If vector clocks were about tracking <em>order</em> cheaply, the next
+          room is about tracking <em>membership and counts</em> cheaply. That's where we go next.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Saga Pattern (Day 34)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Vector Clocks (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Bloom Filters &amp; HLL (Day 36)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Causality underpins…</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Eventual Consistency (Days 10–12)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Replication (Day 12)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Merkle Trees &amp; Gossip (Day 37)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Consensus (Days 31–32)</span>
+        </div>
+        <p>Today answers the question Day 34's saga left open: with services committing independently and events flying between them,
+        <strong>how do you even reason about order?</strong> The answer — track causality, not wall time — is the hidden machinery under
+        <strong>eventual consistency (Days 10–12)</strong> and multi-leader <strong>replication (Day 12)</strong>, where any replica can
+        be written and conflicts must be detected rather than destroyed. It's the <em>opposite number</em> of
+        <strong>consensus (Days 31–32)</strong>: Paxos and Raft <em>impose</em> a single total order by making machines agree; vector
+        clocks <em>observe</em> the partial order that already exists, without any agreement. Next, <strong>Merkle trees &amp; gossip
+        (Day 37)</strong> will lean directly on version reconciliation like this to let replicas efficiently discover <em>which</em>
+        data differs — and further ahead, <strong>CRDTs</strong> use exactly the "keep both siblings and merge" idea vector clocks make
+        possible, turning conflict detection into automatic, provably-correct conflict resolution.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Just use wall-clock timestamps and sort by them."</td><td>Clocks on different machines <strong>drift</strong> and get
+          <strong>NTP-corrected backwards</strong>, so their timestamps aren't comparable. Sorting by them can put an effect before its
+          cause, and "latest wins" <strong>silently deletes</strong> real writes based on whose crystal ran fast.</td></tr>
+          <tr><td>"Concurrent means 'at the same instant'."</td><td>Concurrent means <strong>causally independent</strong> — no chain of
+          messages connects the two events, so neither could have known about the other. It has nothing to do with wall-clock
+          simultaneity; two events an hour apart can still be concurrent.</td></tr>
+          <tr><td>"If C(a) &lt; C(b) in a Lamport clock, then a caused b."</td><td>No — that implication runs <strong>one way only</strong>.
+          <code>a → b</code> guarantees <code>C(a) &lt; C(b)</code>, but a smaller number can also come from two <strong>unrelated,
+          concurrent</strong> events. Scalar clocks can't detect concurrency.</td></tr>
+          <tr><td>"Vector clocks resolve conflicts."</td><td>They <strong>detect</strong> conflicts (report "these are concurrent"). The
+          application still has to <em>resolve</em> them — union the carts, apply a business rule, or use a CRDT. Detection ≠
+          resolution.</td></tr>
+          <tr><td>"A bigger vector is always a newer version."</td><td>Only if it's <strong>comparable</strong> (≥ in every slot). If the
+          two vectors are <strong>incomparable</strong>, neither is newer — they're <strong>siblings</strong>, and overwriting one loses
+          data.</td></tr>
+          <tr><td>"Give every client its own vector entry."</td><td>That makes vectors grow without bound (O(clients)). Real systems clock
+          a small set of <strong>replicas</strong>, prune stale entries, or use <strong>dotted version vectors</strong> to stay
+          compact.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ Two replicas of a shopping cart start in sync. On replica 1, Alice adds a <em>scarf</em>;
+          its vector becomes <code>[1,0]</code>. Independently (no sync between them), on replica 2 Alice removes a <em>hat</em>; its
+          vector becomes <code>[0,1]</code>. The replicas now gossip and exchange these two writes. (1) Are the two writes causally
+          ordered or concurrent, and how do the vectors prove it? (2) What should the system do, and what would "last-write-wins on a
+          wall clock" have done instead? (click to reveal)</div>
+          <div class="recall-answer"><strong>(1) They are concurrent (<code>∥</code>).</strong> Compare <code>[1,0]</code> (add scarf)
+          and <code>[0,1]</code> (remove hat): the first is bigger in slot&nbsp;1, the second is bigger in slot&nbsp;2, so
+          <em>neither vector is ≤ the other</em> — they're <strong>incomparable</strong>. By the rule <code>a ∥ b ⟺ not(u≤v) and
+          not(v≤u)</code>, the two writes are concurrent: each replica did its write without having heard about the other's. No chain of
+          messages connects them, so neither <em>caused</em> the other.
+          <br><br><strong>(2) Keep both as siblings and merge.</strong> Because the writes are concurrent, the system must not pick a
+          winner. It records <em>both</em> versions as <strong>siblings</strong> and lets the application merge them — here, the correct
+          merge is to apply <em>both</em> independent intentions: the cart ends up <strong>with the scarf added and the hat removed</strong>
+          (the merged vector <code>[1,1]</code> now dominates both writes). <u>What LWW would have done:</u> it would compare the two
+          wall-clock timestamps, declare whichever is larger the "winner," and <strong>silently discard the other write</strong> — so
+          Alice would lose <em>either</em> her scarf addition <em>or</em> her hat removal, with no indication anything was dropped. The
+          vector clock turned invisible data loss into a conflict the app could resolve correctly. (This is, almost exactly, the Amazon
+          Dynamo shopping-cart story.)</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🛒 Amazon Dynamo &amp; Riak</div><p>The famous 2007 <strong>Dynamo</strong>
+          paper used <strong>vector clocks</strong> (per storage node) to reconcile writes to an always-writable, replicated key-value
+          store. Concurrent writes become <strong>siblings</strong> the client merges (union the cart). <strong>Riak</strong>
+          productized this and later moved to <strong>dotted version vectors</strong> to keep clocks compact under many concurrent
+          clients — the textbook example of this lesson in production.</p></div>
+          <div class="realworld-card"><div class="rw-company">📝 Collaborative editors &amp; CRDTs</div><p>Tools like
+          <strong>Google Docs</strong>, <strong>Figma</strong>, and <strong>Automerge/Yjs</strong> rely on causal ordering so your
+          keystrokes apply in an order that respects dependencies even when edits arrive out of order. <strong>CRDTs</strong> build on
+          version-vector ideas to make concurrent edits merge automatically — detection (vector clocks) plus guaranteed resolution.</p></div>
+          <div class="realworld-card"><div class="rw-company">🗄️ Cassandra's cautionary tale</div><p>Apache <strong>Cassandra</strong>
+          chose <strong>last-write-wins on timestamps</strong> for simplicity — and operators learned the hard way that clock skew can
+          <strong>resurrect deleted rows</strong> or drop writes, exactly the failure mode this lesson warns about. It's the clearest
+          real-world argument for why causal tracking exists.</p></div>
+          <div class="realworld-card"><div class="rw-company">⏱️ Hybrid clocks: HLC &amp; TrueTime</div><p><strong>CockroachDB</strong>
+          uses <strong>Hybrid Logical Clocks</strong> (logical causality fused with bounded physical time) and Google
+          <strong>Spanner</strong> uses <strong>TrueTime</strong> (GPS/atomic clocks giving a bounded uncertainty interval) to get
+          <em>both</em> causal correctness and meaningful wall-clock ordering — the engineering answer to "logical clocks can't tell you
+          the real time."</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why can't you order events across machines with wall-clock timestamps?</div>
+          <div class="fc-a">A: Clocks on different machines <strong>drift</strong> and are <strong>NTP-corrected (even backwards)</strong>,
+          so their timestamps aren't comparable. Ordering by them can place an effect before its cause, and "latest wins"
+          <strong>silently deletes</strong> real writes based on whose clock ran fast.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: State the three rules of the happened-before relation (→).</div>
+          <div class="fc-a">A: (1) same process, earlier-before-later; (2) a message's <strong>send → its receive</strong>; (3)
+          <strong>transitivity</strong> (a→b and b→c ⟹ a→c). If neither a→b nor b→a, the events are <strong>concurrent</strong>
+          (causally independent).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What can a scalar Lamport clock do, and what can't it do?</div>
+          <div class="fc-a">A: It gives a consistent <strong>total order</strong> where <code>a → b ⟹ C(a) &lt; C(b)</code>. But the
+          converse fails — <code>C(a) &lt; C(b)</code> does <em>not</em> imply a→b — so it <strong>cannot detect concurrency</strong>, and
+          "bigger number wins" silently drops concurrent writes.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: How do you update and compare vector clocks?</div>
+          <div class="fc-a">A: Tick your <strong>own</strong> entry on every event; on <strong>send</strong> attach the whole vector; on
+          <strong>receive</strong> take the <strong>element-wise max</strong>, then tick your own. Compare: <code>u &lt; v ⟺ a→b</code>
+          (≤ everywhere, &lt; somewhere); <strong>incomparable ⟺ concurrent</strong>.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Vector clocks detect a conflict — then what, and what's the cost?</div>
+          <div class="fc-a">A: Detection ≠ resolution: keep both as <strong>siblings</strong> and let the app (or a <strong>CRDT</strong>)
+          merge them. Cost is <strong>O(n)</strong> — one entry per process — so clock replicas (not clients), prune stale entries, or use
+          <strong>dotted version vectors</strong>.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Why is "stamp each event with the local wall clock and sort" broken? Give the two concrete failure modes.</li>
+          <li>Define <code>a → b</code> with its three rules, and define what makes two events <em>concurrent</em>.</li>
+          <li>A Lamport clock guarantees <code>a → b ⟹ C(a) &lt; C(b)</code>. Why is the converse false, and why does that matter for
+          conflict resolution?</li>
+          <li>Write out the vector-clock update rules for a local event, a send, and a receive.</li>
+          <li>Given <code>u = [2,1,0]</code> and <code>v = [2,2,1]</code>, are the events causally ordered or concurrent? What about
+          <code>u = [1,2,0]</code> and <code>v = [2,1,0]</code>? Show the comparison.</li>
+          <li>What does it mean for two writes to be <em>siblings</em>, and what should a system do with them?</li>
+          <li>Why are vector clocks <code>O(n)</code>, and name two techniques real systems use to keep them small.</li>
+          <li>Contrast vector clocks with consensus (Raft/Paxos): which one <em>observes</em> an order and which one <em>imposes</em>
+          one, and when do you need each?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>in a distributed system you can't trust wall clocks, so you order events by causality
+          — "what could have influenced what" — and a vector clock measures that exactly.</strong> Happened-before (<code>→</code>)
+          captures cause and effect through messages; a scalar Lamport clock turns it into one number that gives a total order but
+          <em>can't detect concurrency</em>; a vector clock keeps one counter per process so that <code>V(a) &lt; V(b) ⟺ a → b</code>
+          and <strong>incomparable vectors mean genuinely concurrent events</strong> — a conflict you can finally <em>see</em> and keep
+          as siblings instead of silently destroying. Use it to detect conflicting writes in replicated, always-available stores (the
+          Dynamo/Riak story); remember it costs O(n) and only <em>detects</em> conflicts (the app resolves them); and reach for
+          consensus instead when you need everyone to agree on a single total order. Next, we trade order-tracking for
+          <em>space</em>-saving magic: how to remember whether you've seen an item, or count billions of unique ones, in almost no
+          memory — <strong>Day 36: Bloom Filters &amp; HyperLogLog.</strong>
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-34.html">← Day 34: The Saga Pattern</a>
+        <a href="day-36.html" class="coming-soon-link">Day 36: Bloom Filters &amp; HyperLogLog →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 35 of 90 — Vector Clocks &amp; Causality</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ── Vector-clock simulator ───────────────────────────────────────────
+  // Each scenario is a list of "frames". A frame is a full snapshot of the
+  // three friends' vector clocks plus a narration line, phase, and status
+  // class — so the stepper is just an index into precomputed states.
+  // node: { id, icon, vec:[A,B,C], stcls, note, lam? }
+  function node(id, icon, vec, stcls, note, lam) {
+    return { id:id, icon:icon, vec:vec, stcls:stcls, note:note||'', lam:lam };
+  }
+
+  var SCENARIOS = {
+    chain: {
+      label: '🔗 Causal chain — a message carries causality forward',
+      frames: [
+        { phase:'start', cls:'info',
+          narr:'No global clock. Each friend keeps a vector <code>[A,B,C]</code> = "how many events I know of from Aisha, Ben, Chloe." All start at zero.',
+          nodes:[ node('Aisha','🅐',[0,0,0],'st-idle','idle'), node('Ben','🅑',[0,0,0],'st-idle','idle'), node('Chloe','🅒',[0,0,0],'st-idle','idle') ] },
+        { phase:'events', cls:'info',
+          narr:'<b>Aisha books the venue</b> (a local event). She ticks her <i>own</i> slot: <code>[0,0,0] → [1,0,0]</code>.',
+          nodes:[ node('Aisha','🅐',[1,0,0],'st-work','local event: V[A]++'), node('Ben','🅑',[0,0,0],'st-idle','idle'), node('Chloe','🅒',[0,0,0],'st-idle','idle') ] },
+        { phase:'events', cls:'info',
+          narr:'<b>Aisha texts Ben the plan</b> (a send). A send is an event too: she ticks <code>[1,0,0] → [2,0,0]</code> and attaches that whole vector 📨 to the note.',
+          nodes:[ node('Aisha','🅐',[2,0,0],'st-lock','sent note 📨 carrying [2,0,0]'), node('Ben','🅑',[0,0,0],'st-idle','about to read it'), node('Chloe','🅒',[0,0,0],'st-idle','idle') ] },
+        { phase:'events', cls:'info',
+          narr:'<b>Ben reads the note</b> (a receive). He takes the element-wise max of his <code>[0,0,0]</code> and the note\'s <code>[2,0,0]</code> → <code>[2,0,0]</code>, then ticks his own slot → <code>[2,1,0]</code>.',
+          nodes:[ node('Aisha','🅐',[2,0,0],'st-ok','done'), node('Ben','🅑',[2,1,0],'st-work','recv: max then V[B]++'), node('Chloe','🅒',[0,0,0],'st-idle','idle') ] },
+        { phase:'events', cls:'info',
+          narr:'<b>Ben tells Chloe</b> (a send): tick → <code>[2,2,0]</code>, attach it 📨. Ben\'s vector already "contains" everything Aisha knew.',
+          nodes:[ node('Aisha','🅐',[2,0,0],'st-ok','done'), node('Ben','🅑',[2,2,0],'st-lock','sent note 📨 carrying [2,2,0]'), node('Chloe','🅒',[0,0,0],'st-idle','about to read it') ] },
+        { phase:'done', cls:'ok',
+          narr:'✅ <b>Chloe reads it</b>: max([0,0,0],[2,2,0]) then tick → <code>[2,2,1]</code>. Compare Aisha\'s first event <code>[1,0,0]</code> with Chloe\'s <code>[2,2,1]</code>: every entry ≤ and some strictly &lt; ⟹ <b>[1,0,0] &lt; [2,2,1]</b> ⟹ the venue-booking <b>happened-before</b> Chloe\'s read. One causal chain; the final vector contains the whole story.',
+          nodes:[ node('Aisha','🅐',[2,0,0],'st-ok','[1,0,0] → … → [2,2,1]'), node('Ben','🅑',[2,2,0],'st-ok','on the causal path'), node('Chloe','🅒',[2,2,1],'st-ok','knows the whole story') ] }
+      ]
+    },
+    concurrent: {
+      label: '⚡ Concurrent writes — notes cross in the mail',
+      frames: [
+        { phase:'start', cls:'info',
+          narr:'Aisha and Ben both start in sync at <code>[0,0,0]</code>. This time they act <b>without talking to each other</b>.',
+          nodes:[ node('Aisha','🅐',[0,0,0],'st-idle','idle'), node('Ben','🅑',[0,0,0],'st-idle','idle'), node('Chloe','🅒',[0,0,0],'st-idle','idle') ] },
+        { phase:'events', cls:'info',
+          narr:'<b>Aisha sets the cake 🎂 = chocolate</b> (local event). She ticks her own slot → <code>[1,0,0]</code>. She has <i>not</i> heard from Ben.',
+          nodes:[ node('Aisha','🅐',[1,0,0],'st-work','cake = chocolate'), node('Ben','🅑',[0,0,0],'st-idle','hasn\'t heard'), node('Chloe','🅒',[0,0,0],'st-idle','idle') ] },
+        { phase:'events', cls:'info',
+          narr:'At the same time, <b>Ben sets the venue 📍 = the park</b> (local event) → <code>[0,1,0]</code>. No note has passed between them — neither knows what the other just did.',
+          nodes:[ node('Aisha','🅐',[1,0,0],'st-work','cake = chocolate'), node('Ben','🅑',[0,1,0],'st-work','venue = park'), node('Chloe','🅒',[0,0,0],'st-idle','idle') ] },
+        { phase:'compare', cls:'bad',
+          narr:'<b>Compare the two writes.</b> Aisha\'s <code>[1,0,0]</code> vs Ben\'s <code>[0,1,0]</code>: Aisha is bigger in slot 1, Ben is bigger in slot 2 → <b>neither vector ≤ the other</b> → <b>CONCURRENT ∥</b>. Their notes crossed in the mail — a genuine conflict, not one overwriting the other.',
+          nodes:[ node('Aisha','🅐',[1,0,0],'st-bad','∥ concurrent with Ben'), node('Ben','🅑',[0,1,0],'st-bad','∥ concurrent with Aisha'), node('Chloe','🅒',[0,0,0],'st-idle','idle') ] },
+        { phase:'done', cls:'ok',
+          narr:'✅ <b>They finally sync.</b> Aisha sends her note (tick → <code>[2,0,0]</code>); Ben merges: max([0,1,0],[2,0,0]) then tick → <code>[2,2,0]</code>, which now <b>dominates both</b> earlier writes. Because the clock <i>proved</i> they were concurrent, the app keeps <b>both as siblings</b> and merges: cake = chocolate <b>AND</b> venue = park — nothing is dropped. (Exactly how Dynamo/Riak save your cart items.)',
+          nodes:[ node('Aisha','🅐',[2,0,0],'st-ok','sent her write'), node('Ben','🅑',[2,2,0],'st-ok','merged both → siblings'), node('Chloe','🅒',[0,0,0],'st-idle','idle') ] }
+      ]
+    },
+    lamport: {
+      label: '🔢 When a number lies — scalar Lamport vs vector',
+      frames: [
+        { phase:'start', cls:'info',
+          narr:'Watch a <b>scalar Lamport clock</b> (the amber number C) alongside the vector. Both start at zero. The scalar is just one counter per friend.',
+          nodes:[ node('Aisha','🅐',[0,0,0],'st-idle','idle',0), node('Ben','🅑',[0,0,0],'st-idle','idle',0), node('Chloe','🅒',[0,0,0],'st-idle','(not involved)',0) ] },
+        { phase:'events', cls:'info',
+          narr:'<b>Aisha does event a</b> (local). Lamport: <code>C = 1</code>. Vector: <code>[1,0,0]</code>.',
+          nodes:[ node('Aisha','🅐',[1,0,0],'st-work','event a',1), node('Ben','🅑',[0,0,0],'st-idle','idle',0), node('Chloe','🅒',[0,0,0],'st-idle','(not involved)',0) ] },
+        { phase:'events', cls:'info',
+          narr:'<b>Ben does event b1</b> (local, no contact with Aisha). Lamport: <code>C = 1</code>. Vector: <code>[0,1,0]</code>.',
+          nodes:[ node('Aisha','🅐',[1,0,0],'st-work','event a',1), node('Ben','🅑',[0,1,0],'st-work','event b1',1), node('Chloe','🅒',[0,0,0],'st-idle','(not involved)',0) ] },
+        { phase:'events', cls:'info',
+          narr:'<b>Ben does event b2</b> (local). Lamport ticks: <code>C = 2</code>. Vector: <code>[0,2,0]</code>. Still no message has reached Ben from Aisha.',
+          nodes:[ node('Aisha','🅐',[1,0,0],'st-work','event a',1), node('Ben','🅑',[0,2,0],'st-work','event b2',2), node('Chloe','🅒',[0,0,0],'st-idle','(not involved)',0) ] },
+        { phase:'compare', cls:'bad',
+          narr:'<b>Compare a and b2.</b> Scalar says <code>C(a)=1 &lt; C(b2)=2</code> — which <i>tempts</i> you to conclude a → b2 (and, with last-write-wins, to let b2 overwrite a). But the vectors <code>[1,0,0]</code> vs <code>[0,2,0]</code> are <b>incomparable</b> → the events are actually <b>CONCURRENT ∥</b>. The single number lied.',
+          nodes:[ node('Aisha','🅐',[1,0,0],'st-bad','a: C=1 but ∥ b2',1), node('Ben','🅑',[0,2,0],'st-bad','b2: C=2 but ∥ a',2), node('Chloe','🅒',[0,0,0],'st-idle','(not involved)',0) ] },
+        { phase:'done', cls:'info',
+          narr:'ℹ️ <b>The rule.</b> Lamport gives <code>a → b ⟹ C(a) &lt; C(b)</code> — <i>one direction only</i>, so a smaller number can still be concurrent. Vector clocks fix exactly this: <code>V(a) &lt; V(b) ⟺ a → b</code> — <b>both directions</b> — so "incomparable" reliably means concurrent. That detectable difference is the whole reason vector clocks exist.',
+          nodes:[ node('Aisha','🅐',[1,0,0],'st-ok','vector: ∥ (correct)',1), node('Ben','🅑',[0,2,0],'st-ok','vector: ∥ (correct)',2), node('Chloe','🅒',[0,0,0],'st-idle','(not involved)',0) ] }
+      ]
+    }
+  };
+
+  var cur = 'chain';
+  var step = 0;
+
+  var grid = document.getElementById('acc-grid');
+  var statusEl = document.getElementById('sim-status');
+  var counterEl = document.getElementById('sim-counter');
+  var trackEl = document.getElementById('phase-track');
+
+  function renderNode(n) {
+    var scalar = (n.lam !== undefined && n.lam !== null)
+      ? '<div class="acc-scalar">Lamport C = <b>' + n.lam + '</b></div>' : '';
+    return '<div class="acc-card">' +
+      '<div class="acc-id">' + n.icon + ' ' + n.id + '</div>' +
+      '<div class="acc-sub">vector [A,B,C]</div>' +
+      '<div class="acc-state ' + n.stcls + '">[' + n.vec.join(',') + ']</div>' +
+      scalar +
+      '<div class="acc-note">' + (n.note || '') + '</div>' +
+    '</div>';
+  }
+
+  function render() {
+    var scn = SCENARIOS[cur];
+    var frame = scn.frames[step];
+    grid.innerHTML = frame.nodes.map(renderNode).join('');
+    statusEl.className = 'q-status ' + frame.cls;
+    statusEl.innerHTML = frame.narr;
+    counterEl.textContent = 'Step ' + (step+1) + ' of ' + scn.frames.length + '  ·  ' + scn.label;
+    Array.prototype.forEach.call(trackEl.querySelectorAll('.phase-chip'), function(chip){
+      chip.classList.toggle('on', chip.getAttribute('data-ph') === frame.phase);
+    });
+    document.getElementById('sim-next').disabled = (step >= scn.frames.length - 1);
+  }
+
+  document.getElementById('sim-next').addEventListener('click', function(){
+    if (step < SCENARIOS[cur].frames.length - 1) { step++; render(); }
+  });
+  document.getElementById('sim-reset').addEventListener('click', function(){ step = 0; render(); });
+
+  Array.prototype.forEach.call(document.querySelectorAll('#scenario-toggle button'), function(btn){
+    btn.addEventListener('click', function(){
+      cur = btn.getAttribute('data-scn'); step = 0;
+      Array.prototype.forEach.call(document.querySelectorAll('#scenario-toggle button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      render();
+    });
+  });
+  render();
+
+  // ── roughjs diagrams ─────────────────────────────────────────────────
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+  function arrow(rs, svg, x1, y1, x2, y2, col, dashed) {
+    var opts = { stroke:col, strokeWidth:1.8, roughness:0.9 };
+    if (dashed) opts.strokeLineDash = [6,5];
+    svg.appendChild(rs.line(x1, y1, x2, y2, opts));
+    var ang = Math.atan2(y2-y1, x2-x1);
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang - 0.4), y2 - 10*Math.sin(ang - 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang + 0.4), y2 - 10*Math.sin(ang + 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+  }
+  function dot(rs, svg, x, y, col) {
+    svg.appendChild(rs.circle(x, y, 13, { stroke:col, strokeWidth:2, roughness:0.8, fill:col, fillStyle:'solid' }));
+  }
+
+  // Anchor: three friends with tally sheets, a note passing, the merge rule,
+  // and the two compare outcomes (subset = happened-before, crossed = concurrent).
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 26, '📝 Each friend keeps a tally sheet [A,B,C]. A note carries a copy. Merge = max per row, then tick yourself.', '#e2e8f0', '12.5', '700');
+
+    // three friends with tally sheets
+    var friends = [ {x:70,  icon:'🅐', name:'Aisha', vec:'[2,0,0]'},
+                    {x:325, icon:'🅑', name:'Ben',   vec:'[2,1,0]'},
+                    {x:580, icon:'🅒', name:'Chloe', vec:'[0,0,0]'} ];
+    friends.forEach(function(f){
+      svg.appendChild(rs.rectangle(f.x, 56, 170, 86, { stroke:'#38bdf8', strokeWidth:2, roughness:1.05, fill:'#38bdf810', fillStyle:'solid' }));
+      T(f.x+85, 82, f.icon + '  ' + f.name, '#7dd3fc', '13', '800');
+      T(f.x+85, 104, 'tally sheet', '#94a3b8', '8.5', '600');
+      T(f.x+85, 126, f.vec, '#e2e8f0', '14', '800', true);
+    });
+
+    // note passing Aisha -> Ben carrying [2,0,0], then Ben -> Chloe
+    arrow(rs, svg, 240, 99, 323, 99, '#a78bfa');
+    T(282, 88, '📨 [2,0,0]', '#c4b5fd', '9', '800');
+    arrow(rs, svg, 495, 99, 578, 99, '#a78bfa');
+    T(537, 88, '📨', '#c4b5fd', '11', '800');
+    T(410, 160, 'Ben receives → max([0,0,0],[2,0,0]) = [2,0,0], then V[Ben]++  →  [2,1,0]', '#86efac', '9.5', '700');
+
+    // compare outcome 1 — happened-before (subset)
+    svg.appendChild(rs.rectangle(40, 186, 360, 110, { stroke:'#22c55e', strokeWidth:1.7, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(220, 208, 'ONE SHEET ⊆ THE OTHER  →  happened-before', '#86efac', '11', '800');
+    T(220, 232, '[1,0,0]  ≤  [2,2,1]   (≤ in every row, &lt; somewhere)', '#e2e8f0', '10.5', '700', true);
+    T(220, 254, 'Aisha\'s moment came BEFORE Chloe\'s — her', '#86efac', '9.5', '600');
+    T(220, 270, 'knowledge is a subset of Chloe\'s. a → b.', '#86efac', '9.5', '600');
+    T(220, 288, '(one truly caused / preceded the other)', '#94a3b8', '8.5', '600');
+
+    // compare outcome 2 — concurrent (crossed)
+    svg.appendChild(rs.rectangle(420, 186, 360, 110, { stroke:'#fb7185', strokeWidth:1.7, roughness:1, fill:'#fb71850a', fillStyle:'solid' }));
+    T(600, 208, 'EACH KNOWS A SECRET  →  concurrent ∥', '#fca5a5', '11', '800');
+    T(600, 232, '[1,0,0]  vs  [0,1,0]   (neither ≤ the other)', '#e2e8f0', '10.5', '700', true);
+    T(600, 254, 'Aisha has a tick Ben lacks AND Ben has one', '#fca5a5', '9.5', '600');
+    T(600, 270, 'Aisha lacks → their notes CROSSED in the mail.', '#fca5a5', '9.5', '600');
+    T(600, 288, '(a genuine conflict — keep BOTH as siblings)', '#94a3b8', '8.5', '600');
+
+    // key band
+    svg.appendChild(rs.rectangle(40, 312, 740, 58, { stroke:'#fbbf24', strokeWidth:1.6, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(410, 334, 'A vector clock records what each machine COULD have known — not what time it thinks it is.', '#fcd34d', '10.5', '800');
+    T(410, 352, 'Compare two sheets row-by-row: subset ⇒ causal order;  crossed ⇒ concurrent.  That\'s the whole idea.', '#fcd34d', '10', '700');
+    T(410, 392, 'No wall clocks allowed — only tally sheets and notes.', '#94a3b8', '9', '600');
+  }
+
+  // Space-time diagram: three process lines, events as dots with vector
+  // labels, message arrows, a green causal path and a red concurrent pair.
+  function drawSpacetimeDiagram() {
+    var svg = document.getElementById('spacetime-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'Space-time diagram: follow lines → and arrows ↘ to trace causality', '#e2e8f0', '13', '700');
+
+    var lines = [ {y:110, icon:'🅐', name:'Aisha'}, {y:220, icon:'🅑', name:'Ben'}, {y:330, icon:'🅒', name:'Chloe'} ];
+    lines.forEach(function(l){
+      svg.appendChild(rs.line(90, l.y, 770, l.y, { stroke:'#475569', strokeWidth:1.6, roughness:0.7 }));
+      T(60, l.y+4, l.icon, '#cbd5e1', '15', '800');
+      T(60, l.y+22, l.name, '#94a3b8', '7.5', '600');
+    });
+
+    // Aisha events
+    dot(rs, svg, 180, 110, '#22c55e'); T(180, 94, 'a1 [1,0,0]', '#86efac', '9', '800');
+    dot(rs, svg, 320, 110, '#22c55e'); T(320, 94, 'a2 send [2,0,0]', '#86efac', '9', '800');
+    // Ben events
+    dot(rs, svg, 230, 220, '#fb7185'); T(230, 246, 'b0 [0,1,0]', '#fca5a5', '9', '800');
+    dot(rs, svg, 430, 220, '#22c55e'); T(445, 205, 'b1 recv [2,2,0]', '#86efac', '9', '800');
+    // Chloe event
+    dot(rs, svg, 590, 330, '#22c55e'); T(590, 356, 'c1 recv [2,2,1]', '#86efac', '9', '800');
+
+    // message arrows (green = on causal path)
+    arrow(rs, svg, 320, 118, 428, 212, '#22c55e');
+    arrow(rs, svg, 430, 228, 588, 322, '#22c55e');
+
+    // concurrent pair a1 [1,0,0] vs b0 [0,1,0]
+    svg.appendChild(rs.line(180, 118, 230, 212, { stroke:'#fb7185', strokeWidth:1.4, roughness:0.8, strokeLineDash:[5,5] }));
+    T(150, 170, '∥', '#fca5a5', '18', '800');
+    T(120, 150, 'a1 ∥ b0', '#fca5a5', '9', '800', false, 'start');
+    T(120, 388, 'a1 [1,0,0] and b0 [0,1,0] are incomparable → CONCURRENT (no message connects them)', '#fca5a5', '9.5', '700', false, 'start');
+
+    // causal-path caption
+    svg.appendChild(rs.rectangle(470, 44, 310, 50, { stroke:'#22c55e', strokeWidth:1.3, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(625, 64, 'green path: a1 → a2 → b1 → c1', '#86efac', '9.5', '800');
+    T(625, 82, '[1,0,0] &lt; [2,0,0] &lt; [2,2,0] &lt; [2,2,1]  (all causal)', '#86efac', '8.5', '600', true);
+  }
+
+  // Scalar vs Vector comparison.
+  function drawCompareDiagram() {
+    var svg = document.getElementById('compare-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'One number vs one-per-process: what each can and cannot tell you', '#e2e8f0', '13', '700');
+
+    // ---- Lamport scalar (left) ----
+    T(205, 54, '🔢 LAMPORT SCALAR CLOCK', '#fcd34d', '11.5', '800');
+    T(205, 70, 'one counter per process', '#94a3b8', '8.5', '600');
+    svg.appendChild(rs.rectangle(150, 84, 110, 42, { stroke:'#fbbf24', strokeWidth:2, roughness:1.05, fill:'#fbbf2410', fillStyle:'solid' }));
+    T(205, 110, 'C = 7', '#fcd34d', '15', '800', true);
+    T(205, 146, 'on recv:  C = max(C, msg) + 1', '#cbd5e1', '9', '700', true);
+    // properties
+    svg.appendChild(rs.rectangle(40, 166, 330, 40, { stroke:'#22c55e', strokeWidth:1.3, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(205, 183, '✔  a → b  ⟹  C(a) &lt; C(b)', '#86efac', '10.5', '800', true);
+    T(205, 199, 'cause always has a smaller number', '#86efac', '8', '600');
+    svg.appendChild(rs.rectangle(40, 214, 330, 56, { stroke:'#fb7185', strokeWidth:1.3, roughness:1, fill:'#fb71850a', fillStyle:'solid' }));
+    T(205, 231, '✘  C(a) &lt; C(b)  ⇏  a → b', '#fca5a5', '10.5', '800', true);
+    T(205, 248, 'can\'t detect concurrency → total order,', '#fca5a5', '8.5', '600');
+    T(205, 262, 'but "latest wins" silently DROPS a conflict', '#fca5a5', '8.5', '600');
+
+    // divider
+    svg.appendChild(rs.line(410, 44, 410, 360, { stroke:'#334155', strokeWidth:1.4, roughness:0.8, strokeLineDash:[5,5] }));
+
+    // ---- Vector (right) ----
+    T(615, 54, '📊 VECTOR CLOCK', '#7dd3fc', '11.5', '800');
+    T(615, 70, 'one counter per process', '#94a3b8', '8.5', '600');
+    svg.appendChild(rs.rectangle(545, 84, 140, 42, { stroke:'#38bdf8', strokeWidth:2, roughness:1.05, fill:'#38bdf810', fillStyle:'solid' }));
+    T(615, 110, '[2, 1, 4]', '#7dd3fc', '15', '800', true);
+    T(615, 146, 'on recv:  V = max(V, msg); V[me]++', '#cbd5e1', '8.5', '700', true);
+    svg.appendChild(rs.rectangle(450, 166, 330, 40, { stroke:'#22c55e', strokeWidth:1.3, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(615, 183, '✔  a → b  ⟺  V(a) &lt; V(b)', '#86efac', '10.5', '800', true);
+    T(615, 199, 'both directions — read causality off the vectors', '#86efac', '8', '600');
+    svg.appendChild(rs.rectangle(450, 214, 330, 40, { stroke:'#22c55e', strokeWidth:1.3, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(615, 231, '✔  incomparable  ⟺  concurrent ∥', '#86efac', '10.5', '800', true);
+    T(615, 247, 'conflicts are DETECTABLE → keep siblings', '#86efac', '8', '600');
+    svg.appendChild(rs.rectangle(450, 262, 330, 32, { stroke:'#fbbf24', strokeWidth:1.3, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(615, 282, 'cost: O(n) entries — grows with # of nodes', '#fcd34d', '9', '700');
+
+    // bottom verdict
+    svg.appendChild(rs.rectangle(40, 312, 740, 54, { stroke:'#a78bfa', strokeWidth:1.5, roughness:1, fill:'#a78bfa08', fillStyle:'solid' }));
+    T(410, 333, 'A scalar can ORDER events but can\'t tell you two were concurrent.', '#c4b5fd', '10.5', '800');
+    T(410, 352, 'A vector tells you exactly when one event caused another — and when they merely collided.', '#c4b5fd', '10', '700');
+  }
+
+  function drawAll() { drawAnchorDiagram(); drawSpacetimeDiagram(); drawCompareDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
