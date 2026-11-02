@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 36: Bloom Filters &amp; HyperLogLog | System Design Mastery</title>
+  <meta name="description" content="At web scale you constantly need to answer two tiny questions billions of times a second: 'have I seen this thing before?' and 'how many DIFFERENT things have I seen?' The honest way — keep a set with every item in it — is exact but ruinously expensive: a billion URLs or user IDs is gigabytes of RAM you don't have. Today we meet two beautiful probabilistic sketches that trade a sliver of accuracy for a staggering amount of space. A BLOOM FILTER answers membership — 'is X in the set?' — using a small bit array and a few hash functions: a 'no' is always correct (no false negatives), a 'yes' is 'probably' (a tunable, tiny false-positive rate), and it fits a billion items in a few hundred MB instead of tens of GB. HYPERLOGLOG answers cardinality — 'how many distinct items?' — by watching the longest run of leading zeros in hashed values (a rare long streak implies a huge crowd), counting billions of unique items to within ~2% using about 1.5 KB, and merging across servers with a simple per-register max. Taught with a festival-bouncer memory anchor, a live Bloom-filter bit array you can insert into and watch produce a real false positive, an interactive HyperLogLog sketch that tracks a growing unique count in 256 bytes, Excalidraw-style diagrams of both mechanisms, the accuracy-vs-space tradeoff, and how Google, Cassandra, Redis, and Postgres use these in production. The art of being approximately right in almost no memory." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .flow-step > span { font-weight:800; color: var(--accent-light); min-width:1.4rem; }
+    /* role / concept cards — colored left bar */
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .sim-panel { display:none; } .sim-panel.active { display:block; }
+    .q-status { text-align:center; font-weight:700; font-size:.88rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.75rem 0 1rem; line-height:1.6; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+    .q-status.info { background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .sim-controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 1rem; }
+    /* Bloom bit array */
+    .bit-grid { display:grid; grid-template-columns:repeat(12,1fr); gap:5px; margin:1rem 0; }
+    @media (max-width:560px){ .bit-grid { grid-template-columns:repeat(8,1fr); } }
+    .bit-cell { aspect-ratio:1; display:flex; flex-direction:column; align-items:center; justify-content:center; background:var(--bg-secondary); border:1px solid var(--border); border-radius:6px; font-family:'JetBrains Mono',monospace; font-size:.95rem; font-weight:800; color:#475569; transition:all .18s; }
+    .bit-cell .bit-idx { font-size:.52rem; font-weight:600; color:var(--text-muted); opacity:.55; line-height:1; margin-bottom:2px; }
+    .bit-cell.on { background:#38bdf824; border-color:#38bdf8; color:#7dd3fc; }
+    .bit-cell.flash { box-shadow:0 0 0 2px #fbbf24; transform:scale(1.08); }
+    .bit-cell.flash-ok { box-shadow:0 0 0 2px #22c55e; }
+    .bit-cell.flash-bad { box-shadow:0 0 0 2px #fb7185; }
+    .chip-label { font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; margin:1rem 0 .3rem; }
+    .chip-row { display:flex; flex-wrap:wrap; gap:.5rem; margin:.3rem 0 .5rem; }
+    .chip { font-family:'JetBrains Mono',monospace; font-size:.78rem; font-weight:700; padding:.4rem .7rem; border-radius:20px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-secondary); cursor:pointer; transition:all .15s; }
+    .chip:hover { border-color:var(--accent); color:var(--text-primary); }
+    .chip.inserted { background:#22c55e22; border-color:#22c55e; color:#86efac; cursor:default; }
+    .chip .fp-tag { font-size:.62rem; color:#fca5a5; margin-left:.25rem; }
+    .stat-row { display:flex; gap:.6rem; flex-wrap:wrap; margin:.9rem 0; }
+    .stat-chip { flex:1; min-width:120px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:.6rem .8rem; text-align:center; }
+    .stat-chip .sv { font-size:1.2rem; font-weight:800; color:var(--text-primary); font-family:'JetBrains Mono',monospace; }
+    .stat-chip .sv.good { color:#86efac; } .stat-chip .sv.warn { color:#fbbf24; } .stat-chip .sv.blue { color:#7dd3fc; }
+    .stat-chip .sl { font-size:.65rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin-top:.2rem; }
+    /* HLL register viz */
+    .reg-viz { display:flex; align-items:flex-end; gap:1px; height:96px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; padding:6px; overflow:hidden; margin:1rem 0 .4rem; }
+    .reg-bar { flex:1 1 0; background:linear-gradient(to top,#38bdf8,#a78bfa); border-radius:1px 1px 0 0; min-height:1px; transition:height .25s; }
+    .reg-caption { font-size:.72rem; color:var(--text-muted); text-align:center; margin-bottom:1rem; }
+    .rule-box { background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius); padding:.9rem 1.1rem; margin:1rem 0; font-size:.84rem; }
+    .rule-box code { font-family:'JetBrains Mono',monospace; color:#7dd3fc; }
+    .rule-box .cc { color:#fca5a5; font-weight:700; } .rule-box .hb { color:#86efac; font-weight:700; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phases">Phase 2: Intermediate Systems</a><span class="breadcrumb-sep">/</span>
+      <span>Day 36</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 36 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📗 Phase 2 — Intermediate Systems</span>
+      <span class="meta-pill">🗂 Week 5 — Distributed Algorithms</span>
+    </div>
+    <h1>Bloom Filters &amp; HyperLogLog<br><span style="color:var(--accent)">Being Approximately Right in Almost No Memory</span></h1>
+    <p class="lead">
+      Yesterday's <strong>vector clocks</strong> (Day 35) tracked <em>order</em> cheaply. Today we track two other things cheaply:
+      <strong>membership</strong> — "have I seen this exact item before?" — and <strong>cardinality</strong> — "how many
+      <em>distinct</em> items have I seen?" At web scale you ask these billions of times a second (every URL a crawler finds, every
+      user ID hitting a dashboard), and the honest answer — <em>keep a set containing every item</em> — is exact but ruinously
+      expensive: a billion items is <strong>gigabytes of RAM</strong> you don't have. So we cheat, on purpose. A
+      <strong>Bloom filter</strong> answers membership with a small bit array and a few hash functions: a "no" is <em>always</em>
+      right (<strong>no false negatives</strong>), a "yes" is "probably" (a tiny, tunable <strong>false-positive</strong> rate) — a
+      billion items in a few hundred MB instead of tens of GB. <strong>HyperLogLog</strong> answers cardinality by watching the
+      <strong>longest run of leading zeros</strong> in hashed values — a rare long streak betrays a huge crowd — counting billions of
+      unique items to within <strong>~2%</strong> using about <strong>1.5 KB</strong>, and merging across servers with a one-line
+      per-register <code>max</code>. You'll insert into a live Bloom filter and watch it produce a <em>real</em> false positive, stream
+      items into a HyperLogLog sketch and watch 256 bytes track a growing unique count, and see exactly where the accuracy goes — and
+      why trading it is the best deal in systems engineering.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#why">Why This Problem Exists</a>
+        <a href="#bloom">Bloom Filters</a>
+        <a href="#hll">HyperLogLog</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🎪 💡 🎟️ 🪙</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>It's a <strong>huge music festival</strong> — a million people pouring through the gates — and the organizers are too
+            cheap to buy a computer. At the entrance stands a <strong>bouncer with a wall of light bulbs</strong>. When you arrive, she
+            doesn't write your name anywhere. She just runs your name through <strong>three little stencils</strong> (think of them as
+            three different ways of looking at the name), and each stencil points at <em>one specific bulb</em> on the wall, which she
+            flicks <strong>on</strong>. Three bulbs lit per guest. Later, someone asks: "did <em>Priya</em> come in?" The bouncer runs
+            "Priya" through the same three stencils and checks those three bulbs. If <em>any</em> of them is <strong>dark</strong>, she
+            can say with total certainty: <em>"No — Priya definitely never walked through this gate"</em> (if Priya had, those bulbs
+            would be lit). But if all three happen to be <strong>lit</strong>, she can only say <em>"probably yes"</em> — because those
+            three bulbs might have been lit by three <em>other</em> guests whose stencils happened to overlap with Priya's. That
+            innocent overlap is a <strong>false positive</strong>. And notice: she can never confidently turn a bulb <em>off</em>
+            (some other guest may be relying on it), so she can't "remove" anyone. That wall of bulbs is a <strong>Bloom filter</strong>.</p>
+            <p>Across the field is a second gadget, run by a bouncer who is even lazier: he refuses to remember <em>anything</em> about
+            who came. Instead, every guest flips a coin over and over until they get their first tails, and shouts out their
+            <strong>streak of heads</strong> ("I got 4 heads then tails!"). The bouncer only ever remembers the <strong>single longest
+            streak</strong> he has heard all night. At the end he announces the crowd size with a weirdly accurate trick: <em>"the
+            longest streak I heard was about 20 heads in a row — that only tends to happen when roughly a million people are flipping —
+            so there were about a million of you."</em> He counted a million unique people by remembering <strong>one number</strong>.
+            That is <strong>HyperLogLog</strong>.</p>
+            <p>Burn in the two scenes side by side: <strong>a wall of light bulbs</strong> that can tell you "definitely not here" or
+            "probably here" using almost no space but can never forget (Bloom filter → <em>membership</em>); and <strong>a bouncer who
+            remembers only the longest coin-flip streak</strong> and reads the crowd size off it (HyperLogLog → <em>count of distinct
+            things</em>). Both throw away the ability to be <em>exactly</em> right in exchange for being <em>nearly</em> right in a
+            space so small it fits in your pocket. That trade is the entire lesson.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="820" height="470" viewBox="0 0 820 470"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Priya</span> ran the <strong>web crawler</strong> for a search startup — a swarm of machines
+            that follow links across the internet, fetching pages. The crawler had one humble but relentless need: before fetching a
+            URL, ask <em>"have we already crawled this one?"</em> Miss it and you re-download the same page a thousand times, melting
+            your bandwidth and hammering other people's servers. Easy, she thought — keep a <strong>hash set of every URL seen</strong>.
+            It worked beautifully… until the set held <strong>two billion URLs</strong>, each ~70 bytes, and the "just remember what
+            we've seen" structure demanded well over <strong>100 GB of RAM</strong> on every crawler. The exact answer was correct and
+            completely unaffordable.
+          </p>
+          <p>
+            A colleague drew her a <strong>Bloom filter</strong> on a napkin: forget storing the URLs themselves — keep a long array of
+            <strong>bits</strong>, all zero to start. To "add" a URL, run it through <strong>k</strong> hash functions, each pointing at
+            one bit, and set those <strong>k</strong> bits to 1. To check a URL, hash it the same way and look at those bits: if
+            <em>any</em> is 0, you have <strong>never</strong> seen it (certainty); if <em>all</em> are 1, you've <em>probably</em> seen
+            it. Priya sized it for a 1% false-positive rate and the whole thing fit in a couple of <strong>gigabytes</strong> — a 50×
+            cut. Yes, ~1% of genuinely-new URLs would be wrongly skipped as "seen" — but skipping a handful of pages out of billions was
+            a trade she'd take every single day. The crawler stopped choking.
+          </p>
+          <p>
+            Months later, marketing burst in with a different question: <em>"how many <strong>unique visitors</strong> did the site
+            have today — across all 50 edge servers?"</em> Priya's first instinct — collect every visitor ID into one giant set and
+            count it — meant shipping hundreds of millions of IDs across the network to a single machine every night. Painful, slow, and
+            it fell over on big days. Then she remembered the crawler trick had a cousin for <em>counting</em>:
+            <strong>HyperLogLog</strong>. Each edge server kept a tiny fixed-size <strong>sketch</strong> — about 1.5 KB — updated by
+            hashing each visitor ID and noting the <strong>longest run of leading zeros</strong> it had ever seen. At midnight the 50
+            servers shipped their 1.5 KB sketches (not their millions of IDs) to one place, which <strong>merged</strong> them by taking
+            the per-register max and read off the answer: <em>"≈ 48.6 million unique visitors, ±2%."</em> The nightly report that used
+            to move gigabytes now moved <strong>75 kilobytes</strong>.
+          </p>
+          <p>
+            Her takeaway, taped to the monitor: <strong>when a question is asked a billion times, you rarely need the exact answer — you
+            need a good-enough answer that fits in memory.</strong> A Bloom filter gives you membership (<em>maybe-yes / definitely-no</em>)
+            in a bit array; HyperLogLog gives you a distinct-count (<em>±a few percent</em>) in a sketch you can merge across a fleet.
+            The magic isn't in being clever about storing data — it's in <strong>refusing to store the data at all</strong>, and keeping
+            only the faint statistical shadow it casts.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">Both are <strong>probabilistic sketches</strong>: they answer a question at massive scale in a
+          <strong>tiny, fixed amount of memory</strong>, by giving up exactness for a <em>bounded, tunable</em> error. A
+          <strong>Bloom filter</strong> answers <em>membership</em> — "is X in the set?" — with a bit array of size <code>m</code> and
+          <code>k</code> hash functions: <strong>add</strong> = set the <code>k</code> bits X hashes to; <strong>query</strong> = are
+          <em>all</em> <code>k</code> of X's bits set? A <strong>"no" is always correct</strong> (<strong>no false negatives</strong>);
+          a "yes" is <em>probably</em> (a tunable <strong>false-positive</strong> rate that rises as the filter fills). It
+          <strong>cannot delete, cannot list its contents, and cannot count</strong> — it only ever answers maybe-in / definitely-out.
+          A <strong>HyperLogLog</strong> answers <em>cardinality</em> — "how many <strong>distinct</strong> items?" — by hashing each
+          item and remembering, per bucket, the <strong>longest run of leading zeros</strong> seen; a long run is statistically rare, so
+          its presence implies a large population (<code>estimate ≈ 2^(max run)</code>, refined by averaging many buckets). It counts
+          billions to within <strong>~2%</strong> using ~1.5 KB, is <strong>idempotent</strong> (adding the same item twice changes
+          nothing — it counts <em>distinct</em>), and is <strong>mergeable</strong> (union two sketches by taking the per-bucket max —
+          perfect for combining across servers). One-line test: <em>a Bloom filter tells you whether you've probably seen a specific
+          thing; a HyperLogLog tells you roughly how many different things you've seen — both by keeping a statistical shadow instead of
+          the data itself.</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Two Sketches, Live</h2>
+        <div class="sim-box">
+          <p>Two real, working sketches. Switch between them. In <strong>Bloom filter</strong> mode you insert domains into a 24-bit
+          array (watch the exact bits light up) and then run lookups — including one that returns <em>"probably present"</em> for a
+          domain you <strong>never inserted</strong> (a genuine false positive). In <strong>HyperLogLog</strong> mode you stream user IDs
+          into a 256-register sketch and watch it estimate the number of <em>distinct</em> IDs — using 256 bytes — while you also see the
+          true count for comparison.</p>
+
+          <div class="mode-toggle" id="mode-toggle">
+            <button data-mode="bloom" class="active">🔵 Bloom filter — membership</button>
+            <button data-mode="hll">📈 HyperLogLog — distinct count</button>
+          </div>
+
+          <!-- BLOOM PANEL -->
+          <div class="sim-panel active" id="panel-bloom">
+            <div class="bit-grid" id="bit-grid"></div>
+
+            <div class="chip-label">① Insert members (click to add — sets 3 bits each)</div>
+            <div class="chip-row" id="insert-row"></div>
+
+            <div class="chip-label">② Test a lookup (click to check its 3 bits)</div>
+            <div class="chip-row" id="query-row"></div>
+
+            <div class="q-status info" id="bloom-status">Insert a few domains above, then test a lookup. Watch for the one that lies.</div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv blue" id="bloom-setbits">0</div><div class="sl">bits set / 24</div></div>
+              <div class="stat-chip"><div class="sv" id="bloom-members">0</div><div class="sl">members inserted</div></div>
+              <div class="stat-chip"><div class="sv warn" id="bloom-fprate">0%</div><div class="sl">est. false-positive rate</div></div>
+            </div>
+
+            <div class="sim-controls">
+              <button class="btn btn-primary btn-sm" id="bloom-insert-all">Insert all members</button>
+              <button class="btn btn-outline btn-sm" id="bloom-reset">↺ Reset filter</button>
+            </div>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem;">Try this: click <strong>Insert all members</strong>,
+            then test <code>cherry.net</code> (a member → "probably present", correct), then <code>hazel.dev</code> (never inserted →
+            one of its bits is dark → "definitely absent", also correct), then <code>quince.ai</code> — which was <em>never
+            inserted</em>, yet all three of its bits were lit by three <em>different</em> members, so the filter says <strong>"probably
+            present"</strong>. That wrong "yes" is a false positive. Crucially, no lookup ever wrongly says "absent" for something you
+            inserted — Bloom filters have <strong>no false negatives</strong>.</p>
+          </div>
+
+          <!-- HLL PANEL -->
+          <div class="sim-panel" id="panel-hll">
+            <div class="reg-viz" id="reg-viz"></div>
+            <div class="reg-caption">256 registers (1 byte each = 256 bytes total). Each bar's height = the longest leading-zero run that
+            register has seen. Taller, fuller forest ⇒ larger crowd.</div>
+
+            <div class="q-status info" id="hll-status">Stream some user IDs and watch 256 bytes estimate the number of distinct IDs.</div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv" id="hll-true">0</div><div class="sl">true distinct (exact)</div></div>
+              <div class="stat-chip"><div class="sv blue" id="hll-est">0</div><div class="sl">HyperLogLog estimate</div></div>
+              <div class="stat-chip"><div class="sv" id="hll-err">0%</div><div class="sl">error</div></div>
+            </div>
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv good" id="hll-sketch">256 B</div><div class="sl">sketch size (fixed)</div></div>
+              <div class="stat-chip"><div class="sv warn" id="hll-exact">0 B</div><div class="sl">an exact set would need</div></div>
+            </div>
+
+            <div class="sim-controls">
+              <button class="btn btn-primary btn-sm" id="hll-add100">+100 unique</button>
+              <button class="btn btn-primary btn-sm" id="hll-add1000">+1,000 unique</button>
+              <button class="btn btn-outline btn-sm" id="hll-dup">+500 duplicates</button>
+              <button class="btn btn-outline btn-sm" id="hll-reset">↺ Reset sketch</button>
+            </div>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem;">Try this: add a few thousand unique IDs and watch the
+            estimate stay within a few percent of the exact count — while the sketch never grows past <strong>256 bytes</strong> and the
+            exact set balloons. Then hit <strong>+500 duplicates</strong>: it re-adds IDs already seen, and <em>nothing moves</em> —
+            HyperLogLog counts <strong>distinct</strong> items, so duplicates are free. (Because merging is just per-register
+            <code>max</code>, each of 50 servers could build its own sketch and you'd combine them the same way.)</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="why">
+        <h2>Why This Problem Exists</h2>
+        <p>Every data structure you've met so far — hash tables, B-trees, the sets behind a database index — is built to be
+        <strong>exact</strong>. Ask "is this key present?" and it tells you yes or no, correctly, every time. That exactness has a
+        price you usually don't notice: to answer perfectly, the structure must <strong>store something about every item it has ever
+        seen.</strong> A set of <em>n</em> items costs <code>O(n)</code> memory, full stop. For a to-do list that's nothing. For a
+        system seeing <strong>billions</strong> of items — URLs, user IDs, event keys, cache keys — <code>O(n)</code> is tens or
+        hundreds of gigabytes of RAM <em>per machine</em>, and often it simply won't fit.</p>
+        <p>Now notice something about the questions we actually ask at that scale. "Have I seen this URL?" doesn't always need to be
+        <em>perfect</em> — if we occasionally re-crawl one page by mistake, the sky doesn't fall. "How many unique visitors today?"
+        almost never needs to be <em>exact</em> — no dashboard is improved by knowing it was 48,623,901 rather than "about 48.6
+        million." We've been paying for <strong>precision we don't need.</strong> That gap — between the exact answer we're buying and
+        the approximate answer we'd happily accept — is money left on the table, and probabilistic data structures are how you pick it up.</p>
+
+        <div class="code-label">The trade, in one comparison</div>
+        <div class="code-panel"><span class="muted"># Count 1,000,000,000 distinct user IDs. "Is X present?" and "how many distinct?"</span>
+
+<span class="f">EXACT set / hash table</span>     ~16–40 GB RAM    <span class="s">perfect answers, every query</span>
+<span class="f">Bloom filter</span> (1% FP)        ~1.2 GB          <span class="n">membership: "no" exact, "yes" 99% right</span>
+<span class="f">HyperLogLog</span>                 ~1.5 KB          <span class="n">distinct count within ~2%</span>
+
+<span class="muted"># From 40 GB to 1.5 KB is a ~25,000,000× memory cut — in exchange for a few %</span>
+<span class="muted"># of error you were never going to act on anyway. THAT is why these exist.</span></div>
+
+        <p style="margin-top:1rem;">The deep idea is the same one that powered yesterday's logical clocks: <strong>stop storing the
+        data; store only the faint statistical shadow it casts.</strong> A Bloom filter keeps the shadow of "which hash positions have
+        ever been touched." A HyperLogLog keeps the shadow of "the rarest hash pattern I've ever seen." Neither can reconstruct the
+        original items — that information is gone forever — but each can answer <em>one specific question</em> about them with
+        astonishing economy. Choosing the right shadow for the question is the whole art.</p>
+      </section>
+
+      <section id="bloom">
+        <h2>Bloom Filters — Membership for Almost Free</h2>
+        <p>A <strong>Bloom filter</strong> is a bit array <code>B</code> of <code>m</code> bits (all 0 at the start) plus
+        <code>k</code> independent hash functions, each mapping an item to a position in <code>[0, m)</code>. That's the entire
+        structure. The operations are tiny:</p>
+
+        <div class="code-label">Bloom filter — the whole algorithm</div>
+        <div class="code-panel"><span class="muted"># bit array B[0..m-1] all zero; k hash functions h1..hk</span>
+
+<span class="k">add</span>(x):     <span class="k">for</span> i <span class="k">in</span> 1..k:  B[ h<sub>i</sub>(x) % m ] = 1        <span class="muted"># set k bits</span>
+
+<span class="k">query</span>(x):   <span class="k">for</span> i <span class="k">in</span> 1..k:
+                 <span class="k">if</span> B[ h<sub>i</sub>(x) % m ] == 0:  <span class="k">return</span> <span class="b">"DEFINITELY NOT present"</span>
+             <span class="k">return</span> <span class="n">"PROBABLY present"</span>          <span class="muted"># all k bits were 1</span></div>
+
+        <p style="margin-top:1rem;">The asymmetry is the whole point, and it comes straight from the logic. If you <em>added</em>
+        <code>x</code>, you set all <code>k</code> of its bits, so a later query for <code>x</code> can never find a 0 — <strong>a true
+        member is never reported absent.</strong> That gives the headline guarantee:</p>
+
+        <div class="rule-box">
+          <span class="hb">✔ "Definitely not present" is always true</span> &nbsp; — no false negatives. If any of x's k bits is 0, x was
+          never added, period.<br>
+          <span class="cc">✘ "Probably present" can be wrong</span> &nbsp; — a false positive. x's k bits may <em>all</em> have been set
+          by <em>other</em> items that happened to hash there. The more items you add, the more bits are 1, and the higher this chance.
+        </div>
+
+        <div class="diagram-box">
+          <svg id="bloom-diagram" width="820" height="400" viewBox="0 0 820 400"></svg>
+        </div>
+
+        <p>So a Bloom filter is a <strong>one-way gate</strong>: it reliably tells you what you've <em>never</em> seen, and only
+        <em>probably</em> what you have. That's exactly the right shape for a cheap first check in front of something expensive. "Is
+        this key maybe in the database?" — if the Bloom filter says "definitely not," skip the disk read entirely; if it says "maybe,"
+        pay for the real lookup. You spend a few bits to avoid most of the expensive work, and the rare false positive only costs you a
+        lookup that turns up empty — never a <em>wrong answer</em>, because the real store has the final say.</p>
+
+        <h3>Sizing it: the three knobs</h3>
+        <p>The false-positive rate is <strong>not</strong> a mystery — it's a dial you set. For <code>n</code> expected items, a target
+        false-positive probability <code>p</code>, bit-array size <code>m</code>, and hash count <code>k</code>, the math is:</p>
+        <div class="code-panel"><span class="muted"># optimal sizing for n items at false-positive rate p</span>
+m = <span class="f">ceil</span>( -n · ln(p) / (ln 2)² )     <span class="muted"># bits needed   (p=1% → ~9.6 bits/item)</span>
+k = <span class="f">round</span>( (m / n) · ln 2 )        <span class="muted"># optimal number of hash functions</span>
+
+<span class="muted"># p = 1%   → ~9.6 bits/item,  k ≈ 7     p = 0.1% → ~14.4 bits/item, k ≈ 10</span>
+<span class="muted"># ⇒ a BILLION items at 1% ≈ 1.2 GB, independent of how big each item is.</span></div>
+        <p style="margin-top:1rem;">Two things fall out of this. First, cost is <strong>per item, not per byte</strong>: a 2 KB URL and a
+        4-byte integer each cost the same ~9.6 bits, because only the <em>hashes</em> are stored. Second, there's a sweet spot for
+        <code>k</code>: too few hash functions and bits collide too easily; too many and you fill the array too fast. The formula lands
+        you on the minimum false-positive rate for your space budget.</p>
+
+        <h3>What it cannot do</h3>
+        <p>A plain Bloom filter <strong>can't delete</strong> (clearing a bit might break some other item that shares it), <strong>can't
+        list</strong> what's inside, and <strong>can't count</strong> how many times something was added. Each limitation has a cousin
+        structure that buys the feature back at some cost: <strong>counting Bloom filters</strong> replace bits with small counters to
+        allow deletion; <strong>cuckoo filters</strong> support deletion and often beat Bloom on space at low false-positive rates;
+        <strong>scalable Bloom filters</strong> grow when they fill up. But the plain version — add and maybe-query — is the one you'll
+        reach for 90% of the time.</p>
+      </section>
+
+      <section id="hll">
+        <h2>HyperLogLog — Counting Billions in a Breath of Memory</h2>
+        <p>Bloom filters answer <em>"is this specific thing here?"</em> HyperLogLog answers a completely different question:
+        <em>"how many <strong>distinct</strong> things are here?"</em> (the "count-distinct" or "cardinality" problem). The exact way —
+        a set that de-duplicates — costs <code>O(n)</code> again. HyperLogLog costs a <strong>fixed</strong> ~1.5 KB for <em>any</em>
+        cardinality, from ten to ten billion. The trick is one of the most beautiful ideas in all of computer science, and it starts
+        with a coin.</p>
+
+        <h3>The coin-flip intuition</h3>
+        <p>Flip a fair coin and count how many <strong>heads</strong> you get before the first tails. Getting 1 head is common (¼ of
+        the time you even get that far after the first flip's logic); a run of <strong>10 heads</strong> in a row is rare — it happens
+        about once in <code>2¹⁰ ≈ 1000</code> tries. So if you walk into a room and someone tells you <em>"the longest head-streak
+        anyone here flipped was 10,"</em> you can reason <strong>backwards</strong>: a streak that rare probably required about
+        <strong>a thousand people</strong> flipping. You estimated the crowd size from a single number — the record streak — without
+        counting a single head.</p>
+        <p>HyperLogLog does exactly this, with hashes standing in for coins. <strong>Hash each item</strong> to a random-looking bit
+        string; the leading bits of a good hash are like a run of coin flips. Count the position of the <strong>first 1-bit</strong> (=
+        the run of leading zeros, plus one). Remember only the <strong>maximum</strong> such run you've ever seen. A long maximum run
+        implies you must have hashed a <em>lot</em> of distinct items to stumble onto something that rare — so
+        <code>cardinality ≈ 2^(max run)</code>.</p>
+
+        <div class="code-label">HyperLogLog — the whole algorithm</div>
+        <div class="code-panel"><span class="muted"># m = 2^p registers (buckets), each a small integer, all 0 to start</span>
+
+<span class="k">add</span>(x):
+    h = <span class="f">hash</span>(x)                      <span class="muted"># a well-mixed 32/64-bit value</span>
+    j = <span class="f">top</span> p bits of h            <span class="muted"># which register this item lands in</span>
+    r = <span class="f">leadingZeros</span>(rest of h) + 1 <span class="muted"># the "coin-flip streak" for this item</span>
+    R[j] = <span class="f">max</span>( R[j], r )           <span class="muted"># keep only the record streak per register</span>
+
+<span class="k">estimate</span>():                         <span class="muted"># harmonic mean of the registers, bias-corrected</span>
+    E = α<sub>m</sub> · m² / Σ<sub>j</sub> 2^(-R[j])
+    <span class="k">return</span> E                          <span class="s"># (with small- and large-range corrections)</span>
+
+<span class="k">merge</span>(A, B):  R[j] = <span class="f">max</span>( A.R[j], B.R[j] )  <span class="muted"># union = per-register max. that's it.</span></div>
+
+        <p style="margin-top:1rem;">Two refinements turn the toy "2^(max run)" into the real, accurate estimator. First, a single max run
+        is noisy — you might get unlucky. So HyperLogLog splits items into <code>m = 2^p</code> <strong>registers</strong> using the top
+        <code>p</code> bits of the hash, tracks a separate max-run in each, and <strong>averages</strong> them (using the
+        <em>harmonic</em> mean, which tames outliers). More registers → more averaging → less error: the standard error is about
+        <code>1.04 / √m</code>. With <code>m = 2048</code> registers (~1.5 KB) that's ~<strong>2%</strong>. Second, small bias
+        corrections patch up the estimate at the very low and very high ends.</p>
+
+        <div class="diagram-box">
+          <svg id="hll-diagram" width="820" height="420" viewBox="0 0 820 420"></svg>
+        </div>
+
+        <p>The two superpowers that make HyperLogLog a distributed-systems staple: it is <strong>idempotent</strong> — adding the same
+        item a thousand times only ever updates a register to the same max, so it genuinely counts <em>distinct</em> items and
+        duplicates are free — and it is <strong>mergeable</strong> — the union of two sketches is just the element-wise
+        <code>max</code> of their registers, with <em>no loss of accuracy</em>. That second property is gold: 50 edge servers can each
+        keep their own sketch locally, and you combine them into a global unique-count by shipping 50 tiny sketches and taking maxes,
+        instead of shuffling hundreds of millions of raw IDs to one machine. (Notice the merge rule is the <em>same element-wise max</em>
+        you saw in yesterday's vector clocks — "keep the bigger number in each slot" is a recurring move for combining partial
+        knowledge.)</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>These sketches are gorgeous, but they are sharp tools. Reach for them knowing exactly what you're giving up.</p>
+
+        <h3>You are choosing to be wrong — make sure the wrongness is harmless</h3>
+        <p>A Bloom filter's false positive and a HyperLogLog's ±2% are not bugs; they're the <em>deal you signed</em>. The engineering
+        question is always: <strong>what happens on the rare wrong answer, and can the system absorb it?</strong> A Bloom filter in
+        front of a database is safe — a false positive just causes one needless lookup that returns empty; the database is still the
+        source of truth. A Bloom filter used to decide <em>"this password has never been used, allow it"</em> is <strong>dangerous</strong>
+        — a false positive would reject a perfectly good password with no recourse. Same structure, opposite wisdom. Always ask whether
+        a wrong "yes" (or a count that's off by 2%) is a shrug or a catastrophe.</p>
+
+        <h3>No false negatives — unless you break the rules</h3>
+        <p>The "a Bloom filter never has false negatives" guarantee holds <em>only</em> if you never remove anything from a plain Bloom
+        filter. Clearing a bit to "delete" an item will silently also delete every other item that happened to share that bit, and now
+        a true member can report "absent" — a false negative, the one thing Bloom filters promised never to do. If you need deletion,
+        you need a <strong>counting Bloom filter</strong> or a <strong>cuckoo filter</strong>, not a hacked bit array.</p>
+
+        <h3>They answer one question each — and only that one</h3>
+        <p>A Bloom filter cannot tell you <em>how many</em> items it holds, cannot <em>list</em> them, and cannot answer "how many
+        distinct?" A HyperLogLog cannot tell you whether a <em>specific</em> item is present, cannot give you the items, and cannot do
+        set intersection accurately (estimating <code>|A ∩ B|</code> by inclusion-exclusion compounds both sketches' errors badly).
+        Picking the sketch means picking the <em>one</em> question you'll be able to ask. Need several questions? You keep several
+        sketches, or you keep the real data.</p>
+
+        <h3>Hash quality and saturation are real failure modes</h3>
+        <p>Both structures lean entirely on <strong>good, well-distributed hashes</strong>. A weak hash clusters bits (Bloom) or
+        corrupts the leading-zero statistics (HLL) and quietly wrecks accuracy. And a Bloom filter has a capacity: size it for
+        <code>n</code> items and then stuff in <code>10n</code>, and nearly every bit becomes 1, so <em>every</em> query returns
+        "probably present" — the filter degrades into a device that always says yes. Sizing for the real <code>n</code> (Day 30's
+        back-of-envelope estimation, right here in the wild) is not optional.</p>
+
+        <p style="margin-top:1rem;">The through-line: <strong>a probabilistic sketch is a precise instrument for imprecise answers.</strong>
+        Its error is bounded and tunable, not random sloppiness — which is exactly why you can trust it, <em>once you've decided the
+        error is acceptable for the question you're asking.</em> Use a Bloom filter to cheaply rule things out before expensive work;
+        use HyperLogLog to count distinct things across a fleet; and keep the exact structure for the day you genuinely cannot be wrong.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">🎪</span><div><strong>Out the Parlor Window — The Festival Field</strong>
+          — <span>You leave the Gossip Parlor (Day 35, Vector Clocks) and the <strong>first floor (Phase 2)</strong> opens onto a
+          <strong>festival field</strong> through tall doors. At the near gate stands a bouncer in front of a <strong>wall of light
+          bulbs</strong>: every guest's name flicks on <strong>three bulbs</strong> (never writing a name down), and to check if someone
+          came she looks at their three bulbs — <em>any dark bulb = "definitely never here,"</em> all lit = <em>"probably here"</em>
+          (sometimes a lie, because other guests lit those same bulbs). A hand-painted sign reads: <strong>"I never forget, I never
+          lie about a NO, and I can't turn a single bulb off."</strong> Across the field, a second, lazier bouncer remembers
+          <strong>nothing</strong> but the single <strong>longest coin-flip streak</strong> anyone shouted all night, and from that one
+          number announces the crowd size to within a whisker — <em>"longest streak ≈ 20, so ≈ a million of you."</em> Two gadgets, two
+          questions — <em>"have I seen this one?"</em> and <em>"how many different ones?"</em> — each answered in almost no space.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Door Ahead</strong> — <span>At the far edge of the
+          field stands a tent labelled <strong>Day 37: Merkle Trees &amp; Gossip Protocol</strong>. Through the flap you see replicas
+          whispering to each other and comparing <em>fingerprints of fingerprints</em> — tree-shaped hashes that let two machines find
+          exactly <em>which</em> pieces of their data differ without shipping it all. If today was about cheap <em>membership</em> and
+          <em>counts</em>, the next room is about cheap <em>comparison</em> — the same "store a tiny shadow, not the data" instinct,
+          turned toward keeping replicas in sync.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Vector Clocks (Day 35)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Bloom Filters &amp; HLL (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Merkle Trees &amp; Gossip (Day 37)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">These sketches power…</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Caching (Day 7)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Databases &amp; LSM reads (Days 11–14)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Back-of-Envelope sizing (Day 30)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Rate limiting &amp; analytics (ahead)</span>
+        </div>
+        <p>Today is the first time we've deliberately chosen to be <em>approximately</em> right to save resources — a mindset that
+        reappears everywhere. A Bloom filter is the classic guard in front of a <strong>cache (Day 7)</strong> and, most famously,
+        in front of the on-disk tables of an <strong>LSM-tree database (Days 11–14)</strong>, where it turns "is this key maybe on this
+        SSTable?" into a free bit-check that skips the vast majority of pointless disk reads. HyperLogLog is the engine behind every
+        <em>"unique visitors / unique X"</em> metric you've ever seen on an analytics dashboard, and its per-register-max merge is the
+        same partial-knowledge combine you met in <strong>vector clocks (Day 35)</strong>. Sizing either one correctly is a direct
+        application of <strong>back-of-envelope estimation (Day 30)</strong> — pick the wrong <code>n</code> and the whole trade
+        collapses. Next, <strong>Merkle trees (Day 37)</strong> take the same "keep a tiny hash instead of the data" instinct and build
+        a <em>tree</em> of hashes, so two replicas can efficiently discover exactly which data differs — the natural partner to the
+        version reconciliation we met yesterday.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"A Bloom filter can give a wrong answer either way."</td><td>No — it is <strong>one-sided</strong>. A "definitely not
+          present" is <em>always</em> correct (no false negatives); only "probably present" can be wrong (a false positive). That
+          asymmetry is the entire reason it's useful as a cheap pre-filter.</td></tr>
+          <tr><td>"I'll just clear some bits to delete items from a Bloom filter."</td><td>Clearing a bit can break <strong>every other
+          item that shares it</strong>, introducing false negatives and destroying the core guarantee. Use a <strong>counting Bloom
+          filter</strong> or a <strong>cuckoo filter</strong> if you need deletion.</td></tr>
+          <tr><td>"A Bloom filter tells me how many items it holds."</td><td>It can't count, can't list its contents, and can't tell you
+          cardinality. It only answers maybe-in / definitely-out for a <em>specific</em> item. Counting distinct items is HyperLogLog's
+          job, not a Bloom filter's.</td></tr>
+          <tr><td>"HyperLogLog gives the exact unique count."</td><td>It's an <strong>estimate</strong> (~2% standard error at ~1.5 KB).
+          For counts that must be exact — billing, compliance — you need an exact structure. HLL is for dashboards and scale, where
+          "about 48.6 million" is the right precision.</td></tr>
+          <tr><td>"Bigger items need a bigger Bloom filter / HLL."</td><td>No — both store only <strong>hashes</strong>, so cost depends
+          on the <em>number</em> of items, not their size. A 2 KB URL and a 4-byte int cost the same. Cost scales with <code>n</code>
+          (Bloom) or is <strong>fixed</strong> regardless of <code>n</code> (HLL).</td></tr>
+          <tr><td>"I can intersect two HyperLogLogs to get |A ∩ B|."</td><td>HLLs <strong>union</strong> perfectly (per-register max), but
+          intersection via inclusion–exclusion compounds both sketches' errors and is often wildly off. Don't use HLL for accurate
+          intersections.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ You put a Bloom filter in front of a key-value database so that reads for keys that
+          don't exist can skip the disk. One day a lookup for a key you <em>never</em> inserted returns "probably present," so you do
+          the disk read — and it comes back empty. (1) What just happened, and did your system return a <em>wrong</em> answer to the
+          user? (2) Separately: your "unique active users this month" counter is a HyperLogLog that reports 10.2M; the exact number was
+          10.0M. Is the counter broken, and roughly what sketch size would give that error? (click to reveal)</div>
+          <div class="recall-answer"><strong>(1) That was a false positive — and no, the user got the correct answer.</strong> The key's
+          <code>k</code> bits all happened to be set by <em>other</em> keys, so the filter said "probably present." You paid the price
+          of the trade: <em>one needless disk read that returned empty</em>. But the database is the source of truth, so the user still
+          correctly learns the key doesn't exist. This is the safe way to use a Bloom filter — a false positive costs you a little
+          <em>work</em>, never a wrong <em>result</em>. (If you ever got a false <em>negative</em> — "definitely not present" for a key
+          that <em>is</em> there — <em>that</em> would be a real bug, and a plain Bloom filter cannot produce one unless someone
+          "deleted" by clearing bits.)
+          <br><br><strong>(2) The counter is working as designed.</strong> 10.2M vs 10.0M is a <strong>2% error</strong>, exactly the
+          ballpark of HyperLogLog's standard error <code>≈ 1.04/√m</code>. Solving <code>1.04/√m ≈ 0.02</code> gives
+          <code>m ≈ 2700</code> registers — i.e. the standard <strong>~2 KB (m = 2048)</strong> sketch. Nothing is broken: you
+          <em>chose</em> ~2% error in exchange for counting tens of millions of distinct users in two kilobytes that merge trivially
+          across all your servers. If you truly needed exact, you'd pay <code>O(n)</code> memory and give up the free merge.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🗄️ Cassandra, HBase, RocksDB &amp; LSM-trees</div><p>Every
+          <strong>LSM-tree</strong> store keeps a <strong>Bloom filter per on-disk SSTable</strong> so a read for a missing key can skip
+          the file without touching disk. It's the single most common production Bloom filter on earth — the reason your "key not found"
+          lookups are fast instead of grinding through every table on disk.</p></div>
+          <div class="realworld-card"><div class="rw-company">📊 Redis, Presto, BigQuery &amp; Druid</div><p><strong>Redis</strong> ships
+          <code>PFADD</code>/<code>PFCOUNT</code> — a HyperLogLog counting uniques in ~12 KB. <strong>Presto</strong>/<strong>Trino</strong>,
+          Google <strong>BigQuery</strong> (<code>APPROX_COUNT_DISTINCT</code>), and <strong>Apache Druid</strong> all use HLL so a
+          <code>COUNT(DISTINCT …)</code> over billions of rows returns in moments instead of shuffling every value.</p></div>
+          <div class="realworld-card"><div class="rw-company">🌐 Chrome, CDNs &amp; crawlers</div><p>Google <strong>Chrome</strong> once
+          used a Bloom filter to check URLs against its malicious-site list locally before asking the server. Web <strong>crawlers</strong>
+          use them for "already seen this URL?", and <strong>CDNs</strong> use them to avoid caching one-hit-wonder objects ("only cache
+          on the second request") — a classic, cheap first-line filter.</p></div>
+          <div class="realworld-card"><div class="rw-company">🧪 The HyperLogLog pedigree</div><p>HLL descends from Flajolet &amp;
+          Martin's 1980s work, refined into <strong>HyperLogLog (2007)</strong> and Google's <strong>HyperLogLog++</strong> (better bias
+          correction + sparse representation for small counts). It's a rare case where a named academic algorithm ships, almost
+          verbatim, inside databases you use every day.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What does a Bloom filter answer, and what is its one-sided guarantee?</div>
+          <div class="fc-a">A: <strong>Membership</strong> ("is X in the set?"). A <strong>"no" is always correct</strong> (no false
+          negatives); a "yes" is "probably" (a tunable <strong>false-positive</strong> rate). It can't delete, list, or count.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: How do you add and query a Bloom filter?</div>
+          <div class="fc-a">A: <strong>add(x)</strong>: set the <code>k</code> bits that x's <code>k</code> hashes point to.
+          <strong>query(x)</strong>: if <em>any</em> of those k bits is 0 → "definitely not present"; if <em>all</em> are 1 → "probably
+          present."</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What does HyperLogLog answer, and what's the core intuition?</div>
+          <div class="fc-a">A: <strong>Cardinality</strong> ("how many <em>distinct</em> items?"). Intuition: hash each item; the
+          <strong>longest run of leading zeros</strong> seen is like the longest coin-flip head-streak — a rare long run implies a large
+          population, so <code>count ≈ 2^(max run)</code>, averaged over many registers.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is HyperLogLog ideal for distributed count-distinct?</div>
+          <div class="fc-a">A: It's <strong>fixed-size</strong> (~1.5 KB for any cardinality, ~2% error), <strong>idempotent</strong>
+          (duplicates are free — counts distinct), and <strong>mergeable</strong>: union = <strong>per-register max</strong>, with no
+          loss of accuracy. Each server keeps a tiny sketch; combine by taking maxes.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: When is a Bloom filter false positive safe, and when is it dangerous?</div>
+          <div class="fc-a">A: <strong>Safe</strong> when a wrong "yes" only costs extra <em>work</em> checked against a source of truth
+          (e.g. a needless DB read that returns empty). <strong>Dangerous</strong> when the "yes" is itself the final decision (e.g.
+          "this password was never used → allow"), where a false positive causes a wrong outcome.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Why does an exact set cost <code>O(n)</code> memory, and why is that a problem at a billion items?</li>
+          <li>Write the <code>add</code> and <code>query</code> steps of a Bloom filter. Which answer is always correct, and which can
+          be wrong?</li>
+          <li>Explain in one sentence <em>why</em> a Bloom filter has no false negatives but can have false positives.</li>
+          <li>You expect 100M items and want a 1% false-positive rate. Roughly how many bits total, and why doesn't the size of each
+          item matter?</li>
+          <li>Give the coin-flip intuition behind HyperLogLog: what does the longest run of leading zeros tell you, and why?</li>
+          <li>What are HyperLogLog's two superpowers for a distributed system, and what is the merge rule?</li>
+          <li>Name one question a Bloom filter <em>cannot</em> answer and one a HyperLogLog cannot, and say which structure each belongs
+          to.</li>
+          <li>Describe one place a false positive (or a 2% miscount) is harmless, and one place it would be a real bug.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>when a question is asked at massive scale, you can usually trade a sliver of accuracy
+          for an enormous amount of memory — by storing the data's statistical shadow instead of the data.</strong> A <strong>Bloom
+          filter</strong> answers <em>membership</em> with a bit array and k hashes: "definitely not present" is always true, "probably
+          present" is a tunable false positive, and a billion items fit in ~1.2 GB instead of tens of GB — perfect as a cheap guard in
+          front of expensive work (the LSM-tree "skip this SSTable" classic). <strong>HyperLogLog</strong> answers <em>how many
+          distinct?</em> by watching the longest leading-zero run, counting billions to within ~2% in ~1.5 KB, idempotent and mergeable
+          by per-register max — the engine behind every "unique visitors" metric. Choose a sketch by choosing the <em>one</em> question
+          you need, and make sure the inevitable wrong answer is a shrug, not a catastrophe. Next, we aim the same "keep a tiny hash,
+          not the data" instinct at keeping replicas in sync — <strong>Day 37: Merkle Trees &amp; Gossip Protocol.</strong>
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-35.html">← Day 35: Vector Clocks &amp; Causality</a>
+        <a href="day-37.html" class="coming-soon-link">Day 37: Merkle Trees &amp; Gossip Protocol →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 36 of 90 — Bloom Filters &amp; HyperLogLog</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ══════════════════════════════════════════════════════════════════════
+  //  INTERACTIVE SKETCHES — a real Bloom filter and a real HyperLogLog.
+  //  Both compute live; the numbers you see are genuine, not scripted.
+  // ══════════════════════════════════════════════════════════════════════
+
+  // ── mode toggle ──────────────────────────────────────────────────────
+  Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(btn){
+    btn.addEventListener('click', function(){
+      var mode = btn.getAttribute('data-mode');
+      Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      document.getElementById('panel-bloom').classList.toggle('active', mode === 'bloom');
+      document.getElementById('panel-hll').classList.toggle('active', mode === 'hll');
+    });
+  });
+
+  // ── BLOOM FILTER ───────────────────────────────────────────────────────
+  var M = 24, K = 3;
+  var bits = new Array(M).fill(0);
+  // three independent, deterministic string hashes mod M
+  function h1(s){ var x=0; for(var i=0;i<s.length;i++) x=(x+s.charCodeAt(i))%M; return x; }
+  function h2(s){ var x=0; for(var i=0;i<s.length;i++) x=(x*31+s.charCodeAt(i))>>>0; return x%M; }
+  function h3(s){ var x=7; for(var i=0;i<s.length;i++) x=(x*131+s.charCodeAt(i))>>>0; return x%M; }
+  function bloomBits(s){ return [h1(s), h2(s), h3(s)]; }
+
+  var MEMBERS = ['apple.com','banana.io','cherry.net','date.org','elder.app'];
+  // query chips: a true member, a true-absent, and a crafted false positive
+  var QUERIES = [
+    { s:'cherry.net', kind:'member' },
+    { s:'hazel.dev',  kind:'absent' },
+    { s:'quince.ai',  kind:'fp' }
+  ];
+  var inserted = {};
+
+  var bitGrid   = document.getElementById('bit-grid');
+  var insertRow = document.getElementById('insert-row');
+  var queryRow  = document.getElementById('query-row');
+  var bStatus   = document.getElementById('bloom-status');
+
+  function buildBitGrid(){
+    bitGrid.innerHTML = '';
+    for(var i=0;i<M;i++){
+      var cell = document.createElement('div');
+      cell.className = 'bit-cell' + (bits[i] ? ' on' : '');
+      cell.id = 'bit-'+i;
+      cell.innerHTML = '<span class="bit-idx">'+i+'</span>'+(bits[i]?'1':'0');
+      bitGrid.appendChild(cell);
+    }
+  }
+  function renderBit(i){
+    var cell = document.getElementById('bit-'+i);
+    if(!cell) return;
+    cell.className = 'bit-cell' + (bits[i] ? ' on' : '');
+    cell.innerHTML = '<span class="bit-idx">'+i+'</span>'+(bits[i]?'1':'0');
+  }
+  function flash(idxs, cls){
+    idxs.forEach(function(i){
+      var cell = document.getElementById('bit-'+i);
+      if(cell){ cell.classList.add(cls); setTimeout(function(){ cell.classList.remove(cls); }, 900); }
+    });
+  }
+  function fpRate(){
+    // (1 - e^(-k n / m))^k  with n = members inserted
+    var n = Object.keys(inserted).length;
+    if(n===0) return 0;
+    var p = Math.pow(1 - Math.exp(-K*n/M), K);
+    return Math.round(p*100);
+  }
+  function updateBloomStats(){
+    var set = bits.reduce(function(a,b){return a+b;},0);
+    document.getElementById('bloom-setbits').textContent = set;
+    document.getElementById('bloom-members').textContent = Object.keys(inserted).length;
+    document.getElementById('bloom-fprate').textContent = fpRate() + '%';
+  }
+  function insertMember(s, chip){
+    if(inserted[s]) return;
+    inserted[s] = true;
+    var b = bloomBits(s);
+    b.forEach(function(i){ bits[i]=1; renderBit(i); });
+    flash(b, 'flash');
+    if(chip) chip.classList.add('inserted');
+    bStatus.className = 'q-status ok';
+    bStatus.innerHTML = 'Inserted <code>'+s+'</code> → set bits <code>['+b.join(', ')+']</code>. Three bulbs lit.';
+    updateBloomStats();
+  }
+  function queryMember(q){
+    var b = bloomBits(q.s);
+    var allSet = b.every(function(i){ return bits[i]===1; });
+    if(allSet){
+      flash(b, 'flash-ok');
+      if(q.kind==='fp'){
+        bStatus.className = 'q-status bad';
+        bStatus.innerHTML = '⚠ <b>FALSE POSITIVE.</b> <code>'+q.s+'</code> checks bits <code>['+b.join(', ')+']</code> — all lit, so the filter says <b>"probably present"</b>. But you never inserted it: those three bits were lit by three <i>different</i> members. The filter was fooled.';
+      } else {
+        bStatus.className = 'q-status ok';
+        bStatus.innerHTML = '✔ <code>'+q.s+'</code> checks bits <code>['+b.join(', ')+']</code> — all lit → <b>"probably present"</b>. (It really is a member, so this "yes" is honest.)';
+      }
+    } else {
+      var dark = b.filter(function(i){ return bits[i]===0; });
+      flash(b, 'flash-bad');
+      bStatus.className = 'q-status info';
+      bStatus.innerHTML = '✔ <code>'+q.s+'</code> checks bits <code>['+b.join(', ')+']</code> — bit <code>'+dark[0]+'</code> is <b>dark</b> → <b>"DEFINITELY not present."</b> This answer is always correct — Bloom filters have no false negatives.';
+    }
+  }
+
+  MEMBERS.forEach(function(s){
+    var chip = document.createElement('div');
+    chip.className = 'chip'; chip.textContent = s;
+    chip.addEventListener('click', function(){ insertMember(s, chip); });
+    insertRow.appendChild(chip);
+  });
+  QUERIES.forEach(function(q){
+    var chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.innerHTML = q.s + (q.kind==='fp' ? '<span class="fp-tag">?</span>' : '');
+    chip.addEventListener('click', function(){ queryMember(q); });
+    queryRow.appendChild(chip);
+  });
+
+  document.getElementById('bloom-insert-all').addEventListener('click', function(){
+    MEMBERS.forEach(function(s, i){
+      var chip = insertRow.children[i];
+      insertMember(s, chip);
+    });
+    bStatus.className = 'q-status ok';
+    bStatus.innerHTML = 'All 5 members inserted. Now test a lookup below — especially <code>quince.ai</code>.';
+  });
+  document.getElementById('bloom-reset').addEventListener('click', function(){
+    bits = new Array(M).fill(0); inserted = {};
+    Array.prototype.forEach.call(insertRow.children, function(c){ c.classList.remove('inserted'); });
+    buildBitGrid(); updateBloomStats();
+    bStatus.className = 'q-status info';
+    bStatus.innerHTML = 'Filter cleared. Insert a few domains above, then test a lookup.';
+  });
+
+  buildBitGrid(); updateBloomStats();
+
+  // ── HYPERLOGLOG ──────────────────────────────────────────────────────
+  var P = 8, MH = 1<<P;                     // 256 registers
+  var ALPHA = 0.7213/(1+1.079/MH);
+  var regs = new Array(MH).fill(0);
+  var trueSet = {}, trueCount = 0, idCounter = 0;
+
+  function hash32(s){                       // FNV-1a, 32-bit
+    var h = 0x811c9dc5 >>> 0;
+    for(var i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h >>> 0;
+  }
+  function rank(x, width){                  // leading-zero run (+1) within `width` low bits
+    var r = 1;
+    for(var i=width-1;i>=0;i--){ if((x>>>i)&1) return r; r++; }
+    return r;
+  }
+  function addOne(idStr){
+    var h = hash32(idStr);
+    var idx  = h >>> (32-P);                // top p bits → register
+    var rest = (h << P) >>> P;              // remaining 32-p bits
+    var rk   = rank(rest, 32-P);
+    if(rk > regs[idx]) regs[idx] = rk;
+  }
+  function estimate(){
+    var sum = 0, zeros = 0;
+    for(var j=0;j<MH;j++){ sum += Math.pow(2, -regs[j]); if(regs[j]===0) zeros++; }
+    var E = ALPHA * MH * MH / sum;
+    if(E <= 2.5*MH && zeros > 0){ E = MH * Math.log(MH/zeros); }  // linear counting (small range)
+    return Math.round(E);
+  }
+
+  var regViz = document.getElementById('reg-viz');
+  function buildRegViz(){
+    regViz.innerHTML = '';
+    for(var j=0;j<MH;j++){
+      var bar = document.createElement('div');
+      bar.className = 'reg-bar'; bar.id = 'reg-'+j; bar.style.height = '1px';
+      regViz.appendChild(bar);
+    }
+  }
+  function renderRegViz(){
+    var max = 1;
+    for(var j=0;j<MH;j++){ if(regs[j]>max) max = regs[j]; }
+    for(var j=0;j<MH;j++){
+      var bar = document.getElementById('reg-'+j);
+      if(bar) bar.style.height = Math.max(1, Math.round(regs[j]/max*84)) + 'px';
+    }
+  }
+  function updateHllStats(){
+    var est = estimate();
+    document.getElementById('hll-true').textContent = trueCount.toLocaleString();
+    document.getElementById('hll-est').textContent  = est.toLocaleString();
+    var err = trueCount>0 ? Math.round(Math.abs(est-trueCount)/trueCount*100) : 0;
+    var errEl = document.getElementById('hll-err');
+    errEl.textContent = err + '%';
+    errEl.className = 'sv ' + (err<=3 ? 'good' : (err<=8 ? 'warn' : ''));
+    // an exact set would need ~ trueCount * 16 bytes (id + overhead), shown compactly
+    var exactBytes = trueCount * 16;
+    document.getElementById('hll-exact').textContent =
+      exactBytes >= 1e6 ? (exactBytes/1e6).toFixed(1)+' MB'
+      : exactBytes >= 1e3 ? (exactBytes/1e3).toFixed(1)+' KB'
+      : exactBytes + ' B';
+    renderRegViz();
+  }
+  function addUnique(n){
+    for(var i=0;i<n;i++){
+      var id = 'user-'+(idCounter++)+'-id';
+      trueSet[id] = true; trueCount++;
+      addOne(id);
+    }
+    updateHllStats();
+    var est = estimate();
+    document.getElementById('hll-status').className = 'q-status ok';
+    document.getElementById('hll-status').innerHTML =
+      'Streamed '+n.toLocaleString()+' new unique IDs. Sketch estimates <b>'+est.toLocaleString()+
+      '</b> distinct vs <b>'+trueCount.toLocaleString()+'</b> actual — in a fixed <b>256 bytes</b>.';
+  }
+  function addDuplicates(n){
+    if(idCounter===0){
+      document.getElementById('hll-status').className = 'q-status warn';
+      document.getElementById('hll-status').innerHTML = 'Add some unique IDs first, then duplicates will have nothing to re-add.';
+      return;
+    }
+    for(var i=0;i<n;i++){ addOne('user-'+(i % idCounter)+'-id'); }  // re-add already-seen IDs
+    updateHllStats();
+    document.getElementById('hll-status').className = 'q-status info';
+    document.getElementById('hll-status').innerHTML =
+      'Re-added '+n.toLocaleString()+' <b>duplicate</b> IDs — notice the estimate and true count <b>did not move</b>. HyperLogLog counts <b>distinct</b> items, so duplicates are free.';
+  }
+
+  document.getElementById('hll-add100').addEventListener('click', function(){ addUnique(100); });
+  document.getElementById('hll-add1000').addEventListener('click', function(){ addUnique(1000); });
+  document.getElementById('hll-dup').addEventListener('click', function(){ addDuplicates(500); });
+  document.getElementById('hll-reset').addEventListener('click', function(){
+    regs = new Array(MH).fill(0); trueSet = {}; trueCount = 0; idCounter = 0;
+    updateHllStats();
+    document.getElementById('hll-status').className = 'q-status info';
+    document.getElementById('hll-status').innerHTML = 'Sketch reset. Stream some user IDs and watch 256 bytes estimate the distinct count.';
+  });
+
+  buildRegViz(); updateHllStats();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  roughjs (Excalidraw-style) diagrams
+  // ══════════════════════════════════════════════════════════════════════
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+  function arrow(rs, svg, x1, y1, x2, y2, col, dashed) {
+    var opts = { stroke:col, strokeWidth:1.8, roughness:0.9 };
+    if (dashed) opts.strokeLineDash = [6,5];
+    svg.appendChild(rs.line(x1, y1, x2, y2, opts));
+    var ang = Math.atan2(y2-y1, x2-x1);
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang - 0.4), y2 - 10*Math.sin(ang - 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang + 0.4), y2 - 10*Math.sin(ang + 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+  }
+
+  // Anchor: the two festival gadgets side by side.
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, '🎪 Two gadgets, two questions, almost no memory', '#e2e8f0', '13', '800');
+
+    // ---- left: Bloom = wall of bulbs ----
+    T(205, 52, '💡 WALL OF BULBS = BLOOM FILTER', '#7dd3fc', '11', '800');
+    T(205, 68, '"have I seen THIS one?"', '#94a3b8', '9', '600');
+    // bulbs
+    var on = {1:1,2:1,4:1,5:1,7:1};
+    for(var i=0;i<8;i++){
+      var bx = 60 + i*42;
+      var lit = on[i];
+      svg.appendChild(rs.circle(bx, 110, 22, { stroke: lit?'#fbbf24':'#475569', strokeWidth:2, roughness:1.1, fill: lit?'#fbbf2430':'#1e293b', fillStyle:'solid' }));
+      T(bx, 114, lit?'💡':'•', lit?'#fcd34d':'#64748b', lit?'12':'13', '700');
+    }
+    T(205, 150, 'guest "Priya" → 3 stencils → bulbs 1,4,7', '#cbd5e1', '9', '700', true);
+    svg.appendChild(rs.rectangle(40, 164, 330, 40, { stroke:'#22c55e', strokeWidth:1.3, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(205, 181, 'ANY bulb dark → "definitely NEVER here"', '#86efac', '9.5', '800');
+    T(205, 196, '(a NO is always true — no false negatives)', '#86efac', '8', '600');
+    svg.appendChild(rs.rectangle(40, 210, 330, 44, { stroke:'#fb7185', strokeWidth:1.3, roughness:1, fill:'#fb71850a', fillStyle:'solid' }));
+    T(205, 227, 'ALL lit → "probably here" (maybe a LIE —', '#fca5a5', '9.5', '800');
+    T(205, 242, 'other guests lit those bulbs = false positive)', '#fca5a5', '8.5', '600');
+
+    // divider
+    svg.appendChild(rs.line(410, 44, 410, 400, { stroke:'#334155', strokeWidth:1.4, roughness:0.8, strokeLineDash:[5,5] }));
+
+    // ---- right: HLL = longest streak ----
+    T(615, 52, '🪙 LONGEST STREAK = HYPERLOGLOG', '#c4b5fd', '11', '800');
+    T(615, 68, '"how many DIFFERENT ones?"', '#94a3b8', '9', '600');
+    // coin streak
+    T(615, 102, 'H H H H H H H H H H ... T', '#fcd34d', '15', '800', true);
+    T(615, 122, 'longest head-streak heard all night ≈ 20', '#cbd5e1', '9', '700');
+    svg.appendChild(rs.rectangle(450, 140, 330, 46, { stroke:'#a78bfa', strokeWidth:1.5, roughness:1, fill:'#a78bfa0a', fillStyle:'solid' }));
+    T(615, 160, 'a streak of 20 is ~1-in-a-million rare…', '#c4b5fd', '9.5', '700');
+    T(615, 176, 'so ≈ 2²⁰ ≈ 1,000,000 people must have flipped', '#c4b5fd', '9.5', '800');
+    svg.appendChild(rs.rectangle(450, 192, 330, 62, { stroke:'#22c55e', strokeWidth:1.3, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(615, 210, 'remember ONE number → read crowd size off it', '#86efac', '9.5', '800');
+    T(615, 226, 'idempotent (dups free) + mergeable', '#86efac', '8.5', '600');
+    T(615, 240, '(union = keep the bigger streak per bucket)', '#86efac', '8', '600');
+
+    // bottom verdict band
+    svg.appendChild(rs.rectangle(40, 300, 740, 58, { stroke:'#fbbf24', strokeWidth:1.6, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(410, 322, 'Neither gadget stores the guests. Each keeps only a tiny statistical SHADOW of them.', '#fcd34d', '10.5', '800');
+    T(410, 340, 'Bloom: which bulbs got lit.   HLL: the single rarest streak seen.   Approximately right, pocket-sized.', '#fcd34d', '9.5', '700');
+    T(410, 388, 'Give up being EXACTLY right → be NEARLY right in almost no memory.', '#94a3b8', '9', '600');
+  }
+
+  // Bloom mechanism: add sets k bits; query checks; the FP case.
+  function drawBloomDiagram() {
+    var svg = document.getElementById('bloom-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'Bloom filter: add sets k bits · query reads them · the false positive', '#e2e8f0', '13', '700');
+
+    // bit array of 12 cells
+    var set = {1:1,3:1,4:1,6:1,8:1,9:1,11:1};
+    var x0 = 70, cw = 56;
+    for(var i=0;i<12;i++){
+      var cx = x0 + i*cw;
+      var lit = set[i];
+      svg.appendChild(rs.rectangle(cx, 150, 48, 48, { stroke: lit?'#38bdf8':'#475569', strokeWidth:1.8, roughness:1.05, fill: lit?'#38bdf820':'#1e293b', fillStyle:'solid' }));
+      T(cx+24, 180, lit?'1':'0', lit?'#7dd3fc':'#64748b', '16', '800', true);
+      T(cx+24, 214, ''+i, '#64748b', '8', '600');
+    }
+
+    // add "foo" -> bits 1,4,9
+    T(130, 78, 'add("foo")', '#86efac', '11', '800', true);
+    [1,4,9].forEach(function(i){ arrow(rs, svg, x0 + i*cw + 24, 100, x0 + i*cw + 24, 148, '#22c55e'); });
+    T(130, 94, 'hashes → bits 1, 4, 9  → set them to 1', '#86efac', '8.5', '600');
+
+    // query "bar" (absent) -> bit 7 is 0
+    T(470, 78, 'query("bar")  →  bit 7 is 0', '#fca5a5', '11', '800', true);
+    arrow(rs, svg, x0 + 7*cw + 24, 100, x0 + 7*cw + 24, 148, '#fb7185');
+    T(470, 94, 'any 0 bit ⇒ DEFINITELY NOT present (always right)', '#fca5a5', '8.5', '600');
+
+    // query "baz" false positive -> bits 3,6,11 all 1 but never added
+    T(410, 258, 'query("baz") → bits 3, 6, 11 are all 1 (lit by OTHER items) → "probably present"', '#fbbf24', '9.5', '800');
+    [3,6,11].forEach(function(i){ arrow(rs, svg, x0 + i*cw + 24, 248, x0 + i*cw + 24, 202, '#fbbf24'); });
+
+    svg.appendChild(rs.rectangle(60, 288, 700, 92, { stroke:'#a78bfa', strokeWidth:1.4, roughness:1, fill:'#a78bfa07', fillStyle:'solid' }));
+    T(410, 310, 'The one-way gate', '#c4b5fd', '11', '800');
+    T(410, 330, '✔ "definitely not present"  — ALWAYS correct (if any bit is 0, it was never added)', '#86efac', '9.5', '700');
+    T(410, 348, '⚠ "probably present"  — may be a FALSE POSITIVE (k bits set by other items)', '#fca5a5', '9.5', '700');
+    T(410, 368, 'no false negatives · cannot delete · cannot count · ~9.6 bits/item at 1% error', '#94a3b8', '9', '600');
+  }
+
+  // HLL mechanism: hash → index + leading zeros → register max → estimate.
+  function drawHllDiagram() {
+    var svg = document.getElementById('hll-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'HyperLogLog: hash → pick a bucket → count leading zeros → keep the record', '#e2e8f0', '13', '700');
+
+    // item -> hash
+    svg.appendChild(rs.rectangle(40, 60, 150, 44, { stroke:'#38bdf8', strokeWidth:1.8, roughness:1.05, fill:'#38bdf810', fillStyle:'solid' }));
+    T(115, 80, 'item "user-42"', '#7dd3fc', '10.5', '800');
+    T(115, 96, 'hash(x)', '#94a3b8', '9', '600');
+    arrow(rs, svg, 192, 82, 250, 82, '#64748b');
+
+    // hash bits split: index | rest
+    svg.appendChild(rs.rectangle(255, 62, 90, 40, { stroke:'#a78bfa', strokeWidth:1.7, roughness:1, fill:'#a78bfa15', fillStyle:'solid' }));
+    T(300, 80, '10110', '#c4b5fd', '12', '800', true);
+    T(300, 118, 'top p bits', '#c4b5fd', '8.5', '700');
+    T(300, 131, '= bucket #22', '#94a3b8', '8', '600');
+    svg.appendChild(rs.rectangle(350, 62, 220, 40, { stroke:'#fbbf24', strokeWidth:1.7, roughness:1, fill:'#fbbf2410', fillStyle:'solid' }));
+    T(460, 80, '0 0 0 1 0 1 1 0 …', '#fcd34d', '12', '800', true);
+    T(460, 118, 'rest of hash → 3 leading zeros', '#fcd34d', '8.5', '700');
+    T(460, 131, '→ rank = 3 + 1 = 4', '#94a3b8', '8', '600');
+
+    // registers
+    T(410, 170, 'registers (one max-rank "record streak" per bucket)', '#cbd5e1', '10', '700');
+    var vals = [2,0,3,1,4,0,2,1,3,2,0,4,1,2,3,1];
+    var rx = 70, rw = 42;
+    for(var i=0;i<16;i++){
+      var h = 10 + vals[i]*14;
+      svg.appendChild(rs.rectangle(rx + i*rw, 250 - h, 34, h, { stroke:'#38bdf8', strokeWidth:1.4, roughness:1, fill:'#38bdf820', fillStyle:'solid' }));
+      T(rx + i*rw + 17, 264, ''+vals[i], '#7dd3fc', '9', '800', true);
+    }
+    T(410, 282, '… 256 of these, 1 byte each = 256 bytes total …', '#94a3b8', '8.5', '600');
+
+    // estimate + merge
+    svg.appendChild(rs.rectangle(60, 300, 350, 76, { stroke:'#22c55e', strokeWidth:1.4, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(235, 320, 'estimate = α·m² / Σ 2^(−R[j])', '#86efac', '10.5', '800', true);
+    T(235, 338, 'harmonic mean of the buckets, bias-corrected', '#86efac', '8.5', '600');
+    T(235, 356, '~2% error at m=2048 (~1.5 KB), for ANY count', '#86efac', '9', '700');
+
+    svg.appendChild(rs.rectangle(430, 300, 330, 76, { stroke:'#a78bfa', strokeWidth:1.4, roughness:1, fill:'#a78bfa0a', fillStyle:'solid' }));
+    T(595, 320, 'merge(A,B): R[j] = max(A[j], B[j])', '#c4b5fd', '10.5', '800', true);
+    T(595, 338, 'union across 50 servers = per-bucket max', '#c4b5fd', '8.5', '600');
+    T(595, 356, 'idempotent (dups free) · ship sketches, not IDs', '#c4b5fd', '9', '700');
+  }
+
+  function drawAll() { drawAnchorDiagram(); drawBloomDiagram(); drawHllDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
