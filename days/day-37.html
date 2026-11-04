@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 37: Merkle Trees &amp; Gossip Protocol | System Design Mastery</title>
+  <meta name="description" content="Replicas drift apart — a node goes offline for an hour, misses writes, and comes back stale. Now two machines each holding terabytes must answer one awkward question: WHICH keys differ? Comparing everything means shipping everything, which is absurd. A MERKLE TREE is a tree of hashes — each leaf is the hash of a data block, each parent the hash of its children — so the single root hash fingerprints all the data. Two replicas swap just their roots: equal means identical (one tiny message, done); different means they descend only into mismatched branches, pinpointing the handful of differing blocks in O(log n) comparisons and shipping only what actually changed. A GOSSIP (epidemic) PROTOCOL is how the news spreads: each node periodically picks a few random peers and exchanges state, so an update reaches all N nodes in about log(N) rounds — decentralized, with no coordinator, and resilient to failures. Taught with a two-librarians-and-summary-cards memory anchor, a live Merkle-tree diff you can corrupt and watch descend only the mismatched path, an interactive gossip simulation that spreads an update across a cluster round by round, Excalidraw-style diagrams of both mechanisms, the accuracy/consistency tradeoffs, and how Git, Bitcoin, Cassandra, DynamoDB, and Consul use these in production. How replicas heal themselves — cheaply." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .flow-step > span { font-weight:800; color: var(--accent-light); min-width:1.4rem; }
+    /* role / concept cards — colored left bar */
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .sim-panel { display:none; } .sim-panel.active { display:block; }
+    .q-status { text-align:center; font-weight:700; font-size:.88rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.75rem 0 1rem; line-height:1.6; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+    .q-status.info { background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .sim-controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 1rem; }
+    .stat-row { display:flex; gap:.6rem; flex-wrap:wrap; margin:.9rem 0; }
+    .stat-chip { flex:1; min-width:120px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:.6rem .8rem; text-align:center; }
+    .stat-chip .sv { font-size:1.2rem; font-weight:800; color:var(--text-primary); font-family:'JetBrains Mono',monospace; }
+    .stat-chip .sv.good { color:#86efac; } .stat-chip .sv.warn { color:#fbbf24; } .stat-chip .sv.blue { color:#7dd3fc; }
+    .stat-chip .sl { font-size:.65rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin-top:.2rem; }
+    .rule-box { background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius); padding:.9rem 1.1rem; margin:1rem 0; font-size:.84rem; }
+    .rule-box code { font-family:'JetBrains Mono',monospace; color:#7dd3fc; }
+    .rule-box .cc { color:#fca5a5; font-weight:700; } .rule-box .hb { color:#86efac; font-weight:700; }
+    /* ── Merkle tree viz ──────────────────────────────────────── */
+    .mk-tree { display:flex; flex-direction:column; gap:.9rem; align-items:center; margin:1rem 0; }
+    .mk-level { display:flex; gap:.5rem; justify-content:center; flex-wrap:nowrap; }
+    .mk-node { font-family:'JetBrains Mono',monospace; font-size:.72rem; font-weight:800; min-width:52px; text-align:center;
+      background:var(--bg-secondary); border:1.5px solid var(--border); border-radius:7px; padding:.4rem .3rem; color:#94a3b8; transition:all .2s; }
+    .mk-node .mk-tag { display:block; font-size:.54rem; font-weight:600; color:var(--text-muted); opacity:.6; margin-bottom:1px; letter-spacing:.02em; }
+    .mk-node.leaf { min-width:44px; }
+    .mk-node.visited { border-color:#7dd3fc; color:#7dd3fc; }
+    .mk-node.match { border-color:#22c55e; background:#22c55e12; color:#86efac; }
+    .mk-node.diff { border-color:#fb7185; background:#fb718518; color:#fca5a5; box-shadow:0 0 0 2px #fb718533; }
+    .mk-node.skipped { opacity:.32; }
+    @media (max-width:560px){ .mk-node { min-width:40px; font-size:.62rem; padding:.3rem .2rem; } .mk-node.leaf { min-width:34px; } }
+    /* ── Gossip grid ──────────────────────────────────────────── */
+    .gossip-grid { display:grid; grid-template-columns:repeat(10,1fr); gap:5px; margin:1rem 0; }
+    @media (max-width:560px){ .gossip-grid { grid-template-columns:repeat(6,1fr); } }
+    .gossip-node { aspect-ratio:1; display:flex; align-items:center; justify-content:center; border-radius:7px;
+      background:var(--bg-secondary); border:1.5px solid var(--border); font-family:'JetBrains Mono',monospace; font-size:.62rem; font-weight:800; color:#475569; transition:all .25s; }
+    .gossip-node.known { background:#38bdf824; border-color:#38bdf8; color:#7dd3fc; }
+    .gossip-node.fresh { background:#22c55e30; border-color:#22c55e; color:#86efac; box-shadow:0 0 0 2px #22c55e44; transform:scale(1.07); }
+    .gossip-node.seed { background:#a78bfa30; border-color:#a78bfa; color:#c4b5fd; }
+    .round-track { display:flex; gap:4px; margin:.6rem 0; }
+    .round-dot { flex:1; height:6px; border-radius:3px; background:var(--border); }
+    .round-dot.done { background:var(--accent); }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phases">Phase 2: Intermediate Systems</a><span class="breadcrumb-sep">/</span>
+      <span>Day 37</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 37 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📗 Phase 2 — Intermediate Systems</span>
+      <span class="meta-pill">🗂 Week 5 — Distributed Algorithms</span>
+    </div>
+    <h1>Merkle Trees &amp; Gossip Protocol<br><span style="color:var(--accent)">How Replicas Heal Themselves — Cheaply</span></h1>
+    <p class="lead">
+      Yesterday's sketches (Day 36) kept a tiny <em>shadow</em> of the data to answer <em>membership</em> and <em>counts</em>.
+      Today we aim that exact instinct — <strong>keep a tiny hash, not the data</strong> — at a problem that quietly plagues every
+      replicated system: <strong>replicas drift apart</strong>. A node goes offline for an hour, misses a batch of writes, and
+      rejoins holding <em>stale</em> data. Now two machines, each holding <strong>terabytes</strong>, must answer one awkward
+      question: <em>which keys actually differ?</em> The honest way — compare everything — means <em>shipping</em> everything, which
+      is absurd. A <strong>Merkle tree</strong> is a tree of hashes whose single <strong>root</strong> fingerprints all the data: two
+      replicas swap just their roots — <em>equal</em> means identical (one tiny message, done); <em>different</em> means they descend
+      only into the mismatched branches, pinpointing the handful of differing blocks in <strong>O(log n)</strong> comparisons and
+      shipping <em>only what changed</em>. And the news of "who's alive, who's stale, go sync with me" spreads through a
+      <strong>gossip protocol</strong> — each node whispers to a few random peers, so an update reaches all <em>N</em> nodes in about
+      <strong>log(N)</strong> rounds, with no coordinator and no single point of failure. You'll corrupt a live Merkle tree and watch
+      it walk straight to the broken block, and spread an update across a cluster round by round — and see why this is how
+      <strong>Git, Bitcoin, Cassandra, and DynamoDB</strong> keep enormous amounts of data honest.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#why">Why This Problem Exists</a>
+        <a href="#merkle">Merkle Trees</a>
+        <a href="#gossip">Gossip Protocol</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">📚 🗂️ 🔍 🗣️</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Two identical-looking <strong>libraries</strong> sit across town from each other, each with a million books, and they're
+            <em>supposed</em> to be perfect copies. One night a careless intern swaps a single page in one book in library B. The next
+            morning the head librarians need to find <em>which</em> book differs — without reading a million books twice. Luckily, both
+            libraries use the same clever filing system. Every <strong>shelf</strong> has a little <strong>summary card</strong> that's a
+            short code computed from all the books on that shelf. Every <strong>room</strong> has a summary card computed from its
+            shelves' cards. And the whole library has one <strong>master card</strong> computed from its rooms' cards. To compare the two
+            libraries, the librarians just hold up their two <em>master cards</em>. If the codes match, the libraries are <em>provably
+            identical</em> — go home. If they differ, they compare room cards, find the <em>one</em> room whose card differs, then that
+            room's shelf cards, then that shelf's book codes — descending only into the branch that disagrees — until they land on the
+            single tampered book. A million books, found in about <strong>twenty card-comparisons</strong>. That hierarchy of summary
+            cards is a <strong>Merkle tree</strong>, and the master card is its <strong>root hash</strong>.</p>
+            <p>Now, how does the <em>instruction</em> — "hey, library B, your art room is stale, come re-copy these three books" — travel
+            across a city full of libraries with no central boss? Like a <strong>rumor at a party</strong>. One guest learns the news and,
+            every minute, leans over to <strong>two or three random people</strong> and whispers it. Those people each whisper to two or
+            three more. After the first whisper 3 people know; after the next, ~9; then ~27 — and in only a handful of rounds the
+            <em>entire</em> party has heard it. Nobody stood on a chair and announced it; nobody kept a guest list. Even if several guests
+            leave mid-party, the rumor still saturates the room, because there are so many overlapping paths. That is a
+            <strong>gossip protocol</strong> — information spreading <em>epidemically</em>, peer to peer.</p>
+            <p>Hold the two scenes together: <strong>a tower of summary cards</strong> that lets two giant collections find their tiny
+            difference in a few comparisons (Merkle tree → <em>cheap comparison</em>), and <strong>a rumor rippling through a party</strong>
+            that reaches everyone with no announcer (gossip → <em>cheap, resilient spreading</em>). One finds <em>what</em> differs; the
+            other spreads the <em>word</em>. Together they are how a leaderless cluster of machines keeps itself honest.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="820" height="470" viewBox="0 0 820 470"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Dmitri</span> ran the storage team for a <strong>distributed key-value store</strong> — the kind
+            where every piece of data lives on <strong>three replicas</strong> so that losing a machine never loses a byte (think
+            Cassandra or Amazon's Dynamo). It hummed along beautifully, until the afternoon a rack lost power. One replica,
+            <strong>node C</strong>, dropped offline for <strong>47 minutes</strong>. During those 47 minutes the other two replicas kept
+            happily accepting writes — a few hundred thousand of them. Then node C rebooted and rejoined the cluster, cheerfully
+            <em>stale</em>: it was now missing or behind on a few hundred thousand keys out of <strong>fifty million</strong>.
+          </p>
+          <p>
+            The naive fix made Dmitri wince. "To repair C, just compare it against a healthy replica and copy over anything that's
+            different." Fine — but each replica held <strong>half a terabyte</strong>. Comparing them key-by-key meant streaming the
+            <em>entire</em> dataset of one node across the network to another just to discover that 99.6% of it was already identical. Do
+            that for every transient blip — and in a big cluster something blips constantly — and you'd melt your network doing almost
+            nothing but confirming that data you already had was still there. The repair was <em>correct</em> and completely
+            <em>unaffordable</em>, the same trap as yesterday's exact set.
+          </p>
+          <p>
+            A greybeard from the Dynamo days drew him a <strong>Merkle tree</strong> on the whiteboard. "Don't compare the <em>data</em> —
+            compare <em>hashes of hashes</em>. Each replica builds a tree over its key ranges: the leaves hash the actual key-value
+            blocks, and every parent hashes its two children. The root is a single fingerprint of everything that node holds." To repair,
+            node C and its healthy partner exchange just their <strong>root hashes</strong>. Identical? Then the two nodes are
+            <em>provably</em> in sync and the repair is <strong>one message long</strong>. Different? They send their children, compare,
+            and <em>recurse only into the subtrees whose hashes disagree</em> — ignoring the vast matching majority entirely. In a few
+            round-trips they'd walked down to the exact key ranges that differed, and node C pulled <em>only those</em>. The half-terabyte
+            comparison became a conversation of a few kilobytes.
+          </p>
+          <p>
+            One question remained: in a cluster of a thousand nodes with <em>no leader</em>, how does everyone learn who's up, who's down,
+            and who needs repairing — without a central coordinator that itself becomes a bottleneck and a single point of failure?
+            Dynamo's answer was <strong>gossip</strong>. Every second, each node picks a <strong>few random peers</strong> and swaps a
+            little digest of what it knows — membership, heartbeats, versions. A fact known to one node ripples to the whole cluster in
+            about <strong>log(N)</strong> rounds, and it keeps working even as nodes come and go, because there's no single path for it to
+            travel. Dmitri taped his takeaway to the rack: <strong>compare with a tree of hashes, spread the word with a rumor.</strong>
+            Replicas that heal themselves, cheaply, with nobody in charge.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">Two tools for keeping replicas honest with almost no traffic. A <strong>Merkle tree</strong>
+          (a.k.a. hash tree) makes <em>comparison</em> cheap: every <strong>leaf</strong> is the hash of a data block, every
+          <strong>internal node</strong> is the hash of its children's hashes, and the single <strong>root hash</strong> is a fingerprint
+          of <em>all</em> the data. Compare two datasets by comparing roots — <strong>equal roots ⟹ identical data</strong> (one tiny
+          message); <strong>different roots ⟹ descend only into the mismatched branches</strong>, so you locate the differing blocks in
+          <strong>O(log n)</strong> comparisons and transfer <strong>only what changed</strong>, never the whole dataset. A
+          <strong>gossip (epidemic) protocol</strong> makes <em>dissemination</em> cheap and robust: each node periodically picks a few
+          <strong>random peers</strong> and exchanges state, so any update reaches all <em>N</em> nodes in roughly <strong>log(N)
+          rounds</strong>, with <em>no coordinator</em> and strong resilience to node and network failures (many overlapping paths). The
+          pairing is the whole idea behind <strong>anti-entropy</strong>: gossip spreads <em>"who exists / who's stale,"</em> and Merkle
+          trees make the resulting <em>"exactly which keys differ?"</em> comparison nearly free. One-line test: <em>a Merkle tree tells
+          two machines where they disagree without shipping their data; gossip spreads that knowledge across a leaderless cluster like a
+          rumor — both trade exactness-of-process for enormous savings and resilience, converging eventually rather than instantly.</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Compare, then Spread</h2>
+        <div class="sim-box">
+          <p>Two real, working demos. In <strong>Merkle diff</strong> mode you have two replicas of 8 data blocks that start identical;
+          <em>corrupt</em> a block on replica B and run a comparison — watch it descend from the root down <em>only</em> the mismatched
+          path to the exact broken block, visiting a handful of nodes instead of all 8. In <strong>Gossip spread</strong> mode one node in
+          a 30-node cluster learns an update; advance round by round and watch it ripple outward to the whole cluster in a few rounds, the
+          way a rumor saturates a party.</p>
+
+          <div class="mode-toggle" id="mode-toggle">
+            <button data-mode="merkle" class="active">🌳 Merkle diff — find what differs</button>
+            <button data-mode="gossip">🗣️ Gossip spread — spread the word</button>
+          </div>
+
+          <!-- MERKLE PANEL -->
+          <div class="sim-panel active" id="panel-merkle">
+            <div class="mk-tree" id="mk-tree"></div>
+
+            <div class="chip-label">Replica B's 8 data blocks — click one to corrupt it (changes its value, so its hash changes)</div>
+            <div class="chip-row" id="mk-blocks"></div>
+
+            <div class="q-status info" id="mk-status">Both replicas are identical — their root hashes match. Corrupt a block, then press <b>Compare trees</b>.</div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv blue" id="mk-visited">0</div><div class="sl">nodes compared</div></div>
+              <div class="stat-chip"><div class="sv warn" id="mk-naive">8</div><div class="sl">naive (compare every block)</div></div>
+              <div class="stat-chip"><div class="sv good" id="mk-shipped">0</div><div class="sl">blocks shipped to repair</div></div>
+            </div>
+
+            <div class="sim-controls">
+              <button class="btn btn-primary btn-sm" id="mk-compare">Compare trees ▶</button>
+              <button class="btn btn-outline btn-sm" id="mk-corrupt">🎲 Corrupt a random block</button>
+              <button class="btn btn-outline btn-sm" id="mk-reset">↺ Reset (re-sync)</button>
+            </div>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem;">The tree shows replica B. Each <code>L</code> leaf is a
+            block's hash; each parent is the hash of its two children; <code>ROOT</code> is the hash of everything. Corrupt a block and the
+            change ripples <em>up</em> the tree to the root. On <strong>Compare</strong>, the walk starts at the root: a node whose hash
+            matches replica A turns <span style="color:#86efac">green</span> and its whole subtree is <span style="opacity:.6">skipped</span>;
+            a node that differs turns <span style="color:#fca5a5">red</span> and the walk descends into it — ending at the exact broken
+            leaf. Notice "nodes compared" stays near <code>2·log₂(8)+1</code>, never 8.</p>
+          </div>
+
+          <!-- GOSSIP PANEL -->
+          <div class="sim-panel" id="panel-gossip">
+            <div class="round-track" id="round-track"></div>
+            <div class="gossip-grid" id="gossip-grid"></div>
+
+            <div class="q-status info" id="gossip-status">Node 0 (purple) just learned an update. Press <b>Advance one round</b> and watch it gossip outward.</div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv" id="gossip-round">0</div><div class="sl">gossip rounds</div></div>
+              <div class="stat-chip"><div class="sv blue" id="gossip-known">1</div><div class="sl">nodes reached / 30</div></div>
+              <div class="stat-chip"><div class="sv good" id="gossip-fanout">2</div><div class="sl">peers contacted / node / round</div></div>
+            </div>
+
+            <div class="sim-controls">
+              <button class="btn btn-primary btn-sm" id="gossip-step">Advance one round ▶</button>
+              <button class="btn btn-primary btn-sm" id="gossip-auto">⏩ Auto-run to full</button>
+              <button class="btn btn-outline btn-sm" id="gossip-reset">↺ Reset</button>
+            </div>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem;">Each round, every node that already knows the update
+            whispers to <strong>2 random peers</strong>; anyone who hears it lights up (bright green = <em>just</em> heard it this round).
+            Starting from one node, the number who know roughly <em>triples</em> each round, so all 30 are reached in only about
+            <strong>4–5 rounds</strong> — that's the <code>log(N)</code> magic. No node is in charge, and even if some nodes were dead the
+            update would still saturate the rest, because it travels along many overlapping paths.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="why">
+        <h2>Why This Problem Exists</h2>
+        <p>Back on <strong>Day 12</strong> we replicated data onto multiple machines so a single failure couldn't lose it. That buys
+        durability — but it also creates a new, permanent chore: the copies must be <em>kept the same</em>. And in the real world they
+        constantly fall out of step. A replica reboots and misses writes. A network partition drops some updates. A message is lost. A
+        disk hiccups. This slow, inevitable divergence between copies that are supposed to be identical has a name:
+        <strong>entropy</strong>. The background process that fights it — detecting and repairing differences between replicas — is called
+        <strong>anti-entropy</strong>, and every serious replicated store runs it continuously.</p>
+        <p>The obvious anti-entropy — "stream one replica's whole dataset to another and diff it" — is <code>O(total data)</code> every
+        single time, whether 1 key differs or a million do. At terabyte scale, on a cluster where something is <em>always</em> slightly out
+        of sync, that's a firehose of network traffic spent almost entirely re-confirming data that already matched. We're paying to move
+        <strong>everything</strong> to discover a <strong>tiny</strong> difference. That gap — between the full dataset we're shipping and
+        the few blocks that actually changed — is exactly the waste a Merkle tree eliminates.</p>
+
+        <div class="code-label">The trade, in one comparison</div>
+        <div class="code-panel"><span class="muted"># Replica C was offline 47 min; ~200K of 50,000,000 keys now differ (0.4%).</span>
+
+<span class="f">Naive full compare</span>     ship ~500 GB    <span class="b">move everything just to find 0.4% that differs</span>
+<span class="f">Merkle anti-entropy</span>    ship ~few KB    <span class="s">swap root → descend only mismatched branches</span>
+                                              <span class="s">→ then transfer ONLY the ~200K differing keys</span>
+
+<span class="muted"># The comparison cost drops from O(n) to O(log n) per difference,</span>
+<span class="muted"># and the transfer drops from O(all data) to O(data that actually changed).</span></div>
+
+        <p style="margin-top:1rem;">The second half of the problem is <em>organizational</em>. In a leaderless cluster (Day 10's AP
+        systems, Dynamo-style) there is deliberately <strong>no coordinator</strong> to notice "C is stale, go fix it" and command the
+        repair — a coordinator would be a bottleneck and a single point of failure, the very things replication exists to avoid. So the
+        knowledge of who's alive, who's stale, and what versions exist has to spread <em>without</em> a central authority, survive nodes
+        dying mid-spread, and not melt the network with chatter. That's the job of <strong>gossip</strong>: the same "store/send only a
+        tiny digest" instinct, applied to spreading <em>facts about the cluster</em> instead of the data itself.</p>
+      </section>
+
+      <section id="merkle">
+        <h2>Merkle Trees — Comparison for Almost Free</h2>
+        <p>A <strong>Merkle tree</strong> (or <em>hash tree</em>) is built bottom-up. Split your data into blocks. Hash each block — those
+        hashes are the <strong>leaves</strong>. Then hash each <em>pair</em> of adjacent leaves together to form their parent; hash each
+        pair of parents to form the next level; keep going until a single node remains — the <strong>root hash</strong>. That one value
+        depends on every byte of every block, so it is a fingerprint of the entire dataset.</p>
+
+        <div class="code-label">Merkle tree — build and compare</div>
+        <div class="code-panel"><span class="muted"># build a tree over data blocks b[0..n-1] (n a power of 2 for simplicity)</span>
+
+<span class="k">build</span>(blocks):
+    level = [ <span class="f">hash</span>(b) <span class="k">for</span> b <span class="k">in</span> blocks ]     <span class="muted"># leaves = hash of each block</span>
+    <span class="k">while</span> len(level) > 1:
+        level = [ <span class="f">hash</span>(level[i] + level[i+1])     <span class="muted"># parent = hash(left + right)</span>
+                  <span class="k">for</span> i <span class="k">in</span> 0,2,4,… ]
+    <span class="k">return</span> level[0]                       <span class="muted"># the single ROOT hash</span>
+
+<span class="k">diff</span>(nodeA, nodeB):                       <span class="muted"># walk two trees in lock-step</span>
+    <span class="k">if</span> nodeA.hash == nodeB.hash:  <span class="k">return</span> []   <span class="s"># whole subtree identical → STOP (skip it)</span>
+    <span class="k">if</span> nodeA.isLeaf:              <span class="k">return</span> [nodeA.block]  <span class="b"># a differing block, found</span>
+    <span class="k">return</span> diff(A.left,  B.left) +
+           diff(A.right, B.right)        <span class="muted"># recurse ONLY where hashes disagree</span></div>
+
+        <p style="margin-top:1rem;">The power is entirely in that first line of <code>diff</code>. Because a parent's hash is derived from
+        <em>all</em> the data beneath it, <strong>if two nodes' hashes are equal, every block under them is identical</strong> — so you
+        prune that entire subtree and never look inside. You only ever descend into branches that disagree, and the differences sit at the
+        bottom of just those branches. That gives the headline guarantee:</p>
+
+        <div class="rule-box">
+          <span class="hb">✔ Equal roots ⟹ identical data</span> &nbsp; — a single hash comparison proves two huge datasets match (with
+          cryptographic hashes, the odds of a false match are astronomically small). One message, done.<br>
+          <span class="cc">✘ Different roots ⟹ something changed</span> &nbsp; — and you find <em>exactly which blocks</em> by descending
+          only the mismatched path: <strong>O(log n) comparisons per difference</strong>, then you transfer <strong>only the differing
+          blocks</strong>, never the whole dataset.
+        </div>
+
+        <div class="diagram-box">
+          <svg id="merkle-diagram" width="820" height="420" viewBox="0 0 820 420"></svg>
+        </div>
+
+        <p>So a Merkle tree turns "are these two terabytes the same, and if not, where?" from an <code>O(n)</code> data transfer into an
+        <code>O(log n)</code> conversation that ships only the deltas. That's exactly the shape you want for <strong>anti-entropy repair</strong>
+        between replicas, for a client verifying it received a file correctly, and for proving a single item belongs to a huge dataset
+        without downloading all of it (a <em>Merkle proof</em> — the handful of sibling hashes along the path from your leaf to a trusted
+        root).</p>
+
+        <h3>Granularity: the one knob that matters</h3>
+        <p>How much data is one leaf? That choice is a real tradeoff. <strong>Fine-grained</strong> leaves (one key per leaf) pinpoint
+        differences precisely but make the tree enormous and expensive to build and keep updated. <strong>Coarse-grained</strong> leaves
+        (a whole key range per leaf) keep the tree small, but when a leaf differs you must re-sync that entire range even if only one key
+        inside it changed. Real systems (Cassandra, Dynamo) build trees over <em>token/key ranges</em> and tune the depth so the leaves are
+        big enough to keep the tree cheap, small enough that a mismatch doesn't force shipping too much. And the tree must be
+        <strong>kept in sync with the data</strong> — rebuilt or incrementally updated as writes land — which is itself ongoing work.</p>
+      </section>
+
+      <section id="gossip">
+        <h2>Gossip Protocol — Spreading the Word Without a Boss</h2>
+        <p>A <strong>gossip protocol</strong> (also called an <em>epidemic protocol</em>, because information spreads like a contagion)
+        answers a different question: how does a fact — "node C is back and stale," "here's the latest membership list," "this key now has
+        version 9" — reach <em>every</em> node in a large, leaderless cluster, cheaply and reliably? The algorithm is almost
+        embarrassingly simple:</p>
+
+        <div class="code-label">Gossip — the whole loop (runs on every node, forever)</div>
+        <div class="code-panel"><span class="muted"># each node runs this on a timer, e.g. once per second</span>
+
+<span class="k">every</span> round:
+    peers = <span class="f">pickRandom</span>(allKnownNodes, fanout)   <span class="muted"># a few random peers (e.g. 2–3)</span>
+    <span class="k">for</span> p <span class="k">in</span> peers:
+        <span class="f">exchange</span>(myState, p)                 <span class="muted"># swap digests; each keeps the newer info</span>
+
+<span class="muted"># styles of exchange:</span>
+<span class="muted">#   PUSH      — I send you what I know</span>
+<span class="muted">#   PULL      — I ask you for what you know</span>
+<span class="muted">#   PUSH-PULL — we both send and merge (fastest convergence)</span></div>
+
+        <p style="margin-top:1rem;">That's it — no leader, no global list of who-told-whom, no schedule. Yet the math is lovely: when each
+        informed node tells a few random peers per round, the number of nodes that know a fact grows <strong>exponentially</strong>, so a
+        rumor started by one node reaches all <em>N</em> in about <strong>log(N)</strong> rounds. A thousand-node cluster converges in
+        roughly ten rounds; a million-node one in about twenty. Two superpowers fall out of the randomness:</p>
+
+        <div class="rule-box">
+          <span class="hb">✔ Resilient &amp; decentralized</span> &nbsp; — no coordinator to overload or lose. Because a fact travels along
+          <em>many</em> overlapping random paths, it still reaches everyone even if a good fraction of nodes are down or messages are
+          dropped. Nothing is a single point of failure.<br>
+          <span class="cc">✘ Eventually consistent &amp; chatty</span> &nbsp; — convergence is <em>probabilistic</em> and takes several
+          rounds (not instant, no deadline), and the same update is delivered to a node many times (redundant traffic you tune with the
+          <em>fanout</em> and <em>interval</em> knobs).
+        </div>
+
+        <div class="diagram-box">
+          <svg id="gossip-diagram" width="820" height="400" viewBox="0 0 820 400"></svg>
+        </div>
+
+        <p>Gossip is used for two related jobs. <strong>Membership &amp; failure detection</strong>: nodes gossip heartbeats so the cluster
+        collectively learns who's alive without a central monitor (the <strong>SWIM</strong> protocol behind Consul and Serf is the famous
+        example). And <strong>state anti-entropy</strong>: nodes gossip digests of their data versions, and when two disagree they kick off
+        a <em>Merkle-tree comparison</em> to find and repair the exact differences. That's the handshake — <strong>gossip discovers that two
+        replicas disagree; the Merkle tree finds precisely where.</strong> One crucial caveat: gossip is <em>anti-entropy, not
+        consensus.</em> It makes the cluster <em>eventually</em> agree on facts as they propagate; it does <strong>not</strong> impose a
+        single agreed order on conflicting writes. For that you need the leader-based machinery of <strong>Raft (Day 32)</strong> — gossip
+        is its easygoing, leaderless opposite.</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>Both tools are elegant, but they solve <em>comparison</em> and <em>spreading</em> — not consistency. Reach for them knowing the
+        edges.</p>
+
+        <h3>A Merkle tree only wins when differences are few</h3>
+        <p>The whole saving comes from <em>pruning matching subtrees</em>. If two replicas are nearly identical, you skip almost everything
+        and ship a few deltas — a massive win. But if they differ <em>everywhere</em> (say a replica missed hours of writes across the whole
+        keyspace), almost every branch disagrees, the tree walk visits most nodes, and you end up transferring most of the data anyway —
+        now with the <em>added</em> cost of building and comparing the tree. Merkle anti-entropy is a scalpel for small, scattered drift,
+        not a bulk re-sync tool.</p>
+
+        <h3>The tree has to be built and kept fresh</h3>
+        <p>A Merkle tree is only useful if it reflects the <em>current</em> data. Every write potentially changes a leaf and must ripple up
+        to the root, so systems either rebuild trees periodically (cheap to code, stale between rebuilds) or update them incrementally
+        (fresher, more complex). Choosing leaf <strong>granularity</strong> is the balancing act from the last section: too fine and the
+        tree is huge and costly to maintain; too coarse and every mismatch drags along a big range of innocent keys. And when the cluster's
+        key-range ownership changes (nodes join/leave, the Day-14 consistent-hashing ring shifts), trees often have to be recomputed.</p>
+
+        <h3>Gossip is probabilistic — don't mistake it for a guarantee</h3>
+        <p>Gossip gives you <em>eventual</em> delivery with high probability, not delivery by a deadline. There's no moment where a node
+        <em>knows</em> everyone has heard the news. Tuning is real engineering: too small a <strong>fanout</strong> or too slow an
+        <strong>interval</strong> and convergence crawls; too large and you drown the network in redundant copies of the same message. And
+        failure detection over gossip can produce <strong>false positives</strong> — under a network partition or a slow node, gossip may
+        declare a perfectly healthy node "dead" simply because its heartbeats didn't arrive in time, triggering needless repair or
+        rebalancing.</p>
+
+        <h3>Neither one gives you consistency</h3>
+        <p>This is the big one. A Merkle tree tells you two replicas <em>differ</em>; it does not tell you <em>which version is correct</em>
+        — that's a job for version metadata like the <strong>vector clocks of Day 35</strong> (which detect conflicting writes) and a merge
+        policy or CRDT. Gossip spreads facts but imposes <em>no order</em> on conflicting updates. If your system needs a single agreed
+        value or a total order of operations, anti-entropy + gossip is the wrong layer — you want <strong>consensus (Days 31–32)</strong>.
+        The right mental split: <em>gossip + Merkle keep an eventually-consistent, leaderless system converging cheaply; Raft/Paxos make a
+        small set of nodes agree, exactly and immediately, at higher cost.</em></p>
+
+        <p style="margin-top:1rem;">The through-line with yesterday: <strong>keep a tiny hash instead of the data, and spread tiny digests
+        instead of broadcasting.</strong> Merkle trees make "where do we differ?" logarithmic; gossip makes "tell everyone" robust and
+        coordinator-free. Use them to let a replicated system <em>heal itself</em> — and reach for consensus the day you need agreement, not
+        just convergence.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">📚</span><div><strong>Across the Field — The Mirror Library</strong>
+          — <span>You leave the Festival Field (Day 36, Bloom &amp; HLL) and, still on the <strong>first floor (Phase 2)</strong>, step into
+          a pair of <strong>identical libraries</strong> joined by a glass bridge. On every shelf hangs a little <strong>summary card</strong>;
+          each room has a card made from its shelves' cards; the whole library has one <strong>master card</strong> on the door. Two
+          librarians find the single tampered book by holding up master cards, then room cards, then shelf cards — descending only where the
+          codes disagree, a million books narrowed to one in about twenty glances. A sign reads: <strong>"Equal cards → provably identical.
+          Unequal → follow only the branch that disagrees."</strong> That tower of cards is the <strong>Merkle tree</strong>, its door-card
+          the <strong>root hash</strong>.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🗣️</span><div><strong>The Whispering Gallery</strong> — <span>Between the two
+          libraries buzzes a crowded party. One guest learns "the art room is stale — re-copy three books" and whispers it to
+          <strong>two random others</strong>; each minute the whisperers double and redouble until, in a handful of rounds, the
+          <em>whole</em> gallery knows — with nobody standing on a chair to announce it, and the rumor surviving even as guests come and go.
+          That is the <strong>gossip protocol</strong>: facts spreading epidemically, log(N) rounds to reach all, no boss, no single point of
+          failure.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Door Ahead</strong> — <span>A grand doorway at the end
+          of the gallery is labelled <strong>Day 38: Design a URL Shortener</strong> — the first room of <strong>Week 6, Classic System
+          Designs</strong>. Through it you glimpse not a new concept but a <em>workbench</em>: the first time we take everything from the
+          last 37 days — DNS, load balancers, caches, databases, hashing, replication, estimation — and <em>build a real system end to
+          end</em>. Phase 2's toolbox is nearly full; next we start using it.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Bloom Filters &amp; HLL (Day 36)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Merkle Trees &amp; Gossip (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Design: URL Shortener (Day 38)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">This closes the loop on…</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Replication (Day 12)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Consistent Hashing (Day 14)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Vector Clocks (Day 35)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Consensus / Raft (Days 31–32)</span>
+        </div>
+        <p>Today is the <strong>finale of Week 5 (Distributed Algorithms)</strong>, and it ties the week together. Back on
+        <strong>Day 12</strong> we made replicas; today we keep them honest with <strong>anti-entropy</strong>. The leaderless clusters
+        this heals are the <strong>Dynamo-style rings</strong> built on <strong>consistent hashing (Day 14)</strong>, and when a Merkle
+        comparison finds a difference, it's the <strong>vector clocks of yesterday (Day 35)</strong> that decide which version wins or
+        whether to keep both as siblings. Gossip is the deliberate <em>opposite</em> of <strong>consensus (Days 31–32)</strong>: where
+        Raft elects a leader to impose a single agreed order at a cost, gossip has no leader and only promises <em>eventual</em>
+        convergence — cheap and unkillable, but not a source of truth for ordering. The "keep a tiny hash, not the data" instinct is the
+        same one from <strong>Bloom filters (Day 36)</strong>, now shaped into a <em>tree</em> so you can find <em>where</em> two datasets
+        differ, not just whether an item is present. Next, <strong>Day 38</strong> stops adding tools and starts <em>building</em>: a full
+        URL-shortener design that puts the whole Phase-2 toolbox to work.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Merkle trees are just a blockchain/crypto thing."</td><td>Their most common job is humble <strong>data
+          synchronization</strong>: anti-entropy repair in Cassandra/Dynamo/Riak, Git's object model, file-transfer verification. Bitcoin
+          made them famous, but they predate it by decades and live inside databases you use every day.</td></tr>
+          <tr><td>"If two Merkle roots match, the data might still differ."</td><td>With a good cryptographic hash, a root match means the
+          datasets are identical to an <em>astronomically</em> high probability — that's the entire point. A match lets you
+          <strong>skip</strong> the comparison safely.</td></tr>
+          <tr><td>"A Merkle tree is always cheaper than a full compare."</td><td>Only when differences are <strong>few</strong>. If
+          replicas differ nearly everywhere, the walk visits most nodes <em>and</em> you still ship most of the data — plus the cost of
+          building the tree. It's a scalpel for small drift, not a bulk re-sync.</td></tr>
+          <tr><td>"Gossip is basically a broadcast."</td><td>No — broadcast means one sender hits everyone (a bottleneck and single point of
+          failure). Gossip is <strong>randomized peer exchange</strong>: decentralized, load-spread, and resilient because a fact travels
+          along many overlapping paths.</td></tr>
+          <tr><td>"Gossip gives me consistency / guaranteed delivery by time T."</td><td>Gossip is <strong>eventual and
+          probabilistic</strong>. It converges in ~log(N) rounds with high probability, but there's no deadline and no node ever
+          <em>knows</em> everyone has the news. For agreement or ordering you need <strong>consensus</strong>, not gossip.</td></tr>
+          <tr><td>"The Merkle tree tells me which replica is correct."</td><td>It only tells you <em>where</em> they differ. <strong>Which
+          version wins</strong> is decided by version metadata (vector clocks, Day 35) and a merge policy/CRDT — a separate concern from
+          finding the difference.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ Replica C was offline for 47 minutes and now differs from a healthy replica on about
+          <strong>200,000 keys out of 50 million</strong> (0.4%), scattered across the keyspace. (1) Using Merkle-tree anti-entropy, roughly
+          how much work does it take to <em>find</em> the differing keys, and how much data do you then <em>transfer</em> — versus the naive
+          full compare? (2) Separately: a <strong>1,000-node</strong> cluster needs every node to learn that C is back. Roughly how many
+          gossip rounds until nearly all know, and why is gossip preferred over one coordinator broadcasting to all 1,000? (click to reveal)</div>
+          <div class="recall-answer"><strong>(1) Finding is logarithmic; transfer is proportional only to what changed.</strong> The two
+          replicas swap root hashes (they differ), then descend <em>only</em> the mismatched branches. Each of the ~200K differences sits at
+          the bottom of an <code>O(log n)</code> path, so the comparison is a conversation of <em>kilobytes</em> of hashes, not the dataset.
+          Then you transfer <strong>only the ~200K differing keys</strong>, not all 50M. The naive full compare instead streams the entire
+          <strong>~500 GB</strong> across the network just to discover that 99.6% of it already matched. Merkle wins precisely because the
+          differences are <em>few and scattered</em> — if C had missed writes across the <em>whole</em> keyspace, most branches would differ
+          and the advantage would shrink.
+          <br><br><strong>(2) About 10 rounds, and gossip has no bottleneck or single point of failure.</strong> With each informed node
+          telling a few random peers per round, the number who know roughly multiplies each round, so coverage of <em>N</em> nodes takes
+          ~<code>log(N)</code> rounds — <code>log₂(1000) ≈ 10</code>. A single coordinator broadcasting to 1,000 nodes is one machine doing
+          1,000 sends (a load and latency bottleneck) and, worse, a <strong>single point of failure</strong>: if it dies mid-broadcast, the
+          news stops. Gossip spreads the load across the whole cluster and travels along many overlapping paths, so it keeps converging even
+          as nodes fail — at the cost of some redundant messages and only <em>eventual</em>, probabilistic delivery.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🗄️ Cassandra, DynamoDB &amp; Riak</div><p>All run <strong>Merkle-tree
+          anti-entropy repair</strong>: replicas build hash trees over their token ranges and compare roots to find and fix divergence
+          without shipping whole datasets (Cassandra's <code>nodetool repair</code>). They also use <strong>gossip</strong> to track cluster
+          membership and node health — the pattern comes straight from Amazon's 2007 Dynamo paper.</p></div>
+          <div class="realworld-card"><div class="rw-company">🌳 Git</div><p>Git is a giant <strong>Merkle tree</strong> in disguise: every
+          file (blob), directory (tree), and commit is content-addressed by its hash, and a commit's hash folds in its whole tree and
+          parents. That's why comparing two commits or verifying history is cheap — equal hashes mean identical content, all the way down.</p></div>
+          <div class="realworld-card"><div class="rw-company">₿ Bitcoin, Ethereum &amp; IPFS</div><p>Blockchains put each block's
+          transactions in a <strong>Merkle tree</strong> so a light client can prove a transaction is included with just a few sibling
+          hashes (a <em>Merkle proof</em>) instead of the whole block. <strong>IPFS</strong> addresses all content by Merkle-DAG hashes for
+          dedup and integrity.</p></div>
+          <div class="realworld-card"><div class="rw-company">🗣️ Consul, Serf &amp; Hashicorp SWIM</div><p>HashiCorp's <strong>Serf</strong>
+          and <strong>Consul</strong> use the <strong>SWIM gossip protocol</strong> for scalable membership and failure detection — nodes
+          gossip heartbeats and "suspect/confirm" signals so a thousand-node cluster agrees on who's alive with no central monitor. Apache
+          Cassandra and ScyllaDB gossip the same way.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is a Merkle tree, and what is its root hash?</div>
+          <div class="fc-a">A: A <strong>tree of hashes</strong>: each <strong>leaf</strong> is the hash of a data block, each
+          <strong>internal node</strong> is the hash of its children's hashes. The single <strong>root hash</strong> is a fingerprint of
+          <em>all</em> the data — change one byte anywhere and the root changes.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: How do two replicas use a Merkle tree to find their differences cheaply?</div>
+          <div class="fc-a">A: Compare <strong>root hashes</strong>. Equal → datasets identical, stop (one message). Different → descend
+          <em>only</em> into the child subtrees whose hashes disagree, reaching the differing blocks in <strong>O(log n)</strong>
+          comparisons, then transfer <strong>only</strong> those blocks.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is a gossip (epidemic) protocol and how fast does it converge?</div>
+          <div class="fc-a">A: Each node periodically exchanges state with a few <strong>random peers</strong>, so a fact spreads
+          <strong>exponentially</strong> and reaches all <em>N</em> nodes in about <strong>log(N) rounds</strong> — decentralized, with no
+          coordinator and strong resilience to failures.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is "anti-entropy," and how do Merkle trees and gossip combine to do it?</div>
+          <div class="fc-a">A: <strong>Anti-entropy</strong> is the background process that detects and repairs divergence between replicas.
+          <strong>Gossip</strong> spreads "who exists / who's stale"; <strong>Merkle trees</strong> make the "exactly which keys differ?"
+          comparison nearly free. Together: replicas heal themselves with no leader.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why are gossip + Merkle anti-entropy NOT a substitute for consensus?</div>
+          <div class="fc-a">A: They give <strong>eventual, probabilistic convergence</strong> — they find and spread differences but impose
+          <em>no order</em> on conflicting writes and offer no delivery deadline. For a single agreed value or a total order you need
+          <strong>consensus (Raft/Paxos)</strong>; gossip is its leaderless, eventually-consistent opposite.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>What is "entropy" between replicas, and what is "anti-entropy"? Why does every replicated store need it?</li>
+          <li>Describe how a Merkle tree is built from data blocks, and what the root hash represents.</li>
+          <li>Write the <code>diff</code> logic for comparing two Merkle trees. Which comparison lets you <em>skip</em> an entire subtree,
+          and why is that safe?</li>
+          <li>Why is Merkle anti-entropy <code>O(log n)</code> to <em>find</em> differences, and what determines how much data you then
+          <em>transfer</em>?</li>
+          <li>Give the one-knob tradeoff of Merkle leaf <strong>granularity</strong> — fine vs coarse.</li>
+          <li>State the gossip loop in one sentence, and explain why a rumor reaches all <em>N</em> nodes in ~log(N) rounds.</li>
+          <li>Name two superpowers of gossip and two costs/limitations.</li>
+          <li>When would a Merkle tree <em>not</em> save you much, and why is gossip the wrong tool if you need agreement on a value?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>replicas drift apart, and the cheap way to heal them is to keep a tiny hash instead of the
+          data, and spread tiny digests instead of broadcasting.</strong> A <strong>Merkle tree</strong> hashes blocks into leaves and
+          hashes-of-hashes up to a single <em>root</em>: equal roots prove two huge datasets are identical (one message); different roots let
+          you descend only the mismatched branches to find the differing blocks in <strong>O(log n)</strong> and ship <em>only</em> what
+          changed — the engine of anti-entropy repair in Cassandra and Dynamo, and the backbone of Git and blockchains. A <strong>gossip
+          protocol</strong> spreads facts across a leaderless cluster by having each node whisper to a few random peers, reaching everyone in
+          ~<strong>log(N)</strong> rounds with no coordinator and remarkable resilience — the way clusters track membership and trigger
+          repair. Together they let a replicated system <em>converge on its own</em>; just remember they give <em>eventual</em> convergence,
+          not consensus. Next, we stop collecting tools and start building: <strong>Day 38 — Design a URL Shortener</strong>, the first
+          classic system-design walkthrough.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-36.html">← Day 36: Bloom Filters &amp; HyperLogLog</a>
+        <a href="day-38.html" class="coming-soon-link">Day 38: Design a URL Shortener →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 37 of 90 — Merkle Trees &amp; Gossip Protocol</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ══════════════════════════════════════════════════════════════════════
+  //  INTERACTIVE DEMOS — a real Merkle-tree diff and a real gossip spread.
+  //  Both compute live; the numbers you see are genuine, not scripted.
+  // ══════════════════════════════════════════════════════════════════════
+
+  // ── mode toggle ──────────────────────────────────────────────────────
+  Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(btn){
+    btn.addEventListener('click', function(){
+      var mode = btn.getAttribute('data-mode');
+      Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      document.getElementById('panel-merkle').classList.toggle('active', mode === 'merkle');
+      document.getElementById('panel-gossip').classList.toggle('active', mode === 'gossip');
+    });
+  });
+
+  // ── a small deterministic hash → 4 hex chars ─────────────────────────
+  function hashHex(s){
+    var h = 0x811c9dc5 >>> 0;                       // FNV-1a, 32-bit
+    for(var i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return ('0000' + (h & 0xffff).toString(16)).slice(-4);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  MERKLE TREE DIFF  (8 leaves → 4 → 2 → 1 root)
+  // ══════════════════════════════════════════════════════════════════════
+  var N = 8;
+  var baseVals = ['k0:v0','k1:v1','k2:v2','k3:v3','k4:v4','k5:v5','k6:v6','k7:v7'];
+  var valsA = baseVals.slice();          // reference replica (healthy)
+  var valsB = baseVals.slice();          // replica we can corrupt
+  var corrupt = {};                      // which block indices are corrupted on B
+
+  // build a 4-level tree (levels[0]=root ... levels[3]=leaves) of hashes
+  function buildTree(vals){
+    var leaves = vals.map(function(v){ return hashHex(v); });
+    var lvl2 = [], lvl1 = [], root;
+    for(var i=0;i<8;i+=2) lvl2.push(hashHex(leaves[i]+leaves[i+1]));   // 4 nodes
+    for(var i=0;i<4;i+=2) lvl1.push(hashHex(lvl2[i]+lvl2[i+1]));       // 2 nodes
+    root = hashHex(lvl1[0]+lvl1[1]);                                    // 1 node
+    return { levels: [[root], lvl1, lvl2, leaves] };
+  }
+
+  var mkTreeEl = document.getElementById('mk-tree');
+  var mkStatus = document.getElementById('mk-status');
+
+  function nodeId(level, idx){ return 'mk-' + level + '-' + idx; }
+
+  function renderTree(){
+    var tB = buildTree(valsB);
+    var tags = ['ROOT','N','N','L'];       // display tag per level
+    mkTreeEl.innerHTML = '';
+    for(var lv=0; lv<4; lv++){
+      var row = document.createElement('div');
+      row.className = 'mk-level';
+      for(var i=0;i<tB.levels[lv].length;i++){
+        var node = document.createElement('div');
+        node.className = 'mk-node' + (lv===3 ? ' leaf' : '');
+        node.id = nodeId(lv, i);
+        var tag = lv===3 ? ('L'+i) : (lv===0 ? 'ROOT' : (tags[lv]));
+        node.innerHTML = '<span class="mk-tag">'+tag+'</span>'+tB.levels[lv][i];
+        row.appendChild(node);
+      }
+      mkTreeEl.appendChild(row);
+    }
+    return tB;
+  }
+
+  function renderBlocks(){
+    var row = document.getElementById('mk-blocks');
+    row.innerHTML = '';
+    for(var i=0;i<N;i++){
+      (function(i){
+        var chip = document.createElement('div');
+        chip.className = 'chip' + (corrupt[i] ? ' inserted' : '');
+        chip.textContent = 'block ' + i + (corrupt[i] ? ' ✗' : '');
+        chip.addEventListener('click', function(){ toggleCorrupt(i, chip); });
+        row.appendChild(chip);
+      })(i);
+    }
+  }
+
+  function toggleCorrupt(i, chip){
+    if(corrupt[i]){ corrupt[i]=false; valsB[i]=baseVals[i]; }
+    else { corrupt[i]=true; valsB[i]=baseVals[i] + '#TAMPERED'; }
+    renderTree(); renderBlocks(); resetStats();
+    var n = Object.keys(corrupt).filter(function(k){return corrupt[k];}).length;
+    mkStatus.className = 'q-status ' + (n ? 'warn' : 'info');
+    mkStatus.innerHTML = n
+      ? 'Corrupted <b>'+n+'</b> block'+(n>1?'s':'')+' on replica B — the change rippled up to a new <b>ROOT</b> hash. Press <b>Compare trees</b>.'
+      : 'Both replicas are identical again — root hashes match. Corrupt a block, then compare.';
+  }
+
+  function resetStats(){
+    document.getElementById('mk-visited').textContent = '0';
+    document.getElementById('mk-shipped').textContent = '0';
+  }
+
+  function clearClasses(){
+    for(var lv=0;lv<4;lv++){
+      var count = [1,2,4,8][lv];
+      for(var i=0;i<count;i++){
+        var el = document.getElementById(nodeId(lv,i));
+        if(el) el.className = 'mk-node' + (lv===3 ? ' leaf' : '');
+      }
+    }
+  }
+
+  // walk both trees in lock-step; returns list of differing leaf indices.
+  function compareTrees(){
+    var tA = buildTree(valsA), tB = buildTree(valsB);
+    clearClasses();
+    var visited = 0, diffs = [];
+
+    // recurse over node = (level, index). Children of (lv,i) are (lv+1, 2i) and (lv+1, 2i+1).
+    function walk(lv, i){
+      visited++;
+      var el = document.getElementById(nodeId(lv,i));
+      var same = tA.levels[lv][i] === tB.levels[lv][i];
+      if(same){
+        if(el){ el.classList.add('match'); markSubtreeSkipped(lv+1, i); }
+        return;                                   // prune: whole subtree identical
+      }
+      if(el) el.classList.add('diff');
+      if(lv === 3){ diffs.push(i); return; }      // a differing leaf
+      walk(lv+1, 2*i);
+      walk(lv+1, 2*i+1);
+    }
+    function markSubtreeSkipped(lv, parentIdx){
+      if(lv>3) return;
+      var lo = parentIdx*2, hi = lo+1;
+      // parentIdx at (lv-1) maps to children lo,hi at lv
+      for(var i=lo;i<=hi;i++){
+        var el = document.getElementById(nodeId(lv,i));
+        if(el && !el.classList.contains('match') && !el.classList.contains('diff')) el.classList.add('skipped');
+        markSubtreeSkipped(lv+1, i);
+      }
+    }
+
+    walk(0,0);
+
+    document.getElementById('mk-visited').textContent = visited;
+    document.getElementById('mk-shipped').textContent = diffs.length;
+
+    if(diffs.length === 0){
+      mkStatus.className = 'q-status ok';
+      mkStatus.innerHTML = '✔ Roots matched on the first comparison — the replicas are <b>provably identical</b>. Total work: <b>1</b> hash comparison, <b>0</b> blocks shipped.';
+    } else {
+      mkStatus.className = 'q-status ok';
+      mkStatus.innerHTML = '✔ Found differing block'+(diffs.length>1?'s':'')+' <b>['+diffs.join(', ')+']</b> by visiting only <b>'+visited+'</b> of 15 tree nodes — descending just the red path, skipping every green subtree. Repair ships only <b>'+diffs.length+'</b> block'+(diffs.length>1?'s':'')+', not all 8.';
+    }
+  }
+
+  document.getElementById('mk-compare').addEventListener('click', compareTrees);
+  document.getElementById('mk-corrupt').addEventListener('click', function(){
+    var i = Math.floor(Math.random()*N);
+    corrupt[i] = true; valsB[i] = baseVals[i] + '#TAMPERED';
+    renderTree(); renderBlocks(); resetStats();
+    mkStatus.className = 'q-status warn';
+    mkStatus.innerHTML = 'Randomly corrupted <b>block '+i+'</b> on replica B. Its leaf hash changed, and so did every hash on the path up to ROOT. Press <b>Compare trees</b>.';
+  });
+  document.getElementById('mk-reset').addEventListener('click', function(){
+    valsB = baseVals.slice(); corrupt = {};
+    renderTree(); renderBlocks(); resetStats();
+    mkStatus.className = 'q-status info';
+    mkStatus.innerHTML = 'Replicas re-synced — root hashes match again. Corrupt a block, then press <b>Compare trees</b>.';
+  });
+
+  renderTree(); renderBlocks();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  GOSSIP SPREAD  (30 nodes, fanout 2, push)
+  // ══════════════════════════════════════════════════════════════════════
+  var GN = 30, FANOUT = 2, MAX_ROUNDS = 12;
+  var known, fresh, round, autoTimer = null;
+
+  var grid = document.getElementById('gossip-grid');
+  var track = document.getElementById('round-track');
+  var gStatus = document.getElementById('gossip-status');
+
+  function buildGossip(){
+    grid.innerHTML = '';
+    for(var i=0;i<GN;i++){
+      var cell = document.createElement('div');
+      cell.className = 'gossip-node'; cell.id = 'gn-'+i; cell.textContent = i;
+      grid.appendChild(cell);
+    }
+    track.innerHTML = '';
+    for(var r=0;r<MAX_ROUNDS;r++){
+      var d = document.createElement('div'); d.className = 'round-dot'; d.id = 'rd-'+r; track.appendChild(d);
+    }
+  }
+
+  function resetGossip(){
+    if(autoTimer){ clearInterval(autoTimer); autoTimer = null; }
+    known = new Array(GN).fill(false);
+    fresh = new Array(GN).fill(false);
+    known[0] = true; round = 0;
+    renderGossip(true);
+    document.getElementById('gossip-round').textContent = '0';
+    document.getElementById('gossip-known').textContent = '1';
+    for(var r=0;r<MAX_ROUNDS;r++){ var d=document.getElementById('rd-'+r); if(d) d.classList.remove('done'); }
+    gStatus.className = 'q-status info';
+    gStatus.innerHTML = 'Node 0 (purple) just learned an update. Press <b>Advance one round</b> and watch it gossip outward.';
+  }
+
+  function renderGossip(seedMode){
+    for(var i=0;i<GN;i++){
+      var el = document.getElementById('gn-'+i);
+      if(!el) continue;
+      el.className = 'gossip-node';
+      if(i===0 && seedMode) el.classList.add('seed');
+      else if(fresh[i]) el.classList.add('fresh');
+      else if(known[i]) el.classList.add('known');
+    }
+  }
+
+  function step(){
+    if(known.every(function(k){return k;})){
+      gStatus.className = 'q-status ok';
+      gStatus.innerHTML = '✔ All <b>30</b> nodes know the update after <b>'+round+'</b> rounds — that’s ~log(N). No coordinator ever ran the show.';
+      if(autoTimer){ clearInterval(autoTimer); autoTimer = null; }
+      return false;
+    }
+    round++;
+    var spreaders = [];
+    for(var i=0;i<GN;i++){ if(known[i]) spreaders.push(i); }
+    fresh = new Array(GN).fill(false);
+    spreaders.forEach(function(src){
+      for(var f=0; f<FANOUT; f++){
+        var peer = Math.floor(Math.random()*GN);        // pick a random peer
+        if(!known[peer]){ known[peer] = true; fresh[peer] = true; }
+      }
+    });
+    renderGossip(false);
+    var count = known.filter(function(k){return k;}).length;
+    document.getElementById('gossip-round').textContent = round;
+    document.getElementById('gossip-known').textContent = count;
+    var rd = document.getElementById('rd-'+(round-1)); if(rd) rd.classList.add('done');
+    if(count < GN){
+      gStatus.className = 'q-status info';
+      gStatus.innerHTML = 'Round <b>'+round+'</b>: each knower whispered to '+FANOUT+' random peers → <b>'+count+'</b>/30 now know (bright green = just heard it). Keep going.';
+    } else {
+      gStatus.className = 'q-status ok';
+      gStatus.innerHTML = '✔ All <b>30</b> nodes reached in <b>'+round+'</b> rounds — the rumor saturated the cluster. That’s the ~log(N) convergence of gossip.';
+      if(autoTimer){ clearInterval(autoTimer); autoTimer = null; }
+    }
+    return count < GN;
+  }
+
+  document.getElementById('gossip-step').addEventListener('click', function(){ if(!autoTimer) step(); });
+  document.getElementById('gossip-auto').addEventListener('click', function(){
+    if(autoTimer) return;
+    if(known.every(function(k){return k;})) resetGossip();
+    autoTimer = setInterval(function(){ if(!step()){ clearInterval(autoTimer); autoTimer = null; } }, 700);
+  });
+  document.getElementById('gossip-reset').addEventListener('click', resetGossip);
+
+  buildGossip(); resetGossip();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  roughjs (Excalidraw-style) diagrams
+  // ══════════════════════════════════════════════════════════════════════
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+  function arrow(rs, svg, x1, y1, x2, y2, col, dashed) {
+    var opts = { stroke:col, strokeWidth:1.8, roughness:0.9 };
+    if (dashed) opts.strokeLineDash = [6,5];
+    svg.appendChild(rs.line(x1, y1, x2, y2, opts));
+    var ang = Math.atan2(y2-y1, x2-x1);
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang - 0.4), y2 - 10*Math.sin(ang - 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang + 0.4), y2 - 10*Math.sin(ang + 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+  }
+
+  // Anchor: Mirror Library (Merkle) + Whispering Gallery (gossip).
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, '📚 Two tools for a self-healing cluster', '#e2e8f0', '13', '800');
+
+    // ---- left: Merkle = tower of summary cards ----
+    T(205, 52, '🗂️ TOWER OF SUMMARY CARDS = MERKLE TREE', '#7dd3fc', '10.5', '800');
+    T(205, 68, '"WHERE do two copies differ?"', '#94a3b8', '9', '600');
+    // mini tree: 1 -> 2 -> 4
+    svg.appendChild(rs.rectangle(170, 80, 70, 24, { stroke:'#38bdf8', strokeWidth:1.6, roughness:1, fill:'#38bdf815', fillStyle:'solid' }));
+    T(205, 96, 'MASTER', '#7dd3fc', '9', '800');
+    [[110],[300]].forEach(function(p){});
+    svg.appendChild(rs.rectangle(95, 124, 60, 22, { stroke:'#38bdf8', strokeWidth:1.4, roughness:1, fill:'#1e293b', fillStyle:'solid' }));
+    svg.appendChild(rs.rectangle(255, 124, 60, 22, { stroke:'#fb7185', strokeWidth:1.6, roughness:1, fill:'#fb718518', fillStyle:'solid' }));
+    T(125, 139, 'room', '#7dd3fc', '8.5', '700'); T(285, 139, 'room ✗', '#fca5a5', '8.5', '800');
+    arrow(rs, svg, 190, 104, 135, 122, '#64748b'); arrow(rs, svg, 220, 104, 285, 122, '#fb7185');
+    for(var i=0;i<4;i++){
+      var bx = 60 + i*95; var bad = (i===2);
+      svg.appendChild(rs.rectangle(bx, 164, 56, 20, { stroke: bad?'#fb7185':'#475569', strokeWidth:1.3, roughness:1, fill: bad?'#fb718518':'#1e293b', fillStyle:'solid' }));
+      T(bx+28, 178, bad?'shelf ✗':'shelf', bad?'#fca5a5':'#94a3b8', '8', '700');
+    }
+    arrow(rs, svg, 275, 146, 250, 162, '#fb7185');
+    svg.appendChild(rs.rectangle(40, 196, 330, 30, { stroke:'#22c55e', strokeWidth:1.3, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(205, 215, 'master cards EQUAL → provably identical, go home', '#86efac', '9', '800');
+    svg.appendChild(rs.rectangle(40, 230, 330, 44, { stroke:'#fb7185', strokeWidth:1.3, roughness:1, fill:'#fb71850a', fillStyle:'solid' }));
+    T(205, 248, 'UNEQUAL → follow only the branch that disagrees', '#fca5a5', '9', '800');
+    T(205, 264, 'a million books → one tampered book in ~20 glances', '#fca5a5', '8.5', '600');
+
+    // divider
+    svg.appendChild(rs.line(410, 44, 410, 400, { stroke:'#334155', strokeWidth:1.4, roughness:0.8, strokeLineDash:[5,5] }));
+
+    // ---- right: gossip = rumor at a party ----
+    T(615, 52, '🗣️ RUMOR AT A PARTY = GOSSIP PROTOCOL', '#c4b5fd', '10.5', '800');
+    T(615, 68, '"spread the word to EVERYONE, no boss"', '#94a3b8', '9', '600');
+    // spreading dots: 1 -> 2 -> 4 (rounds)
+    function dot(x,y,on){ svg.appendChild(rs.circle(x,y,16,{ stroke:on?'#22c55e':'#475569', strokeWidth:1.8, roughness:1.1, fill:on?'#22c55e30':'#1e293b', fillStyle:'solid'})); }
+    dot(615,98,true); T(615,101,'1','#86efac','9','800');
+    dot(560,140,true); dot(670,140,true);
+    arrow(rs,svg,605,108,566,131,'#22c55e'); arrow(rs,svg,625,108,664,131,'#22c55e');
+    [500,560,620,680,740].forEach(function(x){ dot(x,186,true); });
+    arrow(rs,svg,552,150,505,177,'#22c55e'); arrow(rs,svg,566,150,566,177,'#22c55e');
+    arrow(rs,svg,668,150,626,177,'#22c55e'); arrow(rs,svg,676,150,732,177,'#22c55e');
+    T(615, 150, 'round 1: 3 know   round 2: ~9 …', '#cbd5e1', '8.5', '700');
+    svg.appendChild(rs.rectangle(450, 206, 330, 30, { stroke:'#a78bfa', strokeWidth:1.4, roughness:1, fill:'#a78bfa0a', fillStyle:'solid' }));
+    T(615, 225, 'each tells 2–3 random peers → count TRIPLES/round', '#c4b5fd', '9', '800');
+    svg.appendChild(rs.rectangle(450, 240, 330, 34, { stroke:'#22c55e', strokeWidth:1.3, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(615, 258, 'all N reached in ~log(N) rounds · survives failures', '#86efac', '9', '800');
+    T(615, 270, '(no announcer, many overlapping paths)', '#86efac', '7.8', '600');
+
+    // bottom verdict band
+    svg.appendChild(rs.rectangle(40, 300, 740, 58, { stroke:'#fbbf24', strokeWidth:1.6, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(410, 322, 'Merkle finds WHERE copies differ without shipping the data.  Gossip spreads the WORD with no boss.', '#fcd34d', '10', '800');
+    T(410, 340, 'Together = ANTI-ENTROPY: a leaderless cluster that heals itself, cheaply.', '#fcd34d', '9.5', '700');
+    T(410, 388, 'Keep a tiny HASH, not the data. Spread tiny DIGESTS, not a broadcast.', '#94a3b8', '9', '600');
+  }
+
+  // Merkle mechanism: tree of hashes, compare roots, descend only the mismatch.
+  function drawMerkleDiagram() {
+    var svg = document.getElementById('merkle-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 22, 'Merkle tree: leaves hash blocks · parents hash children · compare roots, descend the mismatch', '#e2e8f0', '12', '700');
+
+    // positions
+    var leafY = 250, l2Y = 180, l1Y = 110, rootY = 55;
+    var leafX = [70,160,250,340,430,520,610,700];
+    var l2X = [115,295,475,655], l1X = [205,565], rootX = 385;
+
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.6,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+    // which path differs: block 5 corrupted → leaf5, l2[2], l1[1], root all differ
+    var diffLeaf = 5, diffL2 = 2, diffL1 = 1;
+
+    // leaves
+    for(var i=0;i<8;i++){
+      var bad = (i===diffLeaf);
+      box(leafX[i]-22, leafY, 44, 30, bad?'#fb7185':'#475569', bad?'#fb718518':'#1e293b');
+      T(leafX[i], leafY+13, 'H(b'+i+')', bad?'#fca5a5':'#94a3b8', '8', '700');
+      T(leafX[i], leafY+25, bad?'≠':'=', bad?'#fca5a5':'#64748b', '8.5', '800');
+    }
+    // level 2
+    for(var i=0;i<4;i++){
+      var bad = (i===diffL2);
+      box(l2X[i]-26, l2Y, 52, 28, bad?'#fb7185':'#38bdf8', bad?'#fb718518':'#1e293b');
+      T(l2X[i], l2Y+18, bad?'H ✗':'H', bad?'#fca5a5':'#7dd3fc', '9', '800');
+      arrow(rs, svg, l2X[i], l2Y+28, leafX[i*2], leafY, bad?'#fb7185':'#64748b');
+      arrow(rs, svg, l2X[i], l2Y+28, leafX[i*2+1], leafY, bad?'#fb7185':'#64748b');
+    }
+    // level 1
+    for(var i=0;i<2;i++){
+      var bad = (i===diffL1);
+      box(l1X[i]-30, l1Y, 60, 28, bad?'#fb7185':'#38bdf8', bad?'#fb718518':'#1e293b');
+      T(l1X[i], l1Y+18, bad?'H ✗':'H', bad?'#fca5a5':'#7dd3fc', '9.5', '800');
+      arrow(rs, svg, l1X[i], l1Y+28, l2X[i*2], l2Y, bad?'#fb7185':'#64748b');
+      arrow(rs, svg, l1X[i], l1Y+28, l2X[i*2+1], l2Y, bad?'#fb7185':'#64748b');
+    }
+    // root
+    box(rootX-40, rootY, 80, 30, '#fbbf24', '#fbbf2415');
+    T(rootX, rootY+19, 'ROOT ✗', '#fcd34d', '10', '800');
+    arrow(rs, svg, rootX, rootY+30, l1X[0], l1Y, '#64748b');
+    arrow(rs, svg, rootX, rootY+30, l1X[1], l1Y, '#fb7185');
+
+    // annotations
+    T(690, rootY+10, 'roots differ → start here', '#fcd34d', '8.5', '700', false, 'end');
+    svg.appendChild(rs.rectangle(40, 300, 350, 76, { stroke:'#22c55e', strokeWidth:1.4, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(215, 320, 'GREEN subtree (equal hash) → SKIP it', '#86efac', '10', '800');
+    T(215, 338, 'equal parent ⇒ all blocks beneath are identical', '#86efac', '8.5', '600');
+    T(215, 356, '⟹ equal roots prove two datasets match, in ONE compare', '#86efac', '8.8', '700');
+
+    svg.appendChild(rs.rectangle(430, 300, 350, 76, { stroke:'#fb7185', strokeWidth:1.4, roughness:1, fill:'#fb71850a', fillStyle:'solid' }));
+    T(605, 320, 'RED path only → descend the mismatch', '#fca5a5', '10', '800');
+    T(605, 338, 'root → right child → node #2 → leaf b5', '#fca5a5', '8.5', '600');
+    T(605, 356, 'O(log n) compares · ship ONLY the changed block', '#fca5a5', '8.8', '700');
+  }
+
+  // Gossip mechanism: 1 -> 3 -> 9 exponential spread + the properties.
+  function drawGossipDiagram() {
+    var svg = document.getElementById('gossip-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 22, 'Gossip: each node tells a few random peers → the news spreads exponentially', '#e2e8f0', '12.5', '700');
+
+    function node(x,y,on,label,col){
+      svg.appendChild(rs.circle(x,y,20,{ stroke:on?(col||'#22c55e'):'#475569', strokeWidth:1.8, roughness:1.1, fill:on?((col||'#22c55e')+'30'):'#1e293b', fillStyle:'solid'}));
+      if(label) T(x,y+4,label,on?(col==='#a78bfa'?'#c4b5fd':'#86efac'):'#64748b','8.5','800');
+    }
+
+    // round 0
+    T(110, 60, 'round 0', '#94a3b8', '9', '700'); T(110, 300, '1 knows', '#c4b5fd', '9', '700');
+    node(110,170,true,'A','#a78bfa');
+    // round 1
+    T(300, 60, 'round 1', '#94a3b8', '9', '700'); T(300, 300, '≈ 3 know', '#86efac', '9', '700');
+    node(300,120,true,'A','#a78bfa'); node(300,180,true,'',null); node(300,240,true,'',null);
+    arrow(rs,svg,128,165,282,125,'#22c55e'); arrow(rs,svg,128,175,282,180,'#22c55e');
+    // round 2
+    T(530, 60, 'round 2', '#94a3b8', '9', '700'); T(530, 300, '≈ 9 know', '#86efac', '9', '700');
+    var ys = [95,135,175,215,255,100,150,200,250];
+    for(var i=0;i<9;i++){ node(510 + (i%2)*42, 90 + i*22, true, '', null); }
+    arrow(rs,svg,318,120,500,110,'#22c55e'); arrow(rs,svg,318,180,500,190,'#22c55e'); arrow(rs,svg,318,240,500,260,'#22c55e');
+    // round 3 hint
+    T(690, 60, 'round 3…', '#94a3b8', '9', '700'); T(690, 170, '≈ 27', '#86efac', '11', '800'); T(690, 300, 'all N', '#86efac', '9', '700');
+    arrow(rs,svg,560,170,660,170,'#22c55e',true);
+
+    svg.appendChild(rs.rectangle(40, 320, 350, 60, { stroke:'#22c55e', strokeWidth:1.4, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(215, 340, 'count multiplies each round → reaches all N', '#86efac', '9.5', '800');
+    T(215, 358, 'in ~log(N) rounds · no coordinator · load spread', '#86efac', '8.5', '600');
+    T(215, 372, '1000 nodes ≈ 10 rounds · 1,000,000 ≈ 20', '#86efac', '8.5', '700');
+
+    svg.appendChild(rs.rectangle(430, 320, 350, 60, { stroke:'#fbbf24', strokeWidth:1.4, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(605, 340, 'PUSH / PULL / PUSH-PULL · tune fanout + interval', '#fcd34d', '9.3', '800');
+    T(605, 358, 'resilient to failures (many overlapping paths)', '#fcd34d', '8.5', '600');
+    T(605, 372, 'but: eventual + probabilistic, and chatty (redundant)', '#fcd34d', '8.3', '700');
+  }
+
+  function drawAll() { drawAnchorDiagram(); drawMerkleDiagram(); drawGossipDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
