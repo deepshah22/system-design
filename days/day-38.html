@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 38: Design a URL Shortener | System Design Mastery</title>
+  <meta name="description" content="The first full system-design walkthrough. A URL shortener turns a long, ugly link into a tiny one like sho.rt/4Gf2a that redirects back to the original — the service behind bit.ly, TinyURL, and Twitter's t.co. Underneath, it's two operations over a giant key→value map: WRITE (hand it a long URL, get back a short, unique code) and READ (hand it the code, get a fast redirect). The elegant core is to take a single ever-increasing counter and base62-encode it: a 7-character code addresses 62^7 ≈ 3.5 trillion links, and because each counter value is used once, codes never collide. We walk the whole design the way you would in an interview or a real design doc: scope the requirements, size it back-of-the-envelope (Day 30), sketch the API, choose a key-generation strategy (hash vs counter+base62 vs pre-generated keys), pick a key-value store and partition it with consistent hashing (Day 14), then scale the read-heavy traffic with a cache (Day 7) and a CDN — and decide the sneaky-important question of 301 vs 302 redirects. Taught with a theater-cloakroom memory anchor, a live base62 shortener you can type real URLs into and resolve, an interactive capacity calculator, an Excalidraw-style architecture diagram, the real tradeoffs, and how bit.ly, YouTube, and Instagram do it in production. The first time 37 days of tools build a real system end to end." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; vertical-align:top; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; gap:1rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .flow-step > span.n { font-weight:800; color: var(--accent-light); min-width:1.6rem; font-family:'JetBrains Mono',monospace; }
+    /* role / concept cards — colored left bar */
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .sim-panel { display:none; } .sim-panel.active { display:block; }
+    .q-status { text-align:center; font-weight:700; font-size:.88rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.75rem 0 1rem; line-height:1.6; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+    .q-status.info { background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .sim-controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 1rem; }
+    .stat-row { display:flex; gap:.6rem; flex-wrap:wrap; margin:.9rem 0; }
+    .stat-chip { flex:1; min-width:120px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:.6rem .8rem; text-align:center; }
+    .stat-chip .sv { font-size:1.2rem; font-weight:800; color:var(--text-primary); font-family:'JetBrains Mono',monospace; }
+    .stat-chip .sv.good { color:#86efac; } .stat-chip .sv.warn { color:#fbbf24; } .stat-chip .sv.blue { color:#7dd3fc; }
+    .stat-chip .sl { font-size:.65rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin-top:.2rem; }
+    .rule-box { background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius); padding:.9rem 1.1rem; margin:1rem 0; font-size:.84rem; }
+    .rule-box code { font-family:'JetBrains Mono',monospace; color:#7dd3fc; }
+    .rule-box .cc { color:#fca5a5; font-weight:700; } .rule-box .hb { color:#86efac; font-weight:700; }
+    /* ── URL shortener widgets ─────────────────────────────────── */
+    .sh-input { width:100%; box-sizing:border-box; background:#0b1120; border:1.5px solid var(--border); border-radius:8px; color:#e2e8f0;
+      font-family:'JetBrains Mono',monospace; font-size:.85rem; padding:.6rem .8rem; margin:.3rem 0; }
+    .sh-input:focus { outline:none; border-color:var(--accent); }
+    .sh-field-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; margin-top:.6rem; }
+    .short-display { text-align:center; background:#0b1120; border:1.5px dashed #38bdf8; border-radius:10px; padding:1rem; margin:.9rem 0; }
+    .short-display .code { font-family:'JetBrains Mono',monospace; font-size:1.7rem; font-weight:800; color:#7dd3fc; letter-spacing:.04em; }
+    .short-display .host { color:var(--text-muted); font-size:1.1rem; }
+    .short-display .sub { font-size:.74rem; color:var(--text-muted); margin-top:.4rem; }
+    .b62-breakdown { display:flex; gap:.35rem; justify-content:center; flex-wrap:wrap; margin:.6rem 0; }
+    .b62-digit { font-family:'JetBrains Mono',monospace; font-size:.72rem; text-align:center; background:var(--bg-secondary); border:1px solid var(--border); border-radius:6px; padding:.3rem .45rem; min-width:46px; }
+    .b62-digit .ch { font-size:1.05rem; font-weight:800; color:#fcd34d; display:block; }
+    .b62-digit .mul { font-size:.6rem; color:var(--text-muted); }
+    .map-table { width:100%; border-collapse:collapse; font-size:.78rem; margin:.6rem 0; }
+    .map-table th, .map-table td { border:1px solid var(--border); padding:.4rem .6rem; text-align:left; }
+    .map-table th { background:var(--bg-secondary); font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); }
+    .map-table td.code { font-family:'JetBrains Mono',monospace; color:#7dd3fc; font-weight:700; white-space:nowrap; }
+    .map-table td.url { font-family:'JetBrains Mono',monospace; color:#94a3b8; word-break:break-all; }
+    .map-empty { color:var(--text-muted); font-size:.8rem; font-style:italic; text-align:center; padding:.6rem; }
+    .len-btns { display:flex; gap:.4rem; flex-wrap:wrap; margin:.5rem 0; }
+    .len-btns button { border:1.5px solid var(--border); background:var(--bg-card); color:var(--text-secondary); font-weight:800; font-family:'JetBrains Mono',monospace; font-size:.9rem; padding:.45rem .9rem; border-radius:8px; cursor:pointer; transition:all .15s; }
+    .len-btns button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .alpha-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.25rem; border-radius:8px; border:1px solid var(--border); flex-wrap:wrap; margin:.4rem 0; }
+    .alpha-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.76rem; padding:.35rem .7rem; border-radius:6px; cursor:pointer; }
+    .alpha-toggle button.active { background:var(--accent-light,#38bdf8); color:#0b1120; }
+    .cap-readout { text-align:center; background:#0b1120; border:1.5px solid var(--border); border-radius:10px; padding:1rem; margin:.8rem 0; }
+    .cap-readout .big { font-family:'JetBrains Mono',monospace; font-size:1.5rem; font-weight:800; color:#86efac; }
+    .cap-readout .small { font-size:.8rem; color:var(--text-muted); margin-top:.35rem; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phases">Phase 2: Intermediate Systems</a><span class="breadcrumb-sep">/</span>
+      <span>Day 38</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 38 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📗 Phase 2 — Intermediate Systems</span>
+      <span class="meta-pill">🗂 Week 6 — Classic System Designs</span>
+    </div>
+    <h1>Design a URL Shortener<br><span style="color:var(--accent)">The First Time Our Tools Build a Real System</span></h1>
+    <p class="lead">
+      For 37 days we've been collecting parts — DNS, load balancers, caches, databases, hashing, replication, estimation. Today we
+      stop collecting and start <strong>building</strong>. The URL shortener is the <em>"hello world"</em> of system design: small
+      enough to hold in your head, deep enough to touch nearly every tool we own. The job sounds trivial — turn a long link like
+      <code>https://example.com/articles/2026/distributed-systems?ref=newsletter</code> into something tiny like
+      <code>sho.rt/4Gf2a</code> that redirects back — and that's exactly why it's the perfect first design: underneath the simplicity
+      sit real, revealing decisions. How do you mint <em>billions</em> of short codes that <strong>never collide</strong>? The elegant
+      answer is to take a single ever-increasing <strong>counter</strong> and <strong>base62-encode</strong> it, so a 7-character code
+      addresses <strong>62⁷ ≈ 3.5 trillion</strong> links. How do you serve a <em>read-heavy</em> redirect in a few milliseconds? Cache
+      and CDN. And the sneaky-important one: should a redirect be a <strong>301</strong> or a <strong>302</strong>? You'll scope it,
+      size it, draw the architecture, and type real URLs into a working shortener — the way you would in an interview or a design doc.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#why">Why This Problem Exists</a>
+        <a href="#design">The Design, Step by Step</a>
+        <a href="#keys">The Heart: Key Generation</a>
+        <a href="#scale">Scaling the Reads</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🧥 🎟️ 🔢 ↩️</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>You arrive at a grand theater on a winter night in a <strong>big, bulky overcoat</strong>. You can't carry it to your
+            seat, so you hand it to the <strong>cloakroom</strong>. The attendant doesn't label your coat with a description of it —
+            "long black wool coat, scarf in left pocket, button missing" — that would be absurd to write and absurd to look up. Instead
+            there's a little <strong>ticket machine</strong> that spits out the <em>next number in sequence</em> — 1, 2, 3, … — stamped
+            on a tiny stub. Your coat goes on hook <strong>#4,815</strong>, and you walk away with a stub reading <strong>4815</strong>
+            in your pocket. The whole bulky coat has been replaced, in your hands, by a <em>tiny token</em>.</p>
+            <p>Here's the clever bit. The cloakroom doesn't hand out tickets like "4815" — too long once there are millions of coats.
+            It writes the number in a <strong>compact alphabet</strong> that uses digits <em>and</em> letters, so the same hook number
+            fits in two or three characters instead of five. And because the ticket machine <em>only ever counts up</em> and never
+            reuses a number, <strong>no two coats can ever get the same ticket</strong> — collisions are impossible by construction, not
+            by luck. When you come back, you don't describe your coat; you just present the stub. The attendant reads the number,
+            walks straight to that one hook, and hands your coat back in <em>seconds</em>. Looking a coat up by its ticket is instant;
+            searching for a coat <em>without</em> a ticket would mean checking every hook.</p>
+            <p>That cloakroom <em>is</em> a URL shortener. The <strong>bulky coat</strong> is your long URL. The <strong>ticket
+            machine</strong> is a counter that mints a fresh number for every new link. The <strong>compact alphabet</strong> on the
+            stub is <strong>base62</strong> — the trick that turns a big number into a short code. The <strong>hooks</strong> are a
+            key→value store mapping each short code to its long URL. Hand over a coat → get a short ticket (that's
+            <em>shorten</em>). Present the ticket → get your coat back fast (that's <em>redirect</em>). Keep that picture; the entire
+            design is just making this cloakroom work for <em>billions</em> of coats at once.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="840" height="430" viewBox="0 0 840 430"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Nadia</span> got a Friday-afternoon request from the marketing team: "Our campaign links are
+            enormous — full of tracking parameters — and they won't fit in a printed flyer or a tweet. Can you build us a little service
+            that makes short links?" Easy, she thought. She'd have a prototype by Monday.
+          </p>
+          <p>
+            Her first idea was the obvious one: <strong>hash the URL</strong>. Run the long URL through MD5, take the first 6 characters
+            of the hex, done — same URL always produces the same short code, no counter to manage. It worked in the demo. Then two
+            problems surfaced almost immediately. First, 6 hex characters is only <code>16⁶ ≈ 16 million</code> possibilities, and by the
+            <strong>birthday paradox</strong> she started hitting <strong>collisions</strong> — two different long URLs truncating to the
+            <em>same</em> short code — long before 16 million links, which meant one campaign's short link could silently redirect to a
+            <em>different</em> campaign's page. Catastrophic. Second, the codes were ugly hex and she couldn't honor marketing's request
+            for a <em>custom</em> alias like <code>sho.rt/spring-sale</code>.
+          </p>
+          <p>
+            A senior engineer wandered over. "Stop hashing the <em>content</em>," he said. "You don't need the code to depend on the URL
+            at all. You need it to be <strong>unique and short</strong>. So just count." He sketched it: keep one
+            <strong>auto-incrementing counter</strong>; every new URL grabs the next integer; <strong>base62-encode</strong> that integer
+            — digits plus upper- and lower-case letters — into a short string, and store <code>code → long URL</code>. "Counter value
+            1,000,000,000 becomes a six-character code. Each number is used exactly once, so two URLs <em>cannot</em> collide. And since a
+            7-character code covers <code>62⁷ ≈ 3.5 trillion</code> links, you'll never run out."
+          </p>
+          <p>
+            It was beautiful — and then it broke at scale, in a new way. The single counter lived in one database row, and <em>every
+            single write</em> in the whole system had to go through that one row to get the next number. It became a
+            <strong>bottleneck</strong> and a <strong>single point of failure</strong>: if that database hiccuped, nobody anywhere could
+            create a link. So Nadia did the last move — she <strong>distributed</strong> the counting. Instead of one global counter
+            handed out one integer at a time, a <strong>key-generation service</strong> handed each application server a whole
+            <em>range</em> of a thousand numbers at once (or used Redis <code>INCRBY</code>, or a Snowflake-style ID). Each server
+            base62-encoded IDs from its own range with no coordination, and when it ran low it grabbed another range. Meanwhile the
+            <em>reads</em> — people clicking links — dwarfed the writes a hundred to one, so she put a <strong>cache</strong> in front of
+            the store and pushed hot redirects to a <strong>CDN</strong>. By Monday the "little service" had quietly become a
+            distributed system — and Nadia realized she'd just used almost every tool from the last five weeks.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">A URL shortener is fundamentally <strong>two operations over one giant key→value map</strong>.
+          <strong>Write (shorten):</strong> given a long URL, mint a <em>short, globally-unique key</em> and store
+          <code>key → longURL</code>. <strong>Read (redirect):</strong> given the key, look up the long URL and send an HTTP redirect —
+          and this path is <strong>~100× more frequent</strong>, so it must be fast. The elegant core is key generation: take a single
+          <strong>ever-increasing counter</strong> and <strong>base62-encode</strong> it (alphabet <code>0-9 A-Z a-z</code>, 62 symbols).
+          Because each counter value is used exactly once, codes <strong>never collide — by construction, not by luck</strong>; and
+          because <code>62ᴸ</code> grows fast, a mere <strong>7 characters covers ≈ 3.5 trillion</strong> links. Everything else is
+          scaling the two paths with tools you already know: size it with <strong>back-of-envelope estimation (Day 30)</strong>, route
+          with <strong>DNS + load balancers (Day 5)</strong>, store in a <strong>key-value database</strong> partitioned by
+          <strong>consistent hashing (Day 14)</strong>, and absorb the read flood with a <strong>cache (Day 7)</strong> and a
+          <strong>CDN</strong>. One-line test: <em>a URL shortener is a globally-unique-key generator bolted to a read-optimized
+          key-value lookup — get the key generation and the read-path caching right and the rest follows.</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Shorten, Resolve, and Size It</h2>
+        <div class="sim-box">
+          <p>Two real, working demos. In <strong>Shorten &amp; Resolve</strong> mode you run an actual base62 counter-based shortener:
+          type a long URL, watch it get the next counter value and base62-encode into a short code that goes into a live map — then
+          resolve any code back to its URL, exactly like a redirect. In <strong>How short can it be?</strong> mode, a calculator shows how
+          many links a code of a given length can address (<code>62ᴸ</code>) and how long that lasts at a given traffic rate — so you can
+          <em>see</em> why 7 characters is the sweet spot.</p>
+
+          <div class="mode-toggle" id="mode-toggle">
+            <button data-mode="shorten" class="active">🔗 Shorten &amp; Resolve</button>
+            <button data-mode="capacity">📏 How short can it be?</button>
+          </div>
+
+          <!-- SHORTEN PANEL -->
+          <div class="sim-panel active" id="panel-shorten">
+            <div class="sh-field-label">Long URL to shorten</div>
+            <input class="sh-input" id="sh-long" type="text" value="https://example.com/articles/2026/distributed-systems?ref=newsletter" />
+            <div class="sim-controls">
+              <button class="btn btn-primary btn-sm" id="sh-shorten">Shorten it ▶</button>
+              <button class="btn btn-outline btn-sm" id="sh-reset">↺ Reset store</button>
+            </div>
+
+            <div class="short-display">
+              <div><span class="host">sho.rt/</span><span class="code" id="sh-code">— — —</span></div>
+              <div class="b62-breakdown" id="sh-breakdown"></div>
+              <div class="sub" id="sh-sub">Type a URL and press <b>Shorten it</b>. The code is just the counter value, written in base62.</div>
+            </div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv blue" id="sh-count">0</div><div class="sl">links stored</div></div>
+              <div class="stat-chip"><div class="sv" id="sh-next">1,000,000,000</div><div class="sl">next counter value</div></div>
+              <div class="stat-chip"><div class="sv good" id="sh-len">6</div><div class="sl">code length (chars)</div></div>
+            </div>
+
+            <div class="sh-field-label">Resolve a short code (the redirect path)</div>
+            <input class="sh-input" id="sh-resolve-in" type="text" placeholder="paste a code from the table below, e.g. 15ftgG" />
+            <div class="sim-controls">
+              <button class="btn btn-primary btn-sm" id="sh-resolve">Resolve → redirect ▶</button>
+            </div>
+            <div class="q-status info" id="sh-status">The store is empty. Shorten a URL first, then resolve its code to see the redirect.</div>
+
+            <div class="sh-field-label">The key→value store (<code>code → long URL</code>)</div>
+            <table class="map-table">
+              <thead><tr><th>short code</th><th>counter #</th><th>long URL</th></tr></thead>
+              <tbody id="sh-map"><tr><td colspan="3" class="map-empty">No links yet.</td></tr></tbody>
+            </table>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem;">Notice three things. (1) Each short code is just the
+            <em>counter value</em> rewritten in base62 — nothing about the long URL leaks into it. (2) The counter only ever goes
+            <em>up</em>, so no two links can ever share a code. (3) Resolving is a single map lookup — <code>O(1)</code> — which is why a
+            redirect is so fast. (This demo keeps the map in your browser; a real system keeps it in a distributed key-value store.)</p>
+          </div>
+
+          <!-- CAPACITY PANEL -->
+          <div class="sim-panel" id="panel-capacity">
+            <div class="sh-field-label">Alphabet (how many symbols per character)</div>
+            <div class="alpha-toggle" id="alpha-toggle">
+              <button data-base="10" >base10 — digits only (0-9)</button>
+              <button data-base="16" >base16 — hex (0-9 a-f)</button>
+              <button data-base="62" class="active">base62 — 0-9 A-Z a-z</button>
+            </div>
+
+            <div class="sh-field-label">Code length</div>
+            <div class="len-btns" id="len-btns">
+              <button data-len="4">4</button>
+              <button data-len="5">5</button>
+              <button data-len="6">6</button>
+              <button data-len="7" class="active">7</button>
+              <button data-len="8">8</button>
+            </div>
+
+            <div class="cap-readout">
+              <div class="big" id="cap-total">—</div>
+              <div class="small" id="cap-expr">distinct short codes</div>
+            </div>
+
+            <div class="sh-field-label">New links per day</div>
+            <div class="len-btns" id="rate-btns">
+              <button data-rate="1000000">1M</button>
+              <button data-rate="10000000">10M</button>
+              <button data-rate="100000000" class="active">100M</button>
+              <button data-rate="1000000000">1B</button>
+            </div>
+
+            <div class="q-status info" id="cap-status">—</div>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem;">Each extra character multiplies capacity by the size of
+            the alphabet — that's why a bigger alphabet buys shorter codes. <strong>base62</strong> packs digits and both letter-cases into
+            every character, so <code>62⁷ ≈ 3.5&nbsp;trillion</code> fits a human-friendly 7-char code. Switch to <strong>base10</strong> and
+            watch how many more characters you'd need for the same capacity — that's the whole reason short links use letters, not just
+            digits.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="why">
+        <h2>Why This Problem Exists</h2>
+        <p>Long URLs are everywhere and they're genuinely a problem. A modern link carries a path, query parameters, tracking tags, and
+        session tokens, and can run to hundreds of characters. That breaks in the real world: it won't fit in a 160-character
+        <strong>SMS</strong> or a character-limited <strong>tweet</strong>; it wraps into an unclickable mess in <strong>email</strong>;
+        it's impossible to read aloud on a <strong>podcast</strong> or print on a <strong>flyer or billboard</strong> as a QR-free
+        fallback; and a raw link reveals nothing you can <em>measure</em>. A short link solves all of these — <strong>sho.rt/4Gf2a</strong>
+        is tiny, memorable, printable, and (because every click flows through your service) gives you a natural place to count clicks,
+        detect abuse, and expire links.</p>
+        <p>So the <em>product</em> is simple, but it forces two hard engineering questions that recur in almost every system you'll ever
+        build. <strong>First: how do you mint a unique identifier billions of times without collisions and without a central
+        bottleneck?</strong> That's the key-generation problem, and it shows up again for every ID in every distributed system.
+        <strong>Second: how do you serve an enormously read-heavy lookup with low latency and high availability?</strong> People
+        <em>create</em> a link once but <em>click</em> it thousands of times, so reads outnumber writes by roughly 100:1 — the design must
+        bend entirely toward making that read path fast and cheap. The URL shortener is the smallest system that makes you answer both,
+        which is exactly why it's the classic first design.</p>
+
+        <div class="code-label">The two operations, and their wildly different traffic</div>
+        <div class="code-panel"><span class="muted"># WRITE path — rare. Someone creates a short link.</span>
+<span class="f">POST /urls</span>   { longUrl }   <span class="s">→  mint unique code, store code→longUrl,  return sho.rt/&lt;code&gt;</span>   <span class="muted"># ~1k/s</span>
+
+<span class="muted"># READ path — constant. Someone clicks a short link.</span>
+<span class="f">GET /&lt;code&gt;</span>               <span class="s">→  look up longUrl by code,  HTTP 301/302 redirect</span>              <span class="b"># ~100k/s  ← design for THIS</span>
+
+<span class="muted"># reads outnumber writes ~100:1 → the whole architecture bends toward a fast, cacheable redirect.</span></div>
+      </section>
+
+      <section id="design">
+        <h2>The Design, Step by Step</h2>
+        <p>This is the first time we walk a full design, so let's do it the way you would in an interview or a design doc: scope it, size
+        it, sketch the API, then draw the boxes. Resist the urge to jump to a diagram — the first two steps decide everything.</p>
+
+        <h3>Step 1 — Scope the requirements</h3>
+        <div class="pillar-grid">
+          <div class="pillar-card conf"><h4>✅ Functional</h4>
+            <p><strong>Shorten:</strong> long URL → short code.</p>
+            <p><strong>Redirect:</strong> short code → original URL.</p>
+            <p><strong>Nice-to-have:</strong> custom aliases, expiry/TTL, click analytics.</p></div>
+          <div class="pillar-card avail"><h4>🎯 Non-functional</h4>
+            <p><strong>Highly available</strong> — a broken redirect breaks everyone's links.</p>
+            <p><strong>Low-latency redirects</strong> — a few ms; it's in the user's critical path.</p>
+            <p><strong>Scalable &amp; durable</strong> — billions of links, lose none.</p></div>
+          <div class="pillar-card amber"><h4>🤔 Clarify early</h4>
+            <p>Codes <strong>unguessable</strong>, or is sequential fine?</p>
+            <p><strong>Read:write ratio</strong>? (≈100:1).</p>
+            <p>Do links <strong>expire</strong>? Analytics needed?</p></div>
+        </div>
+
+        <h3>Step 2 — Size it (back-of-the-envelope, Day 30)</h3>
+        <p>Numbers choose the architecture. Assume <strong>100 million new links per day</strong> and a <strong>100:1</strong> read:write
+        ratio.</p>
+        <div class="code-panel"><span class="muted"># traffic (day ≈ 100,000 seconds)</span>
+writes   = 100,000,000 / 100,000            = <span class="n">~1,000 writes/sec</span>
+reads    = 1,000 × 100                       = <span class="n">~100,000 reads/sec</span>
+peak     = ~2× average                       = <span class="b">~200,000 reads/sec  ← provision for this</span>
+
+<span class="muted"># storage over 5 years, ~500 bytes per record (code + long URL + metadata)</span>
+records  = 100,000,000 × 365 × 5             = <span class="n">~182 billion links</span>
+storage  = 182e9 × 500 bytes                 = <span class="n">~90 TB</span>          <span class="muted"># → must shard (Day 13/14)</span>
+
+<span class="muted"># key space — how long must a code be?</span>
+need     = 182e9 codes  →  62^6 ≈ 56.8e9 (too few),  <span class="s">62^7 ≈ 3.5e12 (plenty)</span>  → <span class="s">use 7 chars</span></div>
+        <p style="margin-top:1rem;">Those few lines already told us: ~200K reads/sec means we <em>must</em> cache and load-balance; ~90 TB
+        means we <em>must</em> shard the store; and 182 billion links means a <strong>7-character</strong> base62 code. We haven't drawn a
+        single box yet and the shape of the system is decided.</p>
+
+        <h3>Step 3 — Sketch the API</h3>
+        <div class="code-panel"><span class="k">POST</span> /api/urls
+  <span class="muted">request</span>   { "longUrl": "https://…", "customAlias": "spring-sale"?, "expiresAt": "2027-01-01"? }
+  <span class="muted">response</span>  201  { "shortUrl": "https://sho.rt/4Gf2a" }
+
+<span class="k">GET</span> /{code}
+  <span class="muted">response</span>  <span class="b">301</span> Moved Permanently  (or <span class="b">302</span> Found)   Location: https://…   <span class="muted"># the redirect</span></div>
+        <p style="margin-top:1rem;">Two endpoints. The <code>POST</code> is the write path; the <code>GET /{code}</code> <em>is</em> the
+        whole product for 99% of traffic — a lookup and a redirect header. (This is a clean REST shape from our API lessons: a resource
+        collection you <code>POST</code> to, and a short resolver route.)</p>
+
+        <h3>Step 4 — Draw the architecture</h3>
+        <p>Now the boxes. The write path mints a key and stores it; the read path resolves a key as fast as possible. Both sit behind DNS
+        and a load balancer.</p>
+        <div class="diagram-box">
+          <svg id="arch-diagram" width="860" height="470" viewBox="0 0 860 470"></svg>
+        </div>
+        <div class="flow-box">
+          <div class="flow-step"><span class="n">1</span><div><strong>DNS → Load Balancer (Day 5).</strong> <code>sho.rt</code> resolves to
+          a load balancer that spreads both writes and reads across a fleet of stateless application servers.</div></div>
+          <div class="flow-step"><span class="n">2</span><div><strong>App servers (stateless).</strong> On a write they ask the
+          <em>ID generator</em> for a unique number, base62-encode it, and write <code>code → longUrl</code>. On a read they resolve the
+          code — cache first, store second.</div></div>
+          <div class="flow-step"><span class="n">3</span><div><strong>ID generator / key-gen service.</strong> Hands out unique integers
+          without becoming a bottleneck — Redis <code>INCRBY</code>, per-server ranges, or Snowflake-style IDs (the heart of this design,
+          next section).</div></div>
+          <div class="flow-step"><span class="n">4</span><div><strong>Key-value store (sharded).</strong> The source of truth:
+          <code>code → longUrl</code>, partitioned by code with <strong>consistent hashing (Day 14)</strong> so ~90 TB spreads across many
+          nodes and lookups are <code>O(1)</code>.</div></div>
+          <div class="flow-step"><span class="n">5</span><div><strong>Cache (Day 7) + CDN.</strong> A Redis cache holds the hot 20% of
+          codes (the 80/20 rule), and a CDN can serve very popular redirects from the edge — absorbing the 100:1 read flood before it ever
+          touches the store.</div></div>
+        </div>
+      </section>
+
+      <section id="keys">
+        <h2>The Heart: How to Generate Short Keys</h2>
+        <p>Everything above is plumbing you already know. <em>This</em> is the decision that makes a URL shortener interesting: how do you
+        produce the short code? There are three real strategies, and the choice is a genuine tradeoff.</p>
+
+        <table class="algo-table">
+          <tr><th>Strategy</th><th>How it works</th><th>The catch</th></tr>
+          <tr><td><strong>Hash the URL</strong><br><span style="font-size:.8rem;color:var(--text-muted)">e.g. MD5 → first 7 chars</span></td>
+          <td>Run the long URL through a hash, keep the first few characters. Same URL → same code, no counter to manage, naturally dedups
+          identical URLs.</td>
+          <td><strong>Collisions.</strong> Truncating a hash means two different URLs can map to the same code (birthday paradox); you must
+          detect and re-hash, adding reads/complexity. Codes aren't customizable.</td></tr>
+          <tr><td><strong>Counter + base62</strong><br><span style="font-size:.8rem;color:var(--text-muted)">the classic answer</span></td>
+          <td>Keep an ever-increasing integer; each new URL takes the next value; base62-encode it. Each number is used once, so codes are
+          <strong>unique by construction</strong> and as short as possible.</td>
+          <td><strong>A single counter is a bottleneck/SPOF</strong>, and sequential codes are <strong>guessable</strong> (you can
+          enumerate links). Fix with a distributed counter; fix guessability by encoding with a shuffled alphabet or mixing in bits.</td></tr>
+          <tr><td><strong>Pre-generated random keys</strong><br><span style="font-size:.8rem;color:var(--text-muted)">Key-Generation Service</span></td>
+          <td>A separate service generates billions of random, unique 7-char keys <em>ahead of time</em> into a "available keys" table;
+          app servers grab unused ones.</td>
+          <td><strong>Unguessable</strong> and fast, but needs a service to generate, store, and hand out keys without giving the same one
+          twice (used-vs-available bookkeeping, often in ranges).</td></tr>
+        </table>
+
+        <h3>Why base62, concretely</h3>
+        <p>A short code is just a number written in a bigger alphabet. <strong>base62</strong> uses all 10 digits plus 26 uppercase plus 26
+        lowercase letters = 62 symbols per character. Each extra character multiplies the keyspace by 62, so capacity climbs
+        <em>exponentially</em> with length:</p>
+        <div class="code-panel"><span class="k">encode</span>(n):                          <span class="muted"># integer → base62 string</span>
+    ALPHABET = <span class="s">"0-9 A-Z a-z"</span>   <span class="muted"># 62 symbols</span>
+    s = ""
+    <span class="k">while</span> n > 0:
+        s = ALPHABET[n % 62] + s        <span class="muted"># take the remainder as a digit</span>
+        n = n // 62
+    <span class="k">return</span> s
+
+<span class="muted"># capacity by length — why 7 is the sweet spot</span>
+62^5 = <span class="n">   916 million</span>
+62^6 = <span class="n">  56.8 billion</span>
+62^7 = <span class="s">  3.52 trillion</span>   ← 7 chars, human-friendly, covers 180B+ links for ~96 years at 100M/day
+62^8 = <span class="n"> 218.3 trillion</span></div>
+
+        <div class="rule-box">
+          <span class="hb">✔ Counter + base62 gives collision-free codes</span> &nbsp;— because each integer is used exactly once, two URLs
+          <em>cannot</em> receive the same code. No collision checks, no retries. <code>62⁷ ≈ 3.5 trillion</code> in 7 characters.<br>
+          <span class="cc">✘ But a naive single counter is a bottleneck</span> &nbsp;— every write serializes on one row. Distribute it:
+          hand each server a <strong>range</strong> of IDs (e.g. 1–1000, 1001–2000), or use Redis <code>INCRBY 1000</code>, or a
+          <strong>Snowflake</strong>-style ID (timestamp + machine-id + sequence) so servers mint unique IDs with zero coordination.
+        </div>
+
+        <p>Notice a lovely property we get for free: <strong>short links are immutable</strong>. Once <code>4Gf2a → longUrl</code> is
+        written, it never changes. Immutable data is the easiest thing in the world to cache — no invalidation headaches — which is
+        exactly why the read path can lean so hard on caching and CDNs. Day 7's hardest problem (cache invalidation) barely exists here.</p>
+      </section>
+
+      <section id="scale">
+        <h2>Scaling the Reads (and the 301-vs-302 Trap)</h2>
+        <p>With ~200K reads/sec at peak, the redirect path is the whole ballgame. Three layers absorb it, each catching traffic before it
+        reaches the next:</p>
+        <div class="flow-box">
+          <div class="flow-step"><span class="n">①</span><div><strong>CDN / edge</strong> — the hottest links (a viral campaign) can be
+          served as redirects straight from edge locations near the user, never touching your servers.</div></div>
+          <div class="flow-step"><span class="n">②</span><div><strong>Cache (Redis)</strong> — by the 80/20 rule, a small fraction of
+          codes get most clicks. Keep them in an in-memory cache; a hit is a sub-millisecond lookup. ~10 GB of RAM holds a huge hot
+          set.</div></div>
+          <div class="flow-step"><span class="n">③</span><div><strong>Sharded KV store + read replicas</strong> — the source of truth,
+          partitioned by code (Day 14) with replicas (Day 12) to spread read load and survive node loss.</div></div>
+        </div>
+
+        <h3>301 vs 302 — a tiny choice with big consequences</h3>
+        <p>The redirect's HTTP status code is a real design decision, not a detail:</p>
+        <table class="algo-table">
+          <tr><th></th><th>301 Moved Permanently</th><th>302 Found (temporary)</th></tr>
+          <tr><td><strong>Browser behavior</strong></td><td>Caches the redirect; future clicks skip your server and go straight to the
+          destination.</td><td>Does <em>not</em> cache; every click comes back through your server.</td></tr>
+          <tr><td><strong>Load on you</strong></td><td><span style="color:#86efac">Lower</span> — browsers absorb repeat clicks.</td>
+          <td><span style="color:#fca5a5">Higher</span> — you see every single click.</td></tr>
+          <tr><td><strong>Analytics</strong></td><td><span style="color:#fca5a5">Poor</span> — you can't count clicks the browser handled
+          itself.</td><td><span style="color:#86efac">Full</span> — every click is observable (and you can expire/disable a link).</td></tr>
+        </table>
+        <p style="margin-top:1rem;">This is the archetypal system-design tradeoff: <strong>301 optimizes for your infrastructure; 302
+        optimizes for control and measurement.</strong> A shortener whose business <em>is</em> analytics (bit.ly) leans toward
+        <strong>302</strong> so it can count and manage every click; one that just wants cheap, fast redirects leans toward
+        <strong>301</strong>. There's no universally "best" answer — which is exactly the lesson. Say which you'd pick and <em>why</em>,
+        and you've nailed the question.</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>The shortener looks done, but the interesting edges are where real systems live.</p>
+
+        <h3>The counter can't be a single point</h3>
+        <p>One global auto-increment row makes every write wait in line and dies if that one node dies. The fixes all trade a little
+        "neatness" for scale: <strong>ID ranges</strong> per server (simple, but IDs are no longer strictly sequential and a crashed server
+        wastes its range), <strong>Redis <code>INCRBY</code></strong> (fast, but Redis is now critical), or a <strong>Snowflake</strong>
+        scheme (fully decentralized, but IDs are longer and encode a timestamp). Pick based on how much coordination you can tolerate.</p>
+
+        <h3>Sequential codes are guessable</h3>
+        <p>If code <code>4Gf2a</code> is just counter <em>N</em> in base62, then <code>4Gf2b</code> is <em>N+1</em> — an attacker can
+        <strong>enumerate</strong> every link in your system, which may leak private URLs. If unguessability matters, don't encode the raw
+        counter: use a <strong>shuffled/permuted alphabet</strong>, encrypt the integer before encoding, or switch to the
+        <strong>pre-generated random key</strong> strategy. This is a security-vs-simplicity call you should name out loud.</p>
+
+        <h3>Custom aliases and collisions</h3>
+        <p>Custom aliases (<code>sho.rt/spring-sale</code>) live in the <em>same</em> keyspace as generated codes, so you must check that a
+        requested alias isn't already taken (and reserve it atomically to avoid two users grabbing it at once). Good practice: keep
+        generated codes long enough, and/or carve custom aliases into a reserved namespace so they can't collide with the counter's
+        output.</p>
+
+        <h3>Expiry, cleanup, and hot keys</h3>
+        <p>Links may expire (set a TTL and let a background job or the store's TTL reap them). A single <em>viral</em> link is a
+        <strong>hot key</strong> — millions of clicks on one code — which the cache and CDN handle beautifully precisely because the
+        mapping is immutable. And analytics (counting clicks) is a whole write-heavy subsystem of its own: don't do it synchronously on the
+        redirect path — fire an event onto a <strong>queue (Day 18)</strong> and aggregate offline, so counting a click never slows the
+        redirect.</p>
+
+        <p style="margin-top:1rem;">The through-line: a URL shortener is <em>deceptively</em> simple. The product is two verbs, but every
+        hard part — unique IDs without a bottleneck, read-heavy scaling, guessability, hot keys, async analytics — is a pattern you'll meet
+        in <em>every</em> system after this. That's why it's the first one we build.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">🧥</span><div><strong>Up the Stairs — The Workshop Floor</strong>
+          — <span>You leave the Whispering Gallery (Day 37) and climb a staircase into a brand-new wing: a bright
+          <strong>workshop (Week 6, Classic System Designs)</strong>, where the tools from every room downstairs are finally laid out on
+          benches to <em>build</em> things. The first bench holds a <strong>theater cloakroom</strong>: a wall of numbered
+          <strong>hooks</strong>, a little <strong>ticket machine</strong> that only ever counts up, and an attendant who turns bulky
+          coats into tiny stubs.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🎟️</span><div><strong>The Ticket Machine &amp; the Compact Stub</strong> —
+          <span>The machine prints the <em>next number</em> — never a repeat — and a clever stamp rewrites that number in a
+          <strong>compact alphabet of digits and letters (base62)</strong> so even hook #3-point-5-trillion fits on a stub the size of a
+          fingernail. Hand over a coat → get a short ticket (<em>shorten</em>). Present the ticket → the attendant walks to that one hook
+          and hands the coat back in seconds (<em>redirect</em>). A velvet rope out front is the <strong>cache</strong>: regulars'
+          coats hang right by the door so they're returned instantly.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Door Ahead</strong> — <span>A workbench further down is
+          labelled <strong>Day 39: Design a Key-Value Store</strong>. Through it you glimpse the <em>inside</em> of those hooks — how the
+          storage layer under today's shortener actually keeps billions of entries durable and fast. Today we used a key-value store as a
+          black box; tomorrow we open it up.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Merkle Trees &amp; Gossip (Day 37)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Design: URL Shortener (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Design: Key-Value Store (Day 39)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Today puts to work…</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Estimation (Day 30)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Load Balancers (Day 5)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Caching (Day 7)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Databases / KV (Day 11)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Consistent Hashing (Day 14)</span>
+        </div>
+        <p>Today is the <strong>opening of Week 6 — Classic System Designs</strong>, and it's deliberately a <em>synthesis</em> lesson
+        rather than a new concept. It starts with <strong>back-of-envelope estimation (Day 30)</strong> to size the system; routes traffic
+        through <strong>DNS and load balancers (Day 5)</strong>; stores the mapping in a <strong>key-value database (Day 11)</strong>
+        partitioned by <strong>consistent hashing (Day 14)</strong> and copied with <strong>replication (Day 12)</strong>; and bends the
+        read-heavy path around a <strong>cache (Day 7)</strong> and a CDN. The one genuinely new idea — a <strong>distributed unique-ID
+        generator</strong> — is a pattern you'll reuse constantly. Next, <strong>Day 39</strong> zooms into the storage box we treated as a
+        black box today and designs the <strong>key-value store</strong> itself.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Just hash the URL and take the first few characters."</td><td>Truncated hashes <strong>collide</strong> (birthday
+          paradox) long before you'd expect, silently sending one link to the wrong destination. You'd need collision detection and
+          re-hashing. A counter avoids collisions <em>by construction</em>.</td></tr>
+          <tr><td>"The short code should be derived from the long URL."</td><td>It doesn't need to be — and shouldn't be. The code only
+          has to be <strong>unique and short</strong>. Decoupling the code from the content is what lets you use a simple counter and
+          offer custom aliases.</td></tr>
+          <tr><td>"Use base62 to make the code unguessable."</td><td>base62 is about <strong>shortness</strong>, not secrecy. Encoding a
+          sequential counter in base62 is still perfectly <strong>enumerable</strong>. Unguessability needs random keys or a
+          shuffled/encrypted encoding — a separate decision.</td></tr>
+          <tr><td>"One auto-increment counter in the database is fine."</td><td>It's a <strong>bottleneck and single point of
+          failure</strong> at scale — every write serializes on it. Distribute the counting (ranges, Redis, Snowflake).</td></tr>
+          <tr><td>"301 and 302 are basically the same."</td><td>301 is cached by the browser (low load, <em>no</em> click analytics); 302
+          routes every click back through you (full analytics, higher load). It's a real tradeoff you must choose deliberately.</td></tr>
+          <tr><td>"Optimize the write path."</td><td>Reads outnumber writes ~<strong>100:1</strong>. The architecture should bend toward a
+          fast, cacheable <em>redirect</em>; writes are comparatively rare.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ You're designing a URL shortener for <strong>100 million new links per day</strong> with a
+          <strong>100:1</strong> read:write ratio, to run for 5 years. (1) Roughly what write QPS, read QPS, and total storage are you
+          sizing for, and how long must the short code be? (2) Which key-generation strategy would you choose, and how would you keep it
+          from becoming a single point of failure? (3) Would you use 301 or 302 redirects, and what are you trading? (click to reveal)</div>
+          <div class="recall-answer"><strong>(1) Sizing.</strong> 100M/day ÷ ~100,000 s/day ≈ <strong>1,000 writes/sec</strong>; ×100 ≈
+          <strong>100,000 reads/sec</strong> (≈200K at peak). Storage: 100M × 365 × 5 ≈ <strong>182 billion links</strong> × ~500 B ≈
+          <strong>~90 TB</strong>, so the store must be <em>sharded</em>. Keyspace: you need ~182 billion codes; <code>62⁶ ≈ 56.8B</code> is
+          too few but <code>62⁷ ≈ 3.5 trillion</code> is plenty → <strong>7-character</strong> base62 codes.
+          <br><br><strong>(2) Key generation.</strong> <strong>Counter + base62</strong> is the clean choice — each integer is used once so
+          codes never collide, and base62 keeps them short. To avoid a single-counter bottleneck/SPOF, <em>distribute</em> it: hand each app
+          server a <strong>range</strong> of IDs at a time (or use Redis <code>INCRBY</code>, or Snowflake-style IDs) so servers mint unique
+          codes with little or no coordination. (If links must be unguessable, encode with a shuffled alphabet or switch to a pre-generated
+          random-key service.)
+          <br><br><strong>(3) 301 vs 302.</strong> <strong>301</strong> lets browsers cache the redirect → far less load on you, but you
+          <em>lose</em> per-click analytics and the ability to change/expire a link cheaply. <strong>302</strong> routes every click through
+          your service → full analytics and control, but higher load. Choose 302 if the product is measurement (like bit.ly); 301 if you
+          just want cheap, fast redirects. The point is naming the trade.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🔗 bit.ly &amp; TinyURL</div><p>The canonical shorteners. bit.ly's whole
+          business is <strong>analytics</strong>, so it favors redirects it can <em>measure</em> (302-style) and layers click tracking,
+          link management, and expiry on top of the core <code>code → URL</code> map — exactly the design above.</p></div>
+          <div class="realworld-card"><div class="rw-company">🐦 Twitter / X — t.co</div><p>Every link posted is wrapped in a
+          <code>t.co</code> short link so the platform can <strong>count clicks and screen for malware/spam</strong> before sending users
+          on — a shortener used as a safety and measurement layer, not just for brevity.</p></div>
+          <div class="realworld-card"><div class="rw-company">▶️ YouTube video IDs</div><p>Those 11-character IDs like
+          <code>dQw4w9WgXcQ</code> are essentially a <strong>base64 encoding</strong> of a unique number — the same "encode a unique
+          integer in a compact alphabet" trick that gives short, collision-free, URL-safe identifiers at massive scale.</p></div>
+          <div class="realworld-card"><div class="rw-company">📸 Instagram shortcodes</div><p>Instagram famously built a
+          <strong>sharded unique-ID service</strong> (timestamp + shard-id + per-shard sequence, Snowflake-style) and base64-encodes it into
+          the media shortcode — a textbook distributed counter solving exactly the bottleneck Nadia hit.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: At its core, what two operations is a URL shortener, and which one do you optimize for?</div>
+          <div class="fc-a">A: <strong>Write (shorten):</strong> long URL → mint a unique short code, store <code>code → URL</code>.
+          <strong>Read (redirect):</strong> code → look up URL → HTTP redirect. Optimize for the <strong>read path</strong> — reads
+          outnumber writes ~100:1.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is "counter + base62" the classic key-generation strategy?</div>
+          <div class="fc-a">A: Each counter value is used exactly once, so codes are <strong>unique by construction</strong> (no collision
+          checks). base62 (0-9 A-Z a-z) keeps them short: <code>62⁷ ≈ 3.5 trillion</code> codes in just 7 characters.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What's wrong with a single auto-increment counter, and how do you fix it?</div>
+          <div class="fc-a">A: It's a <strong>bottleneck and single point of failure</strong> — every write serializes on one row.
+          <strong>Distribute</strong> it: per-server ID ranges, Redis <code>INCRBY</code>, or a Snowflake-style ID (timestamp + machine +
+          sequence).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Does base62 make short codes unguessable?</div>
+          <div class="fc-a">A: No. base62 is about <strong>shortness</strong>. A base62-encoded sequential counter is still fully
+          <strong>enumerable</strong>. For unguessability, use random pre-generated keys or a shuffled/encrypted encoding.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: 301 vs 302 for the redirect — what's the trade?</div>
+          <div class="fc-a">A: <strong>301 (permanent)</strong> → browser caches it, so fewer hits reach you but you lose click analytics.
+          <strong>302 (temporary)</strong> → every click returns through your service, giving full analytics and control at higher load.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>State the two core operations of a URL shortener and which one dominates traffic (and by roughly how much).</li>
+          <li>Size a shortener for 100M new links/day at 100:1 reads: write QPS, read QPS (peak), 5-year storage, and code length.</li>
+          <li>Sketch the two API endpoints and what each returns.</li>
+          <li>Name the three key-generation strategies and the main catch of each.</li>
+          <li>Explain how base62 turns a unique integer into a short code, and why 7 characters is the sweet spot (<code>62⁷ ≈ ?</code>).</li>
+          <li>Why is a single auto-increment counter a problem, and name two ways to distribute it.</li>
+          <li>Why are sequential base62 codes guessable, and how would you make codes unguessable?</li>
+          <li>Compare 301 vs 302 redirects — load and analytics — and say which you'd pick for an analytics-focused product.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>a URL shortener is a globally-unique-key generator bolted to a read-optimized key-value
+          lookup.</strong> Mint a short code by taking an <strong>ever-increasing counter</strong> and <strong>base62-encoding</strong> it —
+          unique by construction, and <code>62⁷ ≈ 3.5 trillion</code> codes fit in 7 characters. Store <code>code → longUrl</code> in a
+          sharded key-value store, and because reads outnumber writes ~100:1, bend the whole system toward a fast, cacheable
+          <strong>redirect</strong> with a cache and a CDN (made easy because the mapping is immutable). Then own the three real decisions:
+          <em>distribute the counter</em> so it isn't a bottleneck, <em>decide guessability</em>, and <em>pick 301 vs 302</em> based on
+          whether you value infrastructure savings or click analytics. It's the smallest system that touches nearly every tool we own —
+          which is why it's the first one we build. Next, <strong>Day 39 — Design a Key-Value Store</strong>: we open up the storage box.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-37.html">← Day 37: Merkle Trees &amp; Gossip Protocol</a>
+        <a href="day-39.html" class="coming-soon-link">Day 39: Design a Key-Value Store →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 38 of 90 — Design a URL Shortener</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ══════════════════════════════════════════════════════════════════════
+  //  INTERACTIVE DEMOS — a real base62 shortener and a capacity calculator.
+  //  Everything computes live; the numbers you see are genuine, not scripted.
+  // ══════════════════════════════════════════════════════════════════════
+
+  var ALPHABETS = {
+    10: '0123456789',
+    16: '0123456789abcdef',
+    62: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+  };
+  var B62 = ALPHABETS[62];
+
+  // integer → base62 string (values stay well under 2^53, so exact)
+  function base62encode(n){
+    if(n === 0) return '0';
+    var s = '';
+    while(n > 0){ s = B62[n % 62] + s; n = Math.floor(n / 62); }
+    return s;
+  }
+  function fmt(n){ return n.toLocaleString('en-US'); }
+
+  // ── mode toggle ──────────────────────────────────────────────────────
+  Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(btn){
+    btn.addEventListener('click', function(){
+      var mode = btn.getAttribute('data-mode');
+      Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      document.getElementById('panel-shorten').classList.toggle('active', mode === 'shorten');
+      document.getElementById('panel-capacity').classList.toggle('active', mode === 'capacity');
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 1 — SHORTEN & RESOLVE (counter + base62, live map)
+  // ══════════════════════════════════════════════════════════════════════
+  var START = 1000000000;                 // start high so codes are a realistic length
+  var counter = START;
+  var store = {};                         // code -> { url, id }
+
+  var elCode  = document.getElementById('sh-code');
+  var elBreak = document.getElementById('sh-breakdown');
+  var elSub   = document.getElementById('sh-sub');
+  var elCount = document.getElementById('sh-count');
+  var elNext  = document.getElementById('sh-next');
+  var elLen   = document.getElementById('sh-len');
+  var elStatus= document.getElementById('sh-status');
+  var elMap   = document.getElementById('sh-map');
+
+  function renderBreakdown(id){
+    // show the base62 digit decomposition of the id
+    elBreak.innerHTML = '';
+    var code = base62encode(id);
+    for(var i=0;i<code.length;i++){
+      var power = code.length - 1 - i;
+      var d = document.createElement('div');
+      d.className = 'b62-digit';
+      d.innerHTML = '<span class="ch">' + code[i] + '</span><span class="mul">×62^' + power + '</span>';
+      elBreak.appendChild(d);
+    }
+  }
+
+  function renderMap(){
+    var codes = Object.keys(store);
+    if(codes.length === 0){
+      elMap.innerHTML = '<tr><td colspan="3" class="map-empty">No links yet.</td></tr>';
+      return;
+    }
+    // newest first
+    codes.sort(function(a,b){ return store[b].id - store[a].id; });
+    elMap.innerHTML = '';
+    codes.slice(0, 8).forEach(function(c){
+      var tr = document.createElement('tr');
+      var url = store[c].url;
+      var shown = url.length > 52 ? url.slice(0,52) + '…' : url;
+      tr.innerHTML = '<td class="code">' + c + '</td><td class="url" style="white-space:nowrap">' + fmt(store[c].id) + '</td><td class="url">' + shown + '</td>';
+      elMap.appendChild(tr);
+    });
+  }
+
+  function updateStats(){
+    elCount.textContent = fmt(Object.keys(store).length);
+    elNext.textContent  = fmt(counter);
+    elLen.textContent   = base62encode(counter).length;
+  }
+
+  document.getElementById('sh-shorten').addEventListener('click', function(){
+    var url = (document.getElementById('sh-long').value || '').trim();
+    if(!url){
+      elStatus.className = 'q-status bad';
+      elStatus.innerHTML = 'Enter a URL to shorten first.';
+      return;
+    }
+    var id = counter;                    // grab the next counter value…
+    counter++;                           // …and advance it (used exactly once)
+    var code = base62encode(id);
+    store[code] = { url: url, id: id };
+
+    elCode.textContent = code;
+    renderBreakdown(id);
+    elSub.innerHTML = 'Counter <b>' + fmt(id) + '</b> → base62 → <b>' + code + '</b>. Stored <code>' + code + ' → URL</code>. Codes never collide: the counter only goes up.';
+    updateStats();
+    renderMap();
+    elStatus.className = 'q-status ok';
+    elStatus.innerHTML = '✔ Created <b>sho.rt/' + code + '</b>. Now paste <b>' + code + '</b> into the resolve box to follow the redirect.';
+  });
+
+  document.getElementById('sh-resolve').addEventListener('click', function(){
+    var code = (document.getElementById('sh-resolve-in').value || '').trim();
+    if(!code){
+      elStatus.className = 'q-status warn';
+      elStatus.innerHTML = 'Paste a short code to resolve (e.g. one from the table).';
+      return;
+    }
+    if(store[code]){
+      elStatus.className = 'q-status ok';
+      elStatus.innerHTML = '✔ <b>301 redirect</b> — <code>sho.rt/' + code + '</code> → <span style="word-break:break-all">' + store[code].url + '</span>. One O(1) lookup; this is the entire redirect path.';
+    } else {
+      elStatus.className = 'q-status bad';
+      elStatus.innerHTML = '✘ <b>404</b> — no link stored for <code>' + code + '</code>. Shorten a URL to create one first.';
+    }
+  });
+
+  document.getElementById('sh-reset').addEventListener('click', function(){
+    counter = START; store = {};
+    elCode.textContent = '— — —';
+    elBreak.innerHTML = '';
+    elSub.innerHTML = 'Store cleared. Type a URL and press <b>Shorten it</b>.';
+    document.getElementById('sh-resolve-in').value = '';
+    updateStats(); renderMap();
+    elStatus.className = 'q-status info';
+    elStatus.innerHTML = 'The store is empty. Shorten a URL first, then resolve its code to see the redirect.';
+  });
+
+  updateStats(); renderMap();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 2 — CAPACITY CALCULATOR  (base^length vs traffic)
+  // ══════════════════════════════════════════════════════════════════════
+  var capBase = 62, capLen = 7, capRate = 100000000;
+  var elCapTotal = document.getElementById('cap-total');
+  var elCapExpr  = document.getElementById('cap-expr');
+  var elCapStat  = document.getElementById('cap-status');
+
+  function humanBig(n){
+    if(n >= 1e12) return (n/1e12).toFixed(2) + ' trillion';
+    if(n >= 1e9)  return (n/1e9).toFixed(2) + ' billion';
+    if(n >= 1e6)  return (n/1e6).toFixed(2) + ' million';
+    if(n >= 1e3)  return (n/1e3).toFixed(1) + ' thousand';
+    return fmt(n);
+  }
+
+  function recomputeCapacity(){
+    var total = Math.pow(capBase, capLen);
+    var baseName = capBase === 62 ? 'base62' : (capBase === 16 ? 'base16 (hex)' : 'base10 (digits)');
+    elCapTotal.textContent = humanBig(total);
+    elCapExpr.textContent = baseName + ':  ' + capBase + '^' + capLen + '  distinct codes';
+
+    var days = total / capRate;
+    var years = days / 365;
+    var lasts;
+    if(years >= 1000) lasts = Math.round(years).toLocaleString('en-US') + '+ years';
+    else if(years >= 1) lasts = years.toFixed(1) + ' years';
+    else if(days >= 1) lasts = Math.round(days) + ' days';
+    else lasts = (days*24).toFixed(1) + ' hours';
+
+    var enough = total >= capRate * 365 * 5;   // comfortably covers 5 years?
+    elCapStat.className = 'q-status ' + (enough ? 'ok' : 'bad');
+    elCapStat.innerHTML = (enough ? '✔ ' : '✘ ')
+      + '<b>' + capBase + '^' + capLen + ' = ' + humanBig(total) + '</b> codes. At <b>' + humanBig(capRate)
+      + '</b> new links/day, the keyspace lasts <b>' + lasts + '</b>'
+      + (enough ? ' — comfortably past the 5-year target.' : ' — <b>not enough</b> for 5 years; use a longer code or a bigger alphabet.');
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('#alpha-toggle button'), function(btn){
+    btn.addEventListener('click', function(){
+      capBase = parseInt(btn.getAttribute('data-base'),10);
+      Array.prototype.forEach.call(document.querySelectorAll('#alpha-toggle button'), function(b){ b.classList.toggle('active', b===btn); });
+      recomputeCapacity();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#len-btns button'), function(btn){
+    btn.addEventListener('click', function(){
+      capLen = parseInt(btn.getAttribute('data-len'),10);
+      Array.prototype.forEach.call(document.querySelectorAll('#len-btns button'), function(b){ b.classList.toggle('active', b===btn); });
+      recomputeCapacity();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#rate-btns button'), function(btn){
+    btn.addEventListener('click', function(){
+      capRate = parseInt(btn.getAttribute('data-rate'),10);
+      Array.prototype.forEach.call(document.querySelectorAll('#rate-btns button'), function(b){ b.classList.toggle('active', b===btn); });
+      recomputeCapacity();
+    });
+  });
+  recomputeCapacity();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  roughjs (Excalidraw-style) diagrams
+  // ══════════════════════════════════════════════════════════════════════
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+  function arrow(rs, svg, x1, y1, x2, y2, col, dashed) {
+    var opts = { stroke:col, strokeWidth:1.8, roughness:0.9 };
+    if (dashed) opts.strokeLineDash = [6,5];
+    svg.appendChild(rs.line(x1, y1, x2, y2, opts));
+    var ang = Math.atan2(y2-y1, x2-x1);
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang - 0.4), y2 - 10*Math.sin(ang - 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang + 0.4), y2 - 10*Math.sin(ang + 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+  }
+
+  // Anchor: theater cloakroom — bulky coat → ticket machine (counter) → tiny stub → redirect.
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(420, 24, '🧥 The theater cloakroom = a URL shortener', '#e2e8f0', '13', '800');
+
+    // ---- the big bulky coat (long URL) ----
+    svg.appendChild(rs.rectangle(30, 70, 190, 70, { stroke:'#fb7185', strokeWidth:1.6, roughness:1.1, fill:'#fb718512', fillStyle:'solid' }));
+    T(125, 92, '🧥 BULKY COAT', '#fca5a5', '10.5', '800');
+    T(125, 110, 'https://example.com/articles/', '#94a3b8', '8', '600', true);
+    T(125, 123, '2026/…?ref=newsletter', '#94a3b8', '8', '600', true);
+    T(125, 158, '= a long, unwieldy URL', '#fca5a5', '8.5', '700');
+
+    // arrow to ticket machine
+    arrow(rs, svg, 222, 105, 300, 105, '#64748b');
+    T(261, 96, 'hand it in', '#94a3b8', '8', '600');
+
+    // ---- ticket machine = counter ----
+    svg.appendChild(rs.rectangle(300, 70, 150, 70, { stroke:'#a78bfa', strokeWidth:1.6, roughness:1, fill:'#a78bfa12', fillStyle:'solid' }));
+    T(375, 90, '🔢 TICKET MACHINE', '#c4b5fd', '10', '800');
+    T(375, 107, 'next # = 1,000,000,004', '#cbd5e1', '8.5', '700', true);
+    T(375, 122, 'counts up · never repeats', '#c4b5fd', '8', '600');
+    T(375, 158, '= an ever-increasing counter', '#c4b5fd', '8.5', '700');
+
+    // arrow to stub
+    arrow(rs, svg, 452, 105, 530, 105, '#38bdf8');
+    T(491, 96, 'base62', '#7dd3fc', '8', '700');
+
+    // ---- the tiny stub (short code) ----
+    svg.appendChild(rs.rectangle(530, 80, 120, 50, { stroke:'#38bdf8', strokeWidth:1.8, roughness:1, fill:'#38bdf815', fillStyle:'solid' }));
+    T(590, 100, '🎟️ STUB', '#7dd3fc', '9', '800');
+    T(590, 118, 'sho.rt/15ftgG', '#7dd3fc', '10', '800', true);
+    T(590, 150, '= a short, unique code', '#7dd3fc', '8.5', '700');
+
+    // ---- hooks (the store) ----
+    svg.appendChild(rs.rectangle(680, 70, 130, 90, { stroke:'#22c55e', strokeWidth:1.5, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(745, 88, '🪝 HOOKS', '#86efac', '10', '800');
+    for(var i=0;i<3;i++){
+      svg.appendChild(rs.line(700 + i*30, 100, 700 + i*30, 120, { stroke:'#86efac', strokeWidth:1.4, roughness:1.2 }));
+      svg.appendChild(rs.circle(700 + i*30, 98, 6, { stroke:'#86efac', strokeWidth:1.2, roughness:1.2 }));
+    }
+    T(745, 138, 'code → long URL', '#86efac', '8', '700', true);
+    T(745, 152, '= key-value store', '#86efac', '8.5', '700');
+    arrow(rs, svg, 652, 110, 678, 110, '#22c55e');
+
+    // ---- the redirect (come back with the stub) ----
+    svg.appendChild(rs.rectangle(40, 210, 770, 62, { stroke:'#38bdf8', strokeWidth:1.4, roughness:1, fill:'#38bdf80a', fillStyle:'solid' }));
+    T(420, 232, '↩️  Come back and present the STUB → attendant reads the number → walks to that ONE hook → coat back in seconds', '#7dd3fc', '10', '800');
+    T(420, 252, 'present sho.rt/15ftgG → O(1) lookup → HTTP redirect to the original URL   (this is 99% of all traffic)', '#7dd3fc', '9', '600');
+
+    // ---- the two verbs band ----
+    svg.appendChild(rs.rectangle(40, 288, 375, 56, { stroke:'#a78bfa', strokeWidth:1.5, roughness:1, fill:'#a78bfa0a', fillStyle:'solid' }));
+    T(227, 310, 'SHORTEN  (write, rare):', '#c4b5fd', '10', '800');
+    T(227, 328, 'coat → ticket · mint a unique code', '#c4b5fd', '8.8', '600');
+    svg.appendChild(rs.rectangle(435, 288, 375, 56, { stroke:'#22c55e', strokeWidth:1.5, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(622, 310, 'REDIRECT  (read, ~100×):', '#86efac', '10', '800');
+    T(622, 328, 'ticket → coat · fast O(1) lookup', '#86efac', '8.8', '600');
+
+    // ---- verdict ----
+    svg.appendChild(rs.rectangle(40, 360, 770, 56, { stroke:'#fbbf24', strokeWidth:1.6, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(420, 382, 'The code never describes the coat — it is just the next number, written compactly in base62.', '#fcd34d', '10', '800');
+    T(420, 402, 'Count up + base62 ⇒ codes are short AND can never collide.  62^7 ≈ 3.5 trillion coats fit on a fingernail stub.', '#fcd34d', '9', '700');
+  }
+
+  // Architecture: client → LB → app servers; write path (ID gen → store); read path (cache → store); CDN.
+  function drawArchDiagram() {
+    var svg = document.getElementById('arch-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.7,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+
+    T(430, 22, 'URL shortener architecture — one write path (mint + store), one read path (resolve fast)', '#e2e8f0', '12', '700');
+
+    // client
+    box(30, 150, 110, 56, '#cbd5e1', '#1e293b');
+    T(85, 174, '👤 Client', '#e2e8f0', '10.5', '800'); T(85, 190, 'browser / app', '#94a3b8', '8', '600');
+
+    // DNS + LB
+    box(180, 150, 120, 56, '#38bdf8', '#38bdf812');
+    T(240, 172, '🌐 DNS + LB', '#7dd3fc', '10', '800'); T(240, 188, 'Day 5 · spreads load', '#7dd3fc', '7.8', '600');
+    arrow(rs, svg, 142, 178, 178, 178, '#64748b');
+
+    // app servers
+    box(345, 150, 130, 56, '#a78bfa', '#a78bfa12');
+    T(410, 172, '⚙️ App servers', '#c4b5fd', '10', '800'); T(410, 188, 'stateless fleet', '#c4b5fd', '7.8', '600');
+    arrow(rs, svg, 302, 178, 343, 178, '#64748b');
+
+    // ── WRITE path (top) ──
+    T(410, 70, '── WRITE path (shorten, ~1k/s) ──', '#c4b5fd', '9.5', '800');
+    box(520, 56, 150, 50, '#a78bfa', '#a78bfa12');
+    T(595, 76, '🔢 ID generator', '#c4b5fd', '9.5', '800'); T(595, 92, 'ranges / Redis / Snowflake', '#c4b5fd', '7.4', '600');
+    arrow(rs, svg, 440, 150, 560, 106, '#a78bfa');
+    T(505, 128, 'get unique #', '#c4b5fd', '7.6', '700');
+
+    // ── READ path (bottom) ──
+    T(410, 250, '── READ path (redirect, ~100k/s) ──', '#86efac', '9.5', '800');
+    box(520, 266, 150, 50, '#22c55e', '#22c55e12');
+    T(595, 286, '⚡ Cache (Redis)', '#86efac', '9.5', '800'); T(595, 302, 'hot 20% · Day 7', '#86efac', '7.6', '600');
+    arrow(rs, svg, 440, 206, 560, 266, '#22c55e');
+    T(500, 246, 'resolve code', '#86efac', '7.6', '700');
+
+    // store (shared source of truth)
+    box(700, 150, 130, 70, '#fbbf24', '#fbbf2410');
+    T(765, 176, '🗄️ KV store', '#fcd34d', '10.5', '800');
+    T(765, 192, 'code → longUrl', '#fcd34d', '8', '700', true);
+    T(765, 208, 'sharded · Day 14', '#fcd34d', '7.6', '600');
+    arrow(rs, svg, 672, 92, 710, 150, '#a78bfa');          // ID/write → store
+    T(705, 118, 'store', '#c4b5fd', '7.4', '700');
+    arrow(rs, svg, 672, 291, 712, 212, '#22c55e');          // cache miss → store
+    T(702, 262, 'miss', '#86efac', '7.4', '700');
+
+    // CDN near client
+    box(30, 70, 110, 48, '#38bdf8', '#38bdf812');
+    T(85, 90, '🌍 CDN edge', '#7dd3fc', '9.5', '800'); T(85, 105, 'hottest redirects', '#7dd3fc', '7.4', '600');
+    arrow(rs, svg, 85, 150, 85, 120, '#38bdf8', true);
+    T(118, 138, 'cached', '#7dd3fc', '7', '600');
+
+    // bands
+    svg.appendChild(rs.rectangle(30, 350, 800, 40, { stroke:'#22c55e', strokeWidth:1.4, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(430, 367, 'Reads outnumber writes ~100:1 → CDN catches the hottest, cache catches the hot 20%, only misses hit the store.', '#86efac', '9.3', '800');
+    T(430, 383, 'Because code→URL is immutable, caching is trivial — no invalidation (Day 7\'s hardest problem barely exists here).', '#86efac', '8.5', '600');
+
+    svg.appendChild(rs.rectangle(30, 400, 800, 40, { stroke:'#fbbf24', strokeWidth:1.4, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(430, 417, 'Write path: app server → ID generator (unique #) → base62 → store code→longUrl.', '#fcd34d', '9.3', '800');
+    T(430, 433, 'Read path: app server → cache → (miss) → sharded store → return HTTP 301/302 redirect.', '#fcd34d', '8.5', '600');
+  }
+
+  // Key generation: integer → base62 → short code, + exponential capacity.
+  function drawKeyDiagram() {
+    var svg = document.getElementById('key-diagram');   // optional; present only if the SVG exists
+    if (!svg || typeof rough === 'undefined') return;
+  }
+
+  function drawAll() { drawAnchorDiagram(); drawArchDiagram(); drawKeyDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
