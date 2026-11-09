@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 39: Design a Key-Value Store | System Design Mastery</title>
+  <meta name="description" content="Yesterday we used a key-value store as a black box under the URL shortener. Today we open the box and design one ourselves — a distributed key-value store in the spirit of Amazon DynamoDB, Apache Cassandra, and Riak. The data model is the simplest there is: put(key, value) and get(key). The hard part is making those two operations work across thousands of machines that crash, lose packets, and fall behind — without losing data and without going down. We assemble it entirely from tools we already own: partition the keyspace across nodes with consistent hashing (Day 14); copy every key onto N replicas for durability and availability (Day 12); choose where to sit on the CAP spectrum (Day 10) with a tunable quorum — read R, write W, and R+W>N buys you strong-enough consistency; resolve concurrent writes with vector clocks (Day 35) or last-write-wins; keep straggling replicas in sync with Merkle-tree anti-entropy and gossip (Day 37); and survive node failures with hinted handoff and sloppy quorums. Taught with a nationwide smart-locker memory anchor, a live consistent-hashing ring you can place keys on and kill nodes to watch keys remap, an interactive N/R/W quorum simulator that computes consistency and availability for any setting, three Excalidraw-style diagrams, the real tradeoffs, and how DynamoDB, Cassandra, and Redis do it in production." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; vertical-align:top; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; gap:1rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .flow-step > span.n { font-weight:800; color: var(--accent-light); min-width:1.6rem; font-family:'JetBrains Mono',monospace; }
+    /* role / concept cards — colored left bar */
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .sim-panel { display:none; } .sim-panel.active { display:block; }
+    .q-status { text-align:center; font-weight:700; font-size:.88rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.75rem 0 1rem; line-height:1.6; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+    .q-status.info { background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .sim-controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 1rem; }
+    .stat-row { display:flex; gap:.6rem; flex-wrap:wrap; margin:.9rem 0; }
+    .stat-chip { flex:1; min-width:120px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:.6rem .8rem; text-align:center; }
+    .stat-chip .sv { font-size:1.2rem; font-weight:800; color:var(--text-primary); font-family:'JetBrains Mono',monospace; }
+    .stat-chip .sv.good { color:#86efac; } .stat-chip .sv.warn { color:#fbbf24; } .stat-chip .sv.blue { color:#7dd3fc; } .stat-chip .sv.bad { color:#fca5a5; }
+    .stat-chip .sl { font-size:.65rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin-top:.2rem; }
+    .rule-box { background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius); padding:.9rem 1.1rem; margin:1rem 0; font-size:.84rem; }
+    .rule-box code { font-family:'JetBrains Mono',monospace; color:#7dd3fc; }
+    .rule-box .cc { color:#fca5a5; font-weight:700; } .rule-box .hb { color:#86efac; font-weight:700; }
+    /* ── KV-store widgets ──────────────────────────────────────── */
+    .kv-input { width:100%; box-sizing:border-box; background:#0b1120; border:1.5px solid var(--border); border-radius:8px; color:#e2e8f0;
+      font-family:'JetBrains Mono',monospace; font-size:.85rem; padding:.6rem .8rem; margin:.3rem 0; }
+    .kv-input:focus { outline:none; border-color:var(--accent); }
+    .kv-field-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; margin-top:.6rem; }
+    .replica-row { display:flex; gap:.5rem; justify-content:center; flex-wrap:wrap; margin:.7rem 0; }
+    .replica-chip { font-family:'JetBrains Mono',monospace; font-weight:800; font-size:.95rem; border-radius:9px; padding:.55rem .95rem; border:1.5px solid var(--border); background:var(--bg-card); color:var(--text-muted); }
+    .replica-chip.owner { border-color:#38bdf8; color:#7dd3fc; background:#38bdf815; }
+    .replica-chip.replica { border-color:#a78bfa; color:#c4b5fd; background:#a78bfa12; }
+    .node-toggle-row { display:flex; gap:.45rem; justify-content:center; flex-wrap:wrap; margin:.6rem 0; }
+    .node-toggle { font-family:'JetBrains Mono',monospace; font-weight:800; font-size:.82rem; border-radius:8px; padding:.4rem .7rem; border:1.5px solid var(--border); background:var(--bg-card); color:var(--text-secondary); cursor:pointer; transition:all .12s; }
+    .node-toggle.dead { background:#fb718518; border-color:#fb718588; color:#fca5a5; text-decoration:line-through; opacity:.8; }
+    /* quorum node chips */
+    .quorum-nodes { display:flex; gap:.55rem; justify-content:center; flex-wrap:wrap; margin:.9rem 0; }
+    .qnode { width:72px; height:72px; border-radius:12px; border:2px solid var(--border); background:var(--bg-card); display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; transition:all .12s; user-select:none; }
+    .qnode .qn-name { font-family:'JetBrains Mono',monospace; font-weight:800; font-size:1rem; color:var(--text-primary); }
+    .qnode .qn-state { font-size:.62rem; text-transform:uppercase; letter-spacing:.03em; color:#86efac; margin-top:.15rem; font-weight:700; }
+    .qnode.dead { border-color:#fb718588; background:#fb718512; }
+    .qnode.dead .qn-name { color:#fca5a5; }
+    .qnode.dead .qn-state { color:#fca5a5; }
+    .nrw-btns { display:flex; gap:.4rem; flex-wrap:wrap; margin:.35rem 0; align-items:center; }
+    .nrw-btns button { border:1.5px solid var(--border); background:var(--bg-card); color:var(--text-secondary); font-weight:800; font-family:'JetBrains Mono',monospace; font-size:.9rem; min-width:40px; padding:.4rem .7rem; border-radius:8px; cursor:pointer; transition:all .12s; }
+    .nrw-btns button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .preset-btns { display:flex; gap:.45rem; flex-wrap:wrap; margin:.5rem 0; }
+    .preset-btns button { border:1.5px solid var(--border); background:var(--bg-secondary); color:var(--text-secondary); font-weight:700; font-size:.76rem; padding:.4rem .75rem; border-radius:8px; cursor:pointer; }
+    .preset-btns button:hover { border-color:var(--accent); color:var(--accent-light); }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phases">Phase 2: Intermediate Systems</a><span class="breadcrumb-sep">/</span>
+      <span>Day 39</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 39 of 90</span>
+      <span class="meta-pill">⏱ ~42 min read</span>
+      <span class="meta-pill">📗 Phase 2 — Intermediate Systems</span>
+      <span class="meta-pill">🗂 Week 6 — Classic System Designs</span>
+    </div>
+    <h1>Design a Key-Value Store<br><span style="color:var(--accent)">Opening the Storage Box We Used Yesterday</span></h1>
+    <p class="lead">
+      Yesterday the URL shortener leaned on a key-value store as a <em>black box</em> — "store <code>code → longUrl</code>, look it up fast."
+      Today we open that box and <strong>build the store itself</strong>, the kind that powers Amazon's cart, Netflix's viewing history, and
+      half the internet's session data: Amazon <strong>DynamoDB</strong>, Apache <strong>Cassandra</strong>, <strong>Riak</strong>,
+      <strong>Redis</strong>. The data model is the simplest in all of computing — <code>put(key, value)</code> and <code>get(key)</code>, a
+      giant dictionary. The <em>hard</em> part is making those two calls survive across thousands of machines that crash, drop packets, and
+      fall behind — <strong>without losing your data and without ever going down</strong>. Here's the beautiful part: we don't need a single
+      new idea. We assemble the whole thing from tools we already own — <strong>consistent hashing (Day 14)</strong> to spread keys,
+      <strong>replication (Day 12)</strong> to survive failure, the <strong>CAP tradeoff (Day 10)</strong> expressed as a tunable
+      <strong>quorum</strong> where <code>R + W &gt; N</code> buys strong-enough consistency, <strong>vector clocks (Day 35)</strong> to
+      untangle conflicts, and <strong>Merkle trees + gossip (Day 37)</strong> to heal replicas that drift. You'll place real keys on a live
+      hash ring, kill nodes and watch keys remap, and dial N/R/W to see consistency and availability trade off in real time.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#why">Why This Problem Exists</a>
+        <a href="#design">The Design, Step by Step</a>
+        <a href="#core">The Heart: Partition + Replicate</a>
+        <a href="#quorum">Tunable Consistency: Quorums</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🔑 🗄️ 🏙️ 📦</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Imagine a nationwide chain of <strong>smart parcel lockers</strong> — thousands of little automated depots in gas stations and
+            supermarkets across the whole country. You want to drop off a package so a friend can collect it later. Every package has a
+            <strong>tracking code</strong> (that's the <em>key</em>); the package itself is the <em>value</em>. The obvious question: <em>which
+            depot do you take it to?</em> You can't search all thousand depots, and you can't keep one giant depot in the middle of the country
+            or everyone would drive there at once. So the company uses a simple rule: a <strong>sorting machine feeds your tracking code into a
+            hash</strong>, and the hash points at exactly one depot on a big circular map. Your friend, holding the same code, runs the same
+            hash and drives to the same depot. No central directory needed — the code <em>computes</em> its own home.</p>
+            <p>But a single depot can burn down or flood. So the company never stores your package in just one place: it drops a copy in the
+            depot the hash chose <em>and</em> in the next <strong>two depots clockwise on the map</strong> — <strong>three copies</strong> in
+            all. Now your package survives any one depot vanishing. When your friend picks up, the courier doesn't trust a single depot either;
+            it checks <strong>two of the three</strong> and takes the freshest package. When you dropped it off, the system waited until
+            <strong>two of the three</strong> depots had it before saying "done." Two written, two read — because 2 + 2 is more than 3, the read
+            and the write are <em>guaranteed to share a depot</em>, so your friend can never collect a stale package. That little bit of
+            arithmetic is the whole secret of staying consistent without a boss.</p>
+            <p>And the depots are chatty. If one was closed for repairs and missed a delivery, a neighbor temporarily held the package with a
+            sticky note — "<em>belongs to Depot 7, hand over when it reopens</em>." All day long, depots whisper short inventory summaries to a
+            few random neighbors and compare tiny checklists, so any copy that drifts out of date gets quietly repaired. That whole
+            picture — <strong>a code that hashes to its own home, three copies around a ring, pick-two/drop-two, and gossiping depots that
+            heal each other</strong> — <em>is</em> a distributed key-value store. Hold onto it; everything today is just making this locker
+            network work for billions of packages.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="860" height="440" viewBox="0 0 860 440"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Omar</span> was handed a deceptively small ticket: "The shopping-cart service keeps going down during
+            sales. Build us something that just stores a cart by user ID and never, <em>ever</em> loses it or goes offline." A cart is about as
+            simple as data gets — a key (<code>user:8831</code>) and a value (a blob of items). Omar shrugged and put it in a single big
+            database. It worked beautifully in testing.
+          </p>
+          <p>
+            Then Black Friday arrived. The single database maxed out its disk and its CPU at the same time: too many carts to <em>fit</em> and
+            too many requests to <em>serve</em>. Omar's first instinct was to buy a bigger machine — but there's always a biggest machine, and he
+            was already near it. The real fix was to <strong>spread the carts across many machines</strong>. "How do I decide which machine holds
+            <code>user:8831</code>?" he wondered. Hashing the key mod the number of servers worked — until he added a server and nearly every key
+            suddenly mapped somewhere new, a stampede of data movement. A teammate pointed at an old lesson: "<strong>consistent hashing
+            (Day 14)</strong> — put the servers on a ring, and adding one only moves the keys near it." Problem one solved: the keyspace was
+            <em>partitioned</em>.
+          </p>
+          <p>
+            Relief lasted a week. Then a single machine died at 2 a.m. and every cart it held vanished — exactly the thing he'd promised would
+            never happen. Omar realized partitioning spreads load but offers <em>no safety</em>: one key still lives on one machine. The answer
+            was <strong>replication (Day 12)</strong> — keep every cart on <strong>N = 3</strong> machines (the node the ring chose, plus the next
+            two). Now any one machine could die and no cart was lost. But a new, subtler monster appeared: if a write reached two replicas and a
+            read hit the one that <em>missed</em> it, a customer saw an <strong>old, empty cart</strong> and re-added everything — or worse, two
+            app servers wrote to the same cart at once on different replicas and the versions <em>disagreed</em>. Omar had wandered straight into
+            the <strong>CAP theorem (Day 10)</strong>.
+          </p>
+          <p>
+            His senior engineer drew the elegant knob on a whiteboard. "You don't have to choose consistency <em>or</em> availability forever —
+            you <em>tune</em> it per request. Keep N = 3 copies. Require a write to be acknowledged by <strong>W</strong> of them and a read to
+            gather <strong>R</strong> of them. Make <strong>R + W &gt; N</strong> and the set you read always overlaps the set you last wrote — so
+            a read can't miss the latest value. Pick R = W = 2, N = 3: you tolerate one dead node on <em>both</em> paths and still stay
+            consistent." For the rare case where two writes truly raced, they attached a <strong>vector clock (Day 35)</strong> so the system could
+            tell "newer" from "concurrent" and either auto-resolve or hand both versions back to merge. And to repair replicas that silently
+            drifted — a node that was down for an hour — they let nodes <strong>gossip</strong> and run <strong>Merkle-tree anti-entropy
+            (Day 37)</strong> in the background. By the next sale, the "little cart store" hadn't gone down once. Omar had, without naming it,
+            rebuilt <strong>Amazon's Dynamo</strong> — and used nearly every tool from the last six weeks to do it.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">A distributed key-value store is <strong>one giant dictionary — <code>get(key)</code> and
+          <code>put(key, value)</code> — spread safely across many machines</strong>. Three decisions define it. <strong>(1) Partition:</strong>
+          which node owns a key? Use <strong>consistent hashing (Day 14)</strong> — hash the key onto a ring and walk clockwise to the first node,
+          so adding/removing a node moves only nearby keys. <strong>(2) Replicate:</strong> store every key on the next <strong>N</strong> nodes
+          around the ring (e.g. N = 3) so no single failure loses data. <strong>(3) Tune consistency:</strong> a write must be acked by
+          <strong>W</strong> replicas and a read must gather <strong>R</strong> — and the magic rule is <code>R + W &gt; N</code>, which forces the
+          read set to overlap the write set so you never read a value older than the last successful write. That single inequality is the
+          <strong>CAP theorem (Day 10)</strong> turned into a dial: big W = safe, slow, fragile writes; big R = safe, slow reads; small values of
+          both = fast but eventually consistent. Everything else is cleanup for the messy real world: <strong>vector clocks (Day 35)</strong> to
+          detect concurrent writes, <strong>hinted handoff</strong> so a temporarily-down node's writes aren't lost, and <strong>Merkle trees +
+          gossip (Day 37)</strong> to heal replicas that drift. One-line test: <em>a KV store is consistent hashing for placement, N-way
+          replication for durability, and an <code>R + W &gt; N</code> quorum for the consistency/availability dial.</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Place Keys on the Ring, then Dial the Quorum</h2>
+        <div class="sim-box">
+          <p>Two real, working demos. In <strong>Hash Ring</strong> mode you drop keys onto a live consistent-hashing ring: type any key, watch
+          it hash to a position, land on its owner node, and get copied to the next two replicas — then <em>kill</em> a node and watch its keys
+          remap to the next node clockwise, exactly as Day 14 promised. In <strong>Quorum Dial</strong> mode you set <strong>N</strong>,
+          <strong>R</strong> and <strong>W</strong>, flip nodes up or down, and the panel computes — live — whether you've got strong consistency
+          (<code>R + W &gt; N</code>), how many failures you can survive, and how fast each path is.</p>
+
+          <div class="mode-toggle" id="mode-toggle">
+            <button data-mode="ring" class="active">⭕ Hash Ring &amp; Replication</button>
+            <button data-mode="quorum">🎚️ Quorum Dial (N / R / W)</button>
+          </div>
+
+          <!-- RING PANEL -->
+          <div class="sim-panel active" id="panel-ring">
+            <div class="kv-field-label">A key to store (e.g. user:8831, cart:42, session:ab12)</div>
+            <input class="kv-input" id="ring-key" type="text" value="user:8831" />
+            <div class="sim-controls">
+              <button class="btn btn-primary btn-sm" id="ring-place">Hash &amp; place it ▶</button>
+              <button class="btn btn-outline btn-sm" id="ring-reset">↺ Revive all nodes</button>
+            </div>
+
+            <div class="diagram-box" style="margin-top:.4rem;">
+              <svg id="ring-diagram" width="420" height="420" viewBox="0 0 420 420"></svg>
+            </div>
+
+            <div class="replica-row" id="ring-replicas"></div>
+            <div class="q-status info" id="ring-status">Type a key and press <b>Hash &amp; place it</b>. The key computes its own home — no directory needed.</div>
+
+            <div class="kv-field-label">Nodes on the ring — click one to simulate a crash (💀), then re-place the key</div>
+            <div class="node-toggle-row" id="ring-nodes"></div>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem;">The ring has 6 nodes (A–F) at hashed positions. A key hashes to a
+            point on the ring; its <span style="color:#7dd3fc;font-weight:700">owner</span> is the first live node clockwise, and its
+            <span style="color:#c4b5fd;font-weight:700">replicas</span> are the next two live nodes (N = 3). Kill the owner and watch the key slide
+            to the next node — <em>only that key's neighborhood moves</em>, never the whole ring. That's the entire point of consistent hashing.</p>
+          </div>
+
+          <!-- QUORUM PANEL -->
+          <div class="sim-panel" id="panel-quorum">
+            <div class="kv-field-label">N — replicas per key (how many copies)</div>
+            <div class="nrw-btns" id="n-btns">
+              <button data-n="3" class="active">3</button>
+              <button data-n="5">5</button>
+            </div>
+
+            <div class="kv-field-label">W — replicas that must ack a <em>write</em></div>
+            <div class="nrw-btns" id="w-btns"></div>
+
+            <div class="kv-field-label">R — replicas that must answer a <em>read</em></div>
+            <div class="nrw-btns" id="r-btns"></div>
+
+            <div class="kv-field-label">Quick presets (classic Dynamo-style configs)</div>
+            <div class="preset-btns" id="preset-btns">
+              <button data-r="2" data-w="2" data-n="3">Balanced · R2 W2 N3</button>
+              <button data-r="1" data-w="3" data-n="3">Fast reads · R1 W3</button>
+              <button data-r="3" data-w="1" data-n="3">Fast writes · R3 W1</button>
+              <button data-r="1" data-w="1" data-n="3">Max available · R1 W1</button>
+            </div>
+
+            <div class="kv-field-label">The N replicas — click to crash / revive a node</div>
+            <div class="quorum-nodes" id="quorum-nodes"></div>
+
+            <div class="q-status info" id="quorum-verdict">—</div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv" id="q-consistency">—</div><div class="sl">consistency (R+W vs N)</div></div>
+              <div class="stat-chip"><div class="sv" id="q-write">—</div><div class="sl">write path</div></div>
+              <div class="stat-chip"><div class="sv" id="q-read">—</div><div class="sl">read path</div></div>
+            </div>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem;">The one rule that matters: <strong><code>R + W &gt; N</code> ⇒ the
+            read set and the write set must overlap on at least one node</strong>, so a read is guaranteed to see the most recent successful write
+            (strong consistency). <code>R + W ≤ N</code> means they might not overlap — faster, but you may read stale data (eventual consistency).
+            A write needs W live nodes, so it survives <code>N − W</code> crashes; a read needs R, so it survives <code>N − R</code>. Crash nodes
+            above and watch when each path can no longer form its quorum.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="why">
+        <h2>Why This Problem Exists</h2>
+        <p>A key-value store is the simplest possible database — no joins, no schema, no query language, just "here's a key, give me back the value
+        I stored under it." That simplicity is exactly why it scales where a relational database struggles: with no cross-row relationships to
+        honor, you're free to scatter keys across as many machines as you like. Almost every large system has a KV store hiding inside it: user
+        sessions, shopping carts, feature flags, product catalogs, the <code>code → URL</code> map from yesterday, caches, user profiles. When you
+        need <em>massive scale</em> and <em>always-on availability</em> more than you need rich queries, a KV store is the tool.</p>
+        <p>But the moment your data outgrows one machine, two brutal problems appear that a single-box database hid from you. <strong>First:
+        placement.</strong> With a billion keys spread over hundreds of nodes, <em>which</em> node holds a given key — and how do you avoid
+        reshuffling everything every time a node joins or leaves? <strong>Second: failure.</strong> At that scale a machine is <em>always</em>
+        dying somewhere; the store must lose no data and keep serving through it. These are the same two questions behind yesterday's shortener —
+        spread the load, survive the failures — but now they <em>are</em> the whole product. The KV store is the purest place to learn the
+        distributed-systems playbook, because there's nothing else in the way.</p>
+
+        <div class="code-label">The entire public API — two methods</div>
+        <div class="code-panel"><span class="muted"># That's it. The whole interface a client sees.</span>
+<span class="f">put</span>(key, value)        <span class="s">→  store value under key, copied onto N replicas, ack after W</span>
+<span class="f">get</span>(key)               <span class="s">→  gather R replica responses, return the newest value</span>   <span class="b"># sometimes delete(key) too</span>
+
+<span class="muted"># Simple to call, hard to make durable + available + fast across 1000 flaky machines.
+# Everything below is about keeping these two promises when the network and disks betray you.</span></div>
+      </section>
+
+      <section id="design">
+        <h2>The Design, Step by Step</h2>
+        <p>Same discipline as yesterday: scope it, size it, sketch the API, then draw the boxes. The data model is trivial, so almost all the
+        design effort goes into the <em>distributed</em> behavior — which is the whole lesson.</p>
+
+        <h3>Step 1 — Scope the requirements</h3>
+        <div class="pillar-grid">
+          <div class="pillar-card conf"><h4>✅ Functional</h4>
+            <p><code>get(key)</code> → value (or "not found").</p>
+            <p><code>put(key, value)</code> → store / overwrite.</p>
+            <p>Values are small (≤ ~1 MB); no range scans or joins.</p></div>
+          <div class="pillar-card avail"><h4>🎯 Non-functional</h4>
+            <p><strong>Highly available</strong> — accept writes even during failures.</p>
+            <p><strong>Scalable</strong> — add nodes to grow capacity linearly.</p>
+            <p><strong>Durable &amp; low-latency</strong> — lose nothing; single-digit ms.</p></div>
+          <div class="pillar-card amber"><h4>🤔 Clarify early</h4>
+            <p><strong>Consistency</strong>: strong, or is eventual OK?</p>
+            <p>Value <strong>size</strong> and read:write <strong>mix</strong>?</p>
+            <p>How to <strong>resolve conflicts</strong> — LWW or app merge?</p></div>
+        </div>
+
+        <h3>Step 2 — Size it (back-of-the-envelope, Day 30)</h3>
+        <p>Suppose <strong>1 billion keys</strong>, each key+value ~<strong>1 KB</strong>, at <strong>100,000 reads/sec</strong> and
+        <strong>10,000 writes/sec</strong>, with replication factor <strong>N = 3</strong>.</p>
+        <div class="code-panel"><span class="muted"># storage (remember: every key is stored N times)</span>
+raw      = 1,000,000,000 keys × 1 KB        = <span class="n">~1 TB</span>
+stored   = 1 TB × 3 replicas                = <span class="n">~3 TB</span>        <span class="muted"># → many nodes; one box won't hold it</span>
+
+<span class="muted"># traffic — each logical op fans out to replicas</span>
+reads    = 100,000/sec  → gather R each      = <span class="n">up to ~200–300k replica reads/sec</span>
+writes   = 10,000/sec   → push to N, ack W   = <span class="b">~30k replica writes/sec</span>
+
+<span class="muted"># nodes — if one node serves ~10k ops/sec and holds ~100 GB…</span>
+nodes    ≈ 3 TB / 100 GB  AND  traffic/throughput  → <span class="s">dozens of nodes, scaling horizontally</span></div>
+        <p style="margin-top:1rem;">The sizing already dictates the shape: 3 TB can't live on one machine, so we <em>must</em> partition; a machine
+        in that fleet will die weekly, so we <em>must</em> replicate; and 100k reads/sec with replica fan-out means the consistency knob (how many
+        replicas each op touches) directly controls both latency and cost. No boxes drawn yet, and the architecture is already decided.</p>
+
+        <h3>Step 3 — Sketch the API</h3>
+        <div class="code-panel"><span class="k">PUT</span> /v1/keys/{key}
+  <span class="muted">request</span>   value (bytes/JSON)   <span class="muted"># optional: ?w=2 to override the write quorum</span>
+  <span class="muted">response</span>  200 OK   { "version": "&lt;vector-clock&gt;" }       <span class="muted"># after W replicas ack</span>
+
+<span class="k">GET</span> /v1/keys/{key}
+  <span class="muted">response</span>  200   { "value": …, "version": "…" }            <span class="muted"># newest of R replica responses</span>
+            or   <span class="b">409</span>  { "siblings": [ v1, v2 ] }                <span class="muted"># concurrent writes — you reconcile</span>
+            or   404  not found</div>
+        <p style="margin-top:1rem;">Two endpoints, mirroring the two methods. The only exotic bit is that a <code>GET</code> can return
+        <em>siblings</em> — multiple conflicting versions the store couldn't auto-order — which the client (or a merge function) resolves. That
+        409 is CAP honesty: under a partition the store chose to accept both writes rather than reject one.</p>
+
+        <h3>Step 4 — Draw the architecture</h3>
+        <p>Any node can take any request and acts as the <strong>coordinator</strong> for it: it finds the key's replicas on the ring, fans the
+        request out, waits for the quorum, and replies. In the background, nodes gossip membership and repair drift.</p>
+        <div class="diagram-box">
+          <svg id="arch-diagram" width="880" height="500" viewBox="0 0 880 500"></svg>
+        </div>
+        <div class="flow-box">
+          <div class="flow-step"><span class="n">1</span><div><strong>Client → any node (coordinator).</strong> There's no master. A load
+          balancer (Day 5) sends the request to any node; that node coordinates it. (Smart clients can even skip a hop by hashing the key
+          themselves.)</div></div>
+          <div class="flow-step"><span class="n">2</span><div><strong>Locate replicas via the hash ring (Day 14).</strong> The coordinator
+          hashes the key, walks clockwise to find the owner, and takes the next <strong>N − 1</strong> nodes as replicas — the "preference list"
+          for that key.</div></div>
+          <div class="flow-step"><span class="n">3</span><div><strong>Write path.</strong> Send the value to all N replicas; once
+          <strong>W</strong> acknowledge, tell the client "done." A down replica's write is parked on a neighbor via <strong>hinted
+          handoff</strong> and delivered when it returns.</div></div>
+          <div class="flow-step"><span class="n">4</span><div><strong>Read path.</strong> Ask all N replicas; once <strong>R</strong> reply,
+          return the newest version. If replicas disagree, do a <strong>read repair</strong> — push the newest value back to the stale ones so the
+          next read is clean.</div></div>
+          <div class="flow-step"><span class="n">5</span><div><strong>Anti-entropy in the background (Day 37).</strong> Nodes <strong>gossip</strong>
+          who's alive and periodically compare <strong>Merkle trees</strong> to find and repair any keys that have silently drifted between
+          replicas.</div></div>
+        </div>
+      </section>
+
+      <section id="core">
+        <h2>The Heart: Partition, then Replicate</h2>
+        <p>Two moves turn a dictionary into a distributed store. They're independent, and you always do them in this order: first decide
+        <em>where</em> a key lives (partition), then make <em>copies</em> of it (replicate).</p>
+
+        <h3>Partitioning — consistent hashing (Day 14), revisited</h3>
+        <p>The naïve idea, <code>node = hash(key) % numberOfNodes</code>, is a trap: change the node count and <em>almost every key</em> remaps,
+        triggering a cluster-wide data stampede. <strong>Consistent hashing</strong> fixes it by hashing both keys <em>and</em> nodes onto a
+        circular keyspace. A key belongs to the first node you meet walking clockwise. Add a node and only the keys between it and its predecessor
+        move; remove one and only its keys shift to the next node. In practice each physical node is placed at many points on the ring —
+        <strong>virtual nodes</strong> — so load spreads evenly and a departing node's keys scatter to many successors instead of dumping onto one.</p>
+
+        <h3>Replication — N copies around the ring (Day 12)</h3>
+        <p>Partitioning spreads load but gives <em>zero</em> safety: each key still lives on exactly one node. So we store every key on
+        <strong>N</strong> nodes — the owner plus the next <strong>N − 1</strong> distinct nodes clockwise. This ordered list of N nodes is the
+        key's <strong>preference list</strong>. With N = 3, any single node can die and every key it held still exists on two others. Replication is
+        what converts "a machine died" from a data-loss catastrophe into a non-event.</p>
+
+        <div class="rule-box">
+          <span class="hb">✔ Partition = scale, Replicate = safety</span> — consistent hashing answers <em>"which node?"</em> and minimizes
+          movement when the cluster changes; N-way replication answers <em>"survive how many failures?"</em>. You need both: partitioning alone
+          loses data on any crash; replicating without partitioning doesn't scale. <br>
+          <span class="cc">✘ Don't confuse them</span> — more virtual nodes makes <em>placement</em> smoother; a bigger <em>N</em> makes data
+          <em>safer</em> (and storage more expensive). They're separate dials.
+        </div>
+      </section>
+
+      <section id="quorum">
+        <h2>Tunable Consistency: The Quorum Dial</h2>
+        <p>Now the real decision. We have N copies — but copies can disagree, because a write might reach some replicas before others (or during a
+        network partition, Day 10). How do we read a <em>correct</em> value without a central coordinator forcing everyone to agree on every write?
+        The answer is a <strong>quorum</strong>: don't talk to all N, just talk to enough that the math guarantees overlap.</p>
+
+        <p>Define two numbers per operation: a write waits for <strong>W</strong> replicas to acknowledge, and a read waits for <strong>R</strong>
+        replicas to respond (returning the newest version among them). The single most important inequality in this entire lesson:</p>
+
+        <div class="diagram-box">
+          <svg id="quorum-diagram" width="820" height="300" viewBox="0 0 820 300"></svg>
+        </div>
+
+        <div class="rule-box" style="text-align:center;font-size:1rem;">
+          <code style="font-size:1.15rem;color:#86efac;font-weight:800;">R + W &gt; N</code> &nbsp;⇒&nbsp; the R nodes you read and the W nodes you
+          last wrote <strong>must share at least one node</strong> &nbsp;⇒&nbsp; your read is guaranteed to see the latest write. <br>
+          <span style="font-size:.85rem;color:var(--text-muted)">Pigeonhole principle: if two sets drawn from N elements have sizes summing to more
+          than N, they can't be disjoint.</span>
+        </div>
+
+        <p>That one line is the <strong>CAP theorem (Day 10) made adjustable</strong>. You trade consistency, latency, and availability by choosing
+        R and W:</p>
+        <table class="algo-table">
+          <tr><th>Setting (N = 3)</th><th>What you get</th><th>Good for</th></tr>
+          <tr><td><code>R = 2, W = 2</code><br><span style="font-size:.8rem;color:var(--text-muted)">R + W = 4 &gt; 3</span></td>
+          <td><strong>Strongly consistent</strong>, balanced. Tolerates <strong>1</strong> dead node on both reads <em>and</em> writes.</td>
+          <td>The sensible default — Dynamo's classic choice.</td></tr>
+          <tr><td><code>W = 3, R = 1</code><br><span style="font-size:.8rem;color:var(--text-muted)">R + W = 4 &gt; 3</span></td>
+          <td>Consistent; <strong>very fast reads</strong> (ask one node), but writes need <em>all</em> replicas → slow, and <em>no</em> write if any
+          replica is down.</td><td>Read-heavy data that rarely changes.</td></tr>
+          <tr><td><code>W = 1, R = 3</code><br><span style="font-size:.8rem;color:var(--text-muted)">R + W = 4 &gt; 3</span></td>
+          <td>Consistent; <strong>very fast, always-available writes</strong> (one ack), but reads must gather all replicas → slow.</td>
+          <td>Write-heavy logging/ingest.</td></tr>
+          <tr><td><code>R = 1, W = 1</code><br><span style="font-size:.8rem;color:#fca5a5">R + W = 2 ≤ 3</span></td>
+          <td><strong>Eventually consistent.</strong> Blazing fast and maximally available, but a read can return <em>stale</em> data (sets may not
+          overlap).</td><td>Caches, counters, "good enough" data.</td></tr>
+        </table>
+        <p style="margin-top:1rem;">This is the lesson's deepest idea: <strong>consistency is not a property of the database, it's a property of the
+        request</strong>. The same store can serve a strongly-consistent read and an eventually-consistent one microseconds apart, just by changing
+        R and W. There is no universally "best" setting — only the right trade for <em>this</em> data.</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>Quorums keep reads fresh, but the real world is messier than "write W, read R." Four edges separate a toy from DynamoDB.</p>
+
+        <h3>Concurrent writes → conflicts (vector clocks, Day 35)</h3>
+        <p>Two app servers update the same cart at the same time and hit different replicas first. Now two versions exist and neither is "newer."
+        The lazy fix is <strong>last-write-wins (LWW)</strong>: stamp each write with a timestamp and keep the latest — simple, but it
+        <em>silently throws away</em> one of the two updates, and clock skew can pick the wrong one. The honest fix is a <strong>vector clock
+        (Day 35)</strong> attached to each value: it lets the store tell whether one version <em>descends</em> from the other (keep the newer) or
+        they're truly <strong>concurrent</strong> (keep both as <em>siblings</em> and let the client merge — e.g. union the two carts). Dynamo
+        famously chose "never drop a write," returning siblings rather than guessing.</p>
+
+        <h3>Temporary failures → hinted handoff &amp; sloppy quorums</h3>
+        <p>If a replica is down when you write, do you fail the write? For an always-available store, no. With <strong>hinted handoff</strong>, the
+        coordinator writes the value to a <em>different</em>, healthy node with a "hint" that it really belongs to the down node; when that node
+        returns, the hint is delivered and deleted. A <strong>sloppy quorum</strong> is the same idea for the whole operation — count the first W
+        <em>healthy</em> nodes, not strictly the "right" ones — trading a little consistency for staying up during failures. It's CAP, live: lean
+        toward A, repair C afterward.</p>
+
+        <h3>Permanent drift → anti-entropy (Merkle + gossip, Day 37)</h3>
+        <p>Hints get lost; nodes stay down for hours. Replicas silently diverge. Yesterday's healing tools fix it: nodes <strong>gossip</strong> to
+        track who's alive and run <strong>Merkle-tree anti-entropy</strong> to compare their data cheaply — swapping tree-root hashes, descending
+        only the branches that differ, and shipping just the keys that are actually out of sync. This is the background janitor that guarantees
+        replicas <em>converge</em> even after the quorum and the hints have failed.</p>
+
+        <h3>Hot keys &amp; big partitions</h3>
+        <p>One wildly popular key (a celebrity's profile, a flash-sale item) can swamp the three nodes that hold it, no matter how big the cluster
+        is — the classic <strong>hot-key</strong> problem. Mitigations: cache the hot key (Day 7), replicate it more widely, or shard a single
+        logical key into sub-keys. Likewise, one hash range can accumulate too many keys (a "hot partition"); virtual nodes and good hashing spread
+        the load, but monitoring for skew is a permanent chore.</p>
+
+        <p style="margin-top:1rem;">The through-line: <code>get</code>/<code>put</code> is trivial; <em>keeping the promise under failure</em> is
+        the whole discipline. Partition for scale, replicate for safety, quorum for the consistency dial, and then layer vector clocks, hinted
+        handoff, and anti-entropy to survive the messy reality of real networks. Every one of these patterns reappears in the bigger designs
+        ahead.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">🏙️</span><div><strong>Deeper into the Workshop — The Locker-Wall Bench</strong>
+          — <span>Still in the Week-6 <strong>workshop</strong> you entered for the URL shortener, you step to the next bench: a wall-sized
+          <strong>map of the country studded with smart-locker depots</strong> arranged in a <strong>ring</strong>. A sorting machine takes any
+          tracking code, <strong>hashes it</strong>, and a light flicks on at exactly one depot — the key found its own home with no directory.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📦</span><div><strong>Three Copies &amp; the Pick-Two Rule</strong> —
+          <span>Every package is dropped at that depot <em>and</em> the next <strong>two clockwise</strong> — three copies, so any one depot can
+          burn down. A dial on the bench reads <strong>N·R·W</strong>: you drop at W depots and collect from R, and a little sign reminds you
+          <strong><code>R + W &gt; N</code> ⇒ you can never collect a stale package</strong>. A neighbor holds a <strong>sticky-note hint</strong>
+          for any closed depot, and the depots <strong>whisper inventories</strong> to heal drift.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Door Ahead</strong> — <span>A bench further on is labelled
+          <strong>Day 40: Design a Distributed Cache</strong>. Through it you see the same ring and replicas, but the lockers are made of
+          <em>pure memory</em> and packages <em>expire</em> — a key-value store built for blistering speed instead of durability. Today we stored
+          things to keep them; tomorrow we store things to serve them fast.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Design: URL Shortener (Day 38)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Design: Key-Value Store (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Design: Distributed Cache (Day 40)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Today assembles…</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">CAP Theorem (Day 10)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Replication (Day 12)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Consistent Hashing (Day 14)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Vector Clocks (Day 35)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Merkle + Gossip (Day 37)</span>
+        </div>
+        <p>Today is the second <strong>Classic System Design</strong> of Week 6, and it's the lesson where the distributed-systems toolkit snaps
+        together. The URL shortener (Day 38) <em>used</em> a KV store as a black box; today we build it, so you now understand the box under
+        yesterday's design. It's <strong>consistent hashing (Day 14)</strong> for placement, <strong>replication (Day 12)</strong> for durability,
+        the <strong>CAP theorem (Day 10)</strong> expressed as the <code>R + W &gt; N</code> quorum dial, <strong>vector clocks (Day 35)</strong>
+        for conflicts, and <strong>Merkle + gossip (Day 37)</strong> for healing. Next, <strong>Day 40</strong> takes the exact same architecture
+        and optimizes it for raw speed and expiry instead of durability — a <strong>distributed cache</strong>.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Partitioning gives me durability — my data is spread out."</td><td>Partitioning spreads <strong>load</strong>, not risk. Each key
+          still lives on <em>one</em> node until you <strong>replicate</strong>. Spreading and copying are two separate jobs.</td></tr>
+          <tr><td>"Use <code>hash(key) % N</code> to pick the node."</td><td>Modulo hashing remaps <strong>almost every key</strong> when N changes,
+          causing a cluster-wide data stampede. <strong>Consistent hashing</strong> moves only the keys near the changed node.</td></tr>
+          <tr><td>"A quorum means a majority (more than half)."</td><td>Not necessarily. R and W are <em>tunable</em>; W can be 1. What matters is
+          <code>R + W &gt; N</code> for strong reads — <em>that</em> guarantees overlap, not "majority."</td></tr>
+          <tr><td>"More replicas (bigger N) means stronger consistency."</td><td>N is about <strong>durability/availability</strong>, not
+          consistency. Consistency comes from <strong>R + W vs N</strong>. You can have N = 100 and still read stale data if R + W ≤ N.</td></tr>
+          <tr><td>"Last-write-wins safely resolves conflicts."</td><td>LWW <strong>silently discards</strong> one concurrent update and depends on
+          synchronized clocks. For correctness, use <strong>vector clocks</strong> and reconcile real conflicts (or keep siblings).</td></tr>
+          <tr><td>"A KV store is just a hash map on a server."</td><td>The hash map is the easy 5%. The other 95% is partitioning, replication,
+          quorums, conflict resolution, hinted handoff, and anti-entropy — surviving failure.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ You're designing a distributed key-value store for shopping carts: it must never lose a cart and
+          must keep accepting writes during failures. (1) How do you decide which node holds a given key, and why not just <code>hash % N</code>?
+          (2) With replication factor N = 3, what R and W would you pick to stay strongly consistent while tolerating one dead node, and what's the
+          rule? (3) Two app servers update the same cart concurrently on different replicas — how does the store avoid losing an item? (click to
+          reveal)</div>
+          <div class="recall-answer"><strong>(1) Placement.</strong> Use <strong>consistent hashing (Day 14)</strong>: hash keys and nodes onto a
+          ring; a key belongs to the first node clockwise, with <strong>virtual nodes</strong> for even spread. Plain <code>hash % N</code> is
+          rejected because changing the node count remaps nearly every key — a massive, needless data migration.
+          <br><br><strong>(2) Quorum.</strong> Pick <strong>R = 2, W = 2</strong>. The rule is <code>R + W &gt; N</code> (2 + 2 = 4 &gt; 3), which
+          forces the read set to overlap the write set, so a read always sees the latest successful write (strong consistency). With W = 2 you can
+          still write with one node down (survives N − W = 1 failure), and with R = 2 you can still read with one down — exactly the fault tolerance
+          asked for.
+          <br><br><strong>(3) Conflicts.</strong> Attach a <strong>vector clock (Day 35)</strong> to each value. If one version descends from the
+          other, keep the newer; if they're truly <strong>concurrent</strong>, keep <em>both</em> as siblings and let the client/app
+          <strong>merge</strong> them (e.g. union the two carts) — never silently drop one as naïve last-write-wins would. Background
+          <strong>Merkle + gossip anti-entropy (Day 37)</strong> and <strong>read repair</strong> re-sync any replicas that drifted.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🛒 Amazon DynamoDB</div><p>The design in this lesson <em>is</em> Dynamo. The original
+          2007 paper gave us consistent hashing with virtual nodes, N/R/W quorums, vector clocks, hinted handoff, and Merkle anti-entropy —
+          prioritizing <strong>availability</strong> ("always writeable") so a shopping cart never rejects an add-to-cart, even during a
+          partition.</p></div>
+          <div class="realworld-card"><div class="rw-company">🗄️ Apache Cassandra</div><p>Took Dynamo's ring + replication + <strong>tunable
+          consistency</strong> (you literally set the consistency level — ONE, QUORUM, ALL — per query, which is R/W in action) and added a richer
+          column data model. The go-to for write-heavy, always-on workloads at massive scale.</p></div>
+          <div class="realworld-card"><div class="rw-company">⚡ Redis &amp; Memcached</div><p>In-memory KV stores built for <strong>speed</strong>
+          over durability — the preview of Day 40. Redis Cluster shards keys across nodes with hash slots (its flavor of consistent hashing) and
+          replicates for failover, showing the same ideas tuned for a cache.</p></div>
+          <div class="realworld-card"><div class="rw-company">🔑 Riak &amp; etcd</div><p>Riak is a faithful open-source Dynamo (N/R/W, vector
+          clocks, siblings). At the other extreme, <strong>etcd</strong> (and ZooKeeper) are KV stores that choose <strong>strong consistency via
+          consensus (Raft, Day 32)</strong> over availability — the CAP opposite, used for config and coordination.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What are the three core design decisions in a distributed key-value store?</div>
+          <div class="fc-a">A: <strong>(1) Partition</strong> keys across nodes with <strong>consistent hashing</strong>; <strong>(2) Replicate</strong>
+          each key onto <strong>N</strong> nodes for durability; <strong>(3) Tune consistency</strong> with a quorum (<strong>R</strong> read,
+          <strong>W</strong> write) where <code>R + W &gt; N</code> gives strong consistency.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is <code>R + W &gt; N</code> the magic rule, and what does it guarantee?</div>
+          <div class="fc-a">A: If the read set (R) and write set (W) together exceed N, they <strong>must overlap</strong> on at least one node
+          (pigeonhole), so a read is guaranteed to see the <strong>latest successful write</strong> — strong consistency without a central
+          coordinator.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why use consistent hashing instead of <code>hash(key) % numNodes</code>?</div>
+          <div class="fc-a">A: Modulo remaps <strong>almost every key</strong> when the node count changes (a full reshuffle). Consistent hashing
+          moves <strong>only the keys near the added/removed node</strong>, and virtual nodes keep load even.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Two concurrent writes hit different replicas. How do you avoid losing one?</div>
+          <div class="fc-a">A: Use <strong>vector clocks</strong> to detect whether versions are ordered or <strong>concurrent</strong>. If
+          concurrent, keep <strong>both as siblings</strong> and let the app merge them — don't blindly last-write-wins (which drops an update).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is hinted handoff?</div>
+          <div class="fc-a">A: When a target replica is down, the coordinator writes the value to another healthy node with a <strong>hint</strong>
+          about where it belongs; when the real node recovers, the hint is delivered and removed. It keeps writes available during temporary
+          failures.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>State the two methods a key-value store exposes, and why the data model's simplicity makes it easy to scale.</li>
+          <li>Explain how consistent hashing places a key, and why it beats <code>hash(key) % N</code> when nodes join or leave.</li>
+          <li>Define N, R, and W, and state the rule that gives strong consistency (and why it works).</li>
+          <li>For N = 3, give R/W settings for: balanced strong consistency, fast reads, fast writes, and maximum availability.</li>
+          <li>How many node failures can a write (W) and a read (R) each tolerate, in terms of N?</li>
+          <li>Describe how vector clocks resolve concurrent writes, and what "siblings" are.</li>
+          <li>Explain hinted handoff and sloppy quorums — what they trade and why.</li>
+          <li>Name the background mechanism that heals permanently-drifted replicas, and the two Day-37 tools it uses.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>a distributed key-value store is three decisions — partition, replicate, and dial the
+          quorum.</strong> Place keys with <strong>consistent hashing</strong> so the cluster can grow without a stampede; copy every key onto
+          <strong>N</strong> replicas so no single failure loses data; and control consistency per request with <strong>R</strong> and
+          <strong>W</strong>, where <code>R + W &gt; N</code> forces the read and write sets to overlap and guarantees fresh reads. That inequality
+          <em>is</em> the CAP theorem turned into a knob. Everything else — <strong>vector clocks</strong> for concurrent writes, <strong>hinted
+          handoff</strong> for temporary failures, <strong>Merkle + gossip anti-entropy</strong> for permanent drift — is keeping those promises
+          when real networks and disks misbehave. The <code>get</code>/<code>put</code> is trivial; surviving failure is the craft. Next,
+          <strong>Day 40 — Design a Distributed Cache</strong>: the same ring, tuned for pure speed.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-38.html">← Day 38: Design a URL Shortener</a>
+        <a href="day-40.html" class="coming-soon-link">Day 40: Design a Distributed Cache →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 39 of 90 — Design a Key-Value Store</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ══════════════════════════════════════════════════════════════════════
+  //  INTERACTIVE DEMOS — a live consistent-hash ring and a quorum calculator.
+  //  Everything computes for real; the placements and verdicts are genuine.
+  // ══════════════════════════════════════════════════════════════════════
+
+  // deterministic string hash → position on a 0..3599 ring (tenths of a degree)
+  function hashRing(str){
+    var h = 2166136261 >>> 0;            // FNV-1a
+    for(var i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return h % 3600;
+  }
+  function fmt(n){ return n.toLocaleString('en-US'); }
+
+  // ── mode toggle ──────────────────────────────────────────────────────
+  Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(btn){
+    btn.addEventListener('click', function(){
+      var mode = btn.getAttribute('data-mode');
+      Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      document.getElementById('panel-ring').classList.toggle('active', mode === 'ring');
+      document.getElementById('panel-quorum').classList.toggle('active', mode === 'quorum');
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 1 — CONSISTENT HASH RING + REPLICATION (N = 3)
+  // ══════════════════════════════════════════════════════════════════════
+  var NODE_NAMES = ['A','B','C','D','E','F'];
+  var RING_N = 3;                          // replication factor
+  // each node gets a position on the ring from its name (real consistent hashing)
+  var nodes = NODE_NAMES.map(function(name){ return { name:name, pos: hashRing('node-'+name), alive:true }; });
+  nodes.sort(function(a,b){ return a.pos - b.pos; });
+
+  var SVGNS = 'http://www.w3.org/2000/svg';
+
+  // find the preference list (owner + next N-1 live nodes clockwise) for a key position
+  function preferenceList(keyPos){
+    var live = nodes.filter(function(n){ return n.alive; });
+    if(live.length === 0) return [];
+    // nodes sorted by pos; find first with pos >= keyPos, wrapping
+    var ordered = live.slice().sort(function(a,b){ return a.pos - b.pos; });
+    var start = 0;
+    for(var i=0;i<ordered.length;i++){ if(ordered[i].pos >= keyPos){ start = i; break; } if(i === ordered.length-1) start = 0; }
+    var list = [];
+    for(var j=0;j<Math.min(RING_N, ordered.length);j++){ list.push(ordered[(start+j) % ordered.length]); }
+    return list;
+  }
+
+  var lastKey = null, lastKeyPos = null, lastPref = [];
+
+  function posToXY(cx, cy, r, pos){
+    var theta = (pos/3600) * 2*Math.PI - Math.PI/2;   // 0 at top, clockwise
+    return { x: cx + r*Math.cos(theta), y: cy + r*Math.sin(theta) };
+  }
+
+  function drawRing(){
+    var svg = document.getElementById('ring-diagram');
+    if(!svg) return;
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
+    var cx=210, cy=215, r=140;
+    var hasRough = (typeof rough !== 'undefined');
+    var rs = hasRough ? rough.svg(svg) : null;
+
+    function txt(x,y,s,col,size,weight,mono,anchor){
+      var t=document.createElementNS(SVGNS,'text');
+      t.setAttribute('x',x); t.setAttribute('y',y); t.setAttribute('text-anchor',anchor||'middle');
+      t.setAttribute('fill',col||'#cbd5e1'); t.setAttribute('font-size',size||'11');
+      t.setAttribute('font-family', mono?'JetBrains Mono, monospace':'Inter, sans-serif');
+      if(weight) t.setAttribute('font-weight',weight);
+      t.textContent=s; svg.appendChild(t);
+    }
+    function circle(x,y,d,col,fill){
+      if(hasRough){ svg.appendChild(rs.circle(x,y,d,{stroke:col,strokeWidth:1.8,roughness:1,fill:fill||'none',fillStyle:'solid'})); }
+      else { var c=document.createElementNS(SVGNS,'circle'); c.setAttribute('cx',x); c.setAttribute('cy',y); c.setAttribute('r',d/2); c.setAttribute('stroke',col); c.setAttribute('fill',fill||'none'); c.setAttribute('stroke-width','1.8'); svg.appendChild(c); }
+    }
+
+    // the ring itself
+    circle(cx, cy, r*2, '#334155', 'none');
+    txt(cx, 20, 'the consistent-hash ring (hash space 0 → 3599, clockwise)', '#94a3b8', '10', '700');
+    txt(cx, cy, 'N = 3', '#64748b', '12', '800');
+    txt(cx, cy+16, 'owner + 2 replicas', '#64748b', '8.5', '600');
+
+    // nodes
+    nodes.forEach(function(n){
+      var p = posToXY(cx, cy, r, n.pos);
+      var isOwner = lastPref.length && lastPref[0] === n;
+      var isReplica = lastPref.indexOf(n) > 0;
+      var col = !n.alive ? '#fb7185' : (isOwner ? '#38bdf8' : (isReplica ? '#a78bfa' : '#64748b'));
+      var fill = !n.alive ? '#fb718525' : (isOwner ? '#38bdf825' : (isReplica ? '#a78bfa25' : '#1e293b'));
+      circle(p.x, p.y, 30, col, fill);
+      txt(p.x, p.y+4, n.alive ? n.name : '💀', !n.alive ? '#fca5a5' : col, '13', '800');
+      // label just outside
+      var lp = posToXY(cx, cy, r+28, n.pos);
+      txt(lp.x, lp.y+3, n.name+' @'+n.pos, '#64748b', '8', '600', true);
+    });
+
+    // the key marker
+    if(lastKeyPos !== null){
+      var kp = posToXY(cx, cy, r, lastKeyPos);
+      if(hasRough){ svg.appendChild(rs.line(cx, cy, kp.x, kp.y, {stroke:'#fbbf24', strokeWidth:1.6, roughness:1, strokeLineDash:[5,4]})); }
+      var star=document.createElementNS(SVGNS,'circle');
+      star.setAttribute('cx',kp.x); star.setAttribute('cy',kp.y); star.setAttribute('r','6');
+      star.setAttribute('fill','#fbbf24'); star.setAttribute('stroke','#0b1120'); star.setAttribute('stroke-width','1.5');
+      svg.appendChild(star);
+      txt(kp.x, kp.y-12, '🔑 @'+lastKeyPos, '#fcd34d', '9', '800', true);
+    }
+  }
+
+  function renderNodeToggles(){
+    var wrap = document.getElementById('ring-nodes');
+    wrap.innerHTML = '';
+    nodes.forEach(function(n){
+      var b = document.createElement('button');
+      b.className = 'node-toggle' + (n.alive ? '' : ' dead');
+      b.textContent = 'Node ' + n.name + (n.alive ? '' : ' 💀');
+      b.addEventListener('click', function(){
+        n.alive = !n.alive;
+        renderNodeToggles();
+        if(lastKey !== null) placeKey(lastKey, true);   // re-place to show remap
+        else drawRing();
+      });
+      wrap.appendChild(b);
+    });
+  }
+
+  function placeKey(key, silent){
+    key = (key || '').trim();
+    var status = document.getElementById('ring-status');
+    var repRow = document.getElementById('ring-replicas');
+    if(!key){
+      status.className = 'q-status bad';
+      status.innerHTML = 'Type a key to place first.';
+      return;
+    }
+    var keyPos = hashRing(key);
+    var pref = preferenceList(keyPos);
+    lastKey = key; lastKeyPos = keyPos; lastPref = pref;
+
+    repRow.innerHTML = '';
+    if(pref.length === 0){
+      status.className = 'q-status bad';
+      status.innerHTML = '✘ Every node is down — nowhere to store <code>' + key + '</code>. Revive a node.';
+      drawRing();
+      return;
+    }
+    pref.forEach(function(n, i){
+      var c = document.createElement('div');
+      c.className = 'replica-chip ' + (i===0 ? 'owner' : 'replica');
+      c.textContent = (i===0 ? '👑 ' : '📋 ') + 'Node ' + n.name;
+      repRow.appendChild(c);
+    });
+    var others = pref.slice(1).map(function(n){ return n.name; }).join(', ');
+    status.className = 'q-status ok';
+    status.innerHTML = '🔑 <code>' + key + '</code> → hash <b>' + keyPos + '</b> → owner <b>Node ' + pref[0].name +
+      '</b>' + (others ? ', replicas <b>' + others + '</b>' : '') + '. Stored on ' + pref.length + ' node' + (pref.length>1?'s':'') +
+      ' (N = 3). ' + (silent ? 'Re-placed after the ring changed — notice only this key moved.' : 'The key computed its own home.');
+    drawRing();
+  }
+
+  document.getElementById('ring-place').addEventListener('click', function(){
+    placeKey(document.getElementById('ring-key').value, false);
+  });
+  document.getElementById('ring-key').addEventListener('keydown', function(e){ if(e.key==='Enter') placeKey(this.value, false); });
+  document.getElementById('ring-reset').addEventListener('click', function(){
+    nodes.forEach(function(n){ n.alive = true; });
+    renderNodeToggles();
+    if(lastKey !== null) placeKey(lastKey, true); else drawRing();
+  });
+
+  renderNodeToggles();
+  drawRing();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 2 — QUORUM DIAL (N / R / W)  — computes consistency + availability
+  // ══════════════════════════════════════════════════════════════════════
+  var qN = 3, qR = 2, qW = 2;
+  var qDead = {};   // index -> true if that replica is down
+
+  function buildNrwButtons(){
+    // R and W buttons depend on N
+    ['w','r'].forEach(function(which){
+      var wrap = document.getElementById(which + '-btns');
+      wrap.innerHTML = '';
+      for(var v=1; v<=qN; v++){
+        (function(val){
+          var b = document.createElement('button');
+          b.textContent = val;
+          b.setAttribute('data-'+which, val);
+          var cur = (which==='w') ? qW : qR;
+          if(val === cur) b.classList.add('active');
+          b.addEventListener('click', function(){
+            if(which==='w') qW = val; else qR = val;
+            buildNrwButtons(); recomputeQuorum();
+          });
+          wrap.appendChild(b);
+        })(v);
+      }
+    });
+  }
+
+  function buildQuorumNodes(){
+    var wrap = document.getElementById('quorum-nodes');
+    wrap.innerHTML = '';
+    for(var i=0;i<qN;i++){
+      (function(idx){
+        var el = document.createElement('div');
+        var dead = !!qDead[idx];
+        el.className = 'qnode' + (dead ? ' dead' : '');
+        el.innerHTML = '<span class="qn-name">R' + (idx+1) + '</span><span class="qn-state">' + (dead ? 'DOWN' : 'UP') + '</span>';
+        el.addEventListener('click', function(){
+          qDead[idx] = !qDead[idx];
+          buildQuorumNodes(); recomputeQuorum();
+        });
+        wrap.appendChild(el);
+      })(i);
+    }
+  }
+
+  function liveCount(){
+    var c = 0;
+    for(var i=0;i<qN;i++){ if(!qDead[i]) c++; }
+    return c;
+  }
+
+  function recomputeQuorum(){
+    var sum = qR + qW;
+    var strong = sum > qN;
+    var live = liveCount();
+    var canWrite = live >= qW;
+    var canRead  = live >= qR;
+
+    var elC = document.getElementById('q-consistency');
+    var elW = document.getElementById('q-write');
+    var elR = document.getElementById('q-read');
+    var verdict = document.getElementById('quorum-verdict');
+
+    elC.textContent = 'R+W=' + sum + (strong ? ' > ' : ' ≤ ') + qN;
+    elC.className = 'sv ' + (strong ? 'good' : 'warn');
+
+    elW.textContent = canWrite ? ('OK (' + live + '≥' + qW + ')') : ('FAIL (' + live + '<' + qW + ')');
+    elW.className = 'sv ' + (canWrite ? 'good' : 'bad');
+    elR.textContent = canRead ? ('OK (' + live + '≥' + qR + ')') : ('FAIL (' + live + '<' + qR + ')');
+    elR.className = 'sv ' + (canRead ? 'good' : 'bad');
+
+    var parts = [];
+    parts.push(strong
+      ? '<b>Strongly consistent</b> — R + W = ' + sum + ' &gt; N = ' + qN + ', so the read set and write set must overlap. A read always sees the latest write.'
+      : '<b>Eventually consistent</b> — R + W = ' + sum + ' ≤ N = ' + qN + ', so the sets may not overlap. Fast, but a read can return stale data.');
+    parts.push('Tolerates <b>' + (qN - qW) + '</b> failure(s) on writes (W = ' + qW + ') and <b>' + (qN - qR) + '</b> on reads (R = ' + qR + ').');
+    if(!canWrite || !canRead){
+      var which = (!canWrite && !canRead) ? 'reads and writes' : (!canWrite ? 'writes' : 'reads');
+      parts.push('⚠ With <b>' + (qN - live) + '</b> node(s) down, <b>' + which + '</b> can no longer form a quorum — that operation is unavailable.');
+    } else {
+      parts.push('With <b>' + (qN - live) + '</b> node(s) down, both reads and writes still form their quorum. ✔');
+    }
+    verdict.className = 'q-status ' + (strong ? (canWrite && canRead ? 'ok' : 'warn') : 'info');
+    verdict.innerHTML = parts.join(' ');
+  }
+
+  // N buttons
+  Array.prototype.forEach.call(document.querySelectorAll('#n-btns button'), function(btn){
+    btn.addEventListener('click', function(){
+      qN = parseInt(btn.getAttribute('data-n'),10);
+      Array.prototype.forEach.call(document.querySelectorAll('#n-btns button'), function(b){ b.classList.toggle('active', b===btn); });
+      if(qW > qN) qW = qN; if(qR > qN) qR = qN;
+      qDead = {};                       // reset downed nodes when N changes
+      buildNrwButtons(); buildQuorumNodes(); recomputeQuorum();
+    });
+  });
+
+  // presets
+  Array.prototype.forEach.call(document.querySelectorAll('#preset-btns button'), function(btn){
+    btn.addEventListener('click', function(){
+      qN = parseInt(btn.getAttribute('data-n'),10);
+      qR = parseInt(btn.getAttribute('data-r'),10);
+      qW = parseInt(btn.getAttribute('data-w'),10);
+      qDead = {};
+      Array.prototype.forEach.call(document.querySelectorAll('#n-btns button'), function(b){ b.classList.toggle('active', parseInt(b.getAttribute('data-n'),10)===qN); });
+      buildNrwButtons(); buildQuorumNodes(); recomputeQuorum();
+    });
+  });
+
+  buildNrwButtons(); buildQuorumNodes(); recomputeQuorum();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  roughjs (Excalidraw-style) diagrams
+  // ══════════════════════════════════════════════════════════════════════
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+  function arrow(rs, svg, x1, y1, x2, y2, col, dashed) {
+    var opts = { stroke:col, strokeWidth:1.8, roughness:0.9 };
+    if (dashed) opts.strokeLineDash = [6,5];
+    svg.appendChild(rs.line(x1, y1, x2, y2, opts));
+    var ang = Math.atan2(y2-y1, x2-x1);
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang - 0.4), y2 - 10*Math.sin(ang - 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang + 0.4), y2 - 10*Math.sin(ang + 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+  }
+
+  // Anchor: nationwide smart-locker network = a KV store.
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(430, 24, '🏙️ The nationwide smart-locker network = a distributed key-value store', '#e2e8f0', '13', '800');
+
+    // tracking code (key)
+    svg.appendChild(rs.rectangle(30, 70, 170, 64, { stroke:'#fbbf24', strokeWidth:1.6, roughness:1.1, fill:'#fbbf2412', fillStyle:'solid' }));
+    T(115, 92, '🔑 TRACKING CODE', '#fcd34d', '10.5', '800');
+    T(115, 110, 'user:8831', '#cbd5e1', '10', '700', true);
+    T(115, 150, '= the key', '#fcd34d', '8.5', '700');
+
+    // hash → one depot
+    arrow(rs, svg, 202, 102, 275, 102, '#64748b');
+    T(238, 93, 'hash it', '#94a3b8', '8', '600');
+    svg.appendChild(rs.rectangle(275, 70, 150, 64, { stroke:'#38bdf8', strokeWidth:1.6, roughness:1, fill:'#38bdf812', fillStyle:'solid' }));
+    T(350, 90, '🗺️ SORTING HASH', '#7dd3fc', '10', '800');
+    T(350, 107, 'points at ONE depot', '#cbd5e1', '8.5', '700');
+    T(350, 150, '= consistent hashing (Day 14)', '#7dd3fc', '8.3', '700');
+
+    // three depots (replicas)
+    arrow(rs, svg, 427, 102, 500, 102, '#a78bfa');
+    T(463, 93, 'drop 3×', '#c4b5fd', '8', '700');
+    var dx=[520, 630, 740];
+    ['owner','replica','replica'].forEach(function(role,i){
+      var col = i===0 ? '#38bdf8' : '#a78bfa';
+      svg.appendChild(rs.rectangle(dx[i], 72, 96, 60, { stroke:col, strokeWidth:1.6, roughness:1, fill:col+'12', fillStyle:'solid' }));
+      T(dx[i]+48, 92, (i===0?'📦 DEPOT':'📦 DEPOT'), i===0?'#7dd3fc':'#c4b5fd', '9', '800');
+      T(dx[i]+48, 108, (i===0?'owner':'copy '+i), i===0?'#7dd3fc':'#c4b5fd', '8.5', '700');
+    });
+    T(630, 150, '= 3 copies around the ring (N = 3, replication · Day 12)', '#c4b5fd', '8.3', '700');
+
+    // quorum band
+    svg.appendChild(rs.rectangle(30, 190, 800, 60, { stroke:'#86efac', strokeWidth:1.5, roughness:1, fill:'#22c55e0a', fillStyle:'solid' }));
+    T(430, 212, '✅ Drop at W = 2 depots to confirm · collect from R = 2 depots and take the freshest', '#86efac', '10.5', '800');
+    T(430, 233, 'Because R + W = 4 > N = 3, the read and write always share a depot → you can never collect a stale package (CAP dial · Day 10)', '#86efac', '9', '600');
+
+    // hinted handoff + gossip band
+    svg.appendChild(rs.rectangle(30, 266, 390, 58, { stroke:'#fbbf24', strokeWidth:1.5, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(225, 288, '📝 Depot closed? A neighbor holds it', '#fcd34d', '9.8', '800');
+    T(225, 306, 'with a sticky-note hint (hinted handoff)', '#fcd34d', '8.6', '600');
+    svg.appendChild(rs.rectangle(440, 266, 390, 58, { stroke:'#38bdf8', strokeWidth:1.5, roughness:1, fill:'#38bdf808', fillStyle:'solid' }));
+    T(635, 288, '🗣️ Depots whisper inventories &amp; compare', '#7dd3fc', '9.8', '800');
+    T(635, 306, 'checklists to heal drift (Merkle + gossip · Day 37)', '#7dd3fc', '8.6', '600');
+
+    // verdict
+    svg.appendChild(rs.rectangle(30, 342, 800, 60, { stroke:'#a78bfa', strokeWidth:1.6, roughness:1, fill:'#a78bfa0a', fillStyle:'solid' }));
+    T(430, 364, 'A key hashes to its own home · 3 copies around a ring · drop-2 / collect-2 · gossiping depots heal each other.', '#c4b5fd', '10', '800');
+    T(430, 385, 'That is a distributed KV store: partition (where?) + replicate (safety) + quorum (the consistency dial).', '#c4b5fd', '9', '700');
+  }
+
+  // Architecture: client → coordinator → ring of replicas; write W / read R / anti-entropy.
+  function drawArchDiagram() {
+    var svg = document.getElementById('arch-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.7,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+
+    T(440, 22, 'KV-store architecture — any node coordinates; locate N replicas on the ring, wait for the quorum', '#e2e8f0', '12', '700');
+
+    // client
+    box(30, 150, 105, 56, '#cbd5e1', '#1e293b');
+    T(82, 174, '👤 Client', '#e2e8f0', '10.5', '800'); T(82, 190, 'get / put', '#94a3b8', '8', '600');
+
+    // load balancer
+    box(165, 150, 115, 56, '#38bdf8', '#38bdf812');
+    T(222, 172, '🌐 LB', '#7dd3fc', '10', '800'); T(222, 188, 'Day 5 · any node', '#7dd3fc', '7.8', '600');
+    arrow(rs, svg, 136, 178, 163, 178, '#64748b');
+
+    // coordinator
+    box(310, 150, 130, 56, '#a78bfa', '#a78bfa12');
+    T(375, 170, '⚙️ Coordinator', '#c4b5fd', '9.8', '800'); T(375, 186, 'any node · hashes key', '#c4b5fd', '7.6', '600');
+    arrow(rs, svg, 281, 178, 308, 178, '#64748b');
+
+    // the ring of replicas (N=3 highlighted)
+    var cx=640, cy=250, r=95;
+    svg.appendChild(rs.circle(cx, cy, r*2, {stroke:'#334155', strokeWidth:1.6, roughness:1.1}));
+    T(cx, cy-4, 'hash ring', '#64748b', '9', '700'); T(cx, cy+10, '(Day 14)', '#64748b', '8', '600');
+    var ringNodes = [
+      {a:-90, c:'#38bdf8', n:'R1\nowner'},
+      {a:-30, c:'#a78bfa', n:'R2'},
+      {a:30,  c:'#a78bfa', n:'R3'},
+      {a:90,  c:'#475569', n:'·'},
+      {a:150, c:'#475569', n:'·'},
+      {a:210, c:'#475569', n:'·'}
+    ];
+    ringNodes.forEach(function(rn){
+      var th = rn.a*Math.PI/180;
+      var x = cx + r*Math.cos(th), y = cy + r*Math.sin(th);
+      svg.appendChild(rs.circle(x, y, 34, {stroke:rn.c, strokeWidth:1.8, roughness:1, fill:rn.c+'22', fillStyle:'solid'}));
+      var lines = rn.n.split('\n');
+      T(x, y + (lines.length>1?-1:4), lines[0], rn.c==='#475569'?'#64748b':rn.c, '9.5', '800');
+      if(lines[1]) T(x, y+11, lines[1], rn.c, '7', '700');
+    });
+    arrow(rs, svg, 442, 178, 548, 200, '#a78bfa');
+    T(505, 182, 'locate N replicas', '#c4b5fd', '7.6', '700');
+
+    // write path label
+    box(30, 250, 230, 54, '#22c55e', '#22c55e10');
+    T(145, 270, 'WRITE: push to N, ack after W', '#86efac', '9.3', '800');
+    T(145, 288, 'down node? → hinted handoff', '#86efac', '8', '600');
+    arrow(rs, svg, 262, 268, 548, 268, '#22c55e', true);
+
+    // read path label
+    box(30, 318, 230, 54, '#38bdf8', '#38bdf810');
+    T(145, 338, 'READ: ask N, return newest of R', '#7dd3fc', '9.3', '800');
+    T(145, 356, 'stale replica? → read repair', '#7dd3fc', '8', '600');
+    arrow(rs, svg, 262, 344, 560, 300, '#38bdf8', true);
+
+    // anti-entropy band
+    svg.appendChild(rs.rectangle(30, 392, 820, 44, { stroke:'#38bdf8', strokeWidth:1.4, roughness:1, fill:'#38bdf80a', fillStyle:'solid' }));
+    T(440, 410, '🗣️ Background anti-entropy (Day 37): nodes gossip membership + compare Merkle trees to repair drifted replicas.', '#7dd3fc', '9.3', '800');
+    T(440, 426, 'No master — every node is identical and can coordinate any request. Add nodes to scale linearly.', '#7dd3fc', '8.4', '600');
+
+    // quorum reminder
+    svg.appendChild(rs.rectangle(30, 446, 820, 42, { stroke:'#fbbf24', strokeWidth:1.4, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(440, 464, 'Consistency dial: R + W > N ⇒ read set overlaps write set ⇒ strong consistency (CAP · Day 10).', '#fcd34d', '9.3', '800');
+    T(440, 480, 'R = W = 2, N = 3 is the balanced default: strongly consistent and survives one dead node on both paths.', '#fcd34d', '8.4', '600');
+  }
+
+  // Quorum overlap: R + W > N forces the read & write sets to share a node.
+  function drawQuorumDiagram() {
+    var svg = document.getElementById('quorum-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(410, 24, 'Why R + W > N guarantees a fresh read (N = 3, W = 2, R = 2)', '#e2e8f0', '12.5', '800');
+
+    // three replica nodes in a row
+    var nodesX = [230, 410, 590], ny = 150;
+    var labels = ['Replica 1','Replica 2','Replica 3'];
+    nodesX.forEach(function(x,i){
+      svg.appendChild(rs.circle(x, ny, 72, {stroke:'#64748b', strokeWidth:1.8, roughness:1, fill:'#1e293b', fillStyle:'solid'}));
+      T(x, ny+4, labels[i], '#cbd5e1', '9.5', '800');
+    });
+
+    // WRITE set covers R1,R2 (green brackets above)
+    svg.appendChild(rs.rectangle(185, 92, 270, 34, {stroke:'#22c55e', strokeWidth:1.6, roughness:1, fill:'#22c55e12', fillStyle:'solid'}));
+    T(320, 114, 'WRITE set — W = 2  (R1, R2 get the new value)', '#86efac', '9.3', '800');
+
+    // READ set covers R2,R3 (blue brackets below)
+    svg.appendChild(rs.rectangle(365, 174, 270, 34, {stroke:'#38bdf8', strokeWidth:1.6, roughness:1, fill:'#38bdf812', fillStyle:'solid'}));
+    T(500, 196, 'READ set — R = 2  (R2, R3 are queried)', '#7dd3fc', '9.3', '800');
+
+    // overlap highlight on R2
+    svg.appendChild(rs.circle(410, ny, 82, {stroke:'#fbbf24', strokeWidth:2.4, roughness:0.8}));
+    T(410, ny+44, '↑ overlap', '#fcd34d', '9', '800');
+
+    // verdict band
+    svg.appendChild(rs.rectangle(60, 240, 700, 44, {stroke:'#fbbf24', strokeWidth:1.6, roughness:1, fill:'#fbbf2408', fillStyle:'solid'}));
+    T(410, 258, 'R + W = 4 > N = 3  ⇒  the two sets CANNOT be disjoint — they share R2 (pigeonhole).', '#fcd34d', '10', '800');
+    T(410, 276, 'So the read is guaranteed to touch a node holding the latest write. Fresh read, no master needed.', '#fcd34d', '8.8', '600');
+  }
+
+  function drawAll(){ drawAnchorDiagram(); drawArchDiagram(); drawQuorumDiagram(); drawRing(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
