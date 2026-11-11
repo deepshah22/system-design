@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 40: Design a Distributed Cache | System Design Mastery</title>
+  <meta name="description" content="Yesterday we built a distributed key-value store to keep data safe forever. Today we build its speed-obsessed cousin: a distributed cache like Redis and Memcached. Same ring, same replicas — but the storage is pure RAM instead of disk, entries expire, and when memory fills up we throw old entries away. A cache is a small, fast copy of your hottest data that sits in front of a slow database so most reads never touch it. We design it end to end: in-memory storage for microsecond reads; eviction policies (LRU, LFU, FIFO) because RAM is finite; TTL expiry; the four write strategies (cache-aside, read-through, write-through, write-back) and their consistency tradeoffs; sharding across nodes with consistent hashing (Day 14); and the three classic failure modes — cache invalidation, the thundering-herd stampede, and hot keys. Taught with a coffee-shop-counter memory anchor, a live LRU cache you feed keys to and watch evict, a hit-ratio latency-and-load calculator that shows why 95%-to-99% hit rate matters more than any hardware, three Excalidraw-style diagrams, the real tradeoffs, and how Redis, Memcached, and Facebook's cache tier work in production." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; vertical-align:top; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; gap:1rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .flow-step > span.n { font-weight:800; color: var(--accent-light); min-width:1.6rem; font-family:'JetBrains Mono',monospace; }
+    /* role / concept cards — colored left bar */
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    /* code panels */
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    /* simulator */
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .sim-panel { display:none; } .sim-panel.active { display:block; }
+    .q-status { text-align:center; font-weight:700; font-size:.88rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.75rem 0 1rem; line-height:1.6; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+    .q-status.info { background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .sim-controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 1rem; }
+    .stat-row { display:flex; gap:.6rem; flex-wrap:wrap; margin:.9rem 0; }
+    .stat-chip { flex:1; min-width:120px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:.6rem .8rem; text-align:center; }
+    .stat-chip .sv { font-size:1.2rem; font-weight:800; color:var(--text-primary); font-family:'JetBrains Mono',monospace; }
+    .stat-chip .sv.good { color:#86efac; } .stat-chip .sv.warn { color:#fbbf24; } .stat-chip .sv.blue { color:#7dd3fc; } .stat-chip .sv.bad { color:#fca5a5; }
+    .stat-chip .sl { font-size:.65rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin-top:.2rem; }
+    .rule-box { background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius); padding:.9rem 1.1rem; margin:1rem 0; font-size:.84rem; }
+    .rule-box code { font-family:'JetBrains Mono',monospace; color:#7dd3fc; }
+    .rule-box .cc { color:#fca5a5; font-weight:700; } .rule-box .hb { color:#86efac; font-weight:700; }
+    /* ── cache widgets ─────────────────────────────────────────── */
+    .kv-input { width:100%; box-sizing:border-box; background:#0b1120; border:1.5px solid var(--border); border-radius:8px; color:#e2e8f0;
+      font-family:'JetBrains Mono',monospace; font-size:.85rem; padding:.6rem .8rem; margin:.3rem 0; }
+    .kv-input:focus { outline:none; border-color:var(--accent); }
+    .kv-field-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; margin-top:.6rem; }
+    .nrw-btns { display:flex; gap:.4rem; flex-wrap:wrap; margin:.35rem 0; align-items:center; }
+    .nrw-btns button { border:1.5px solid var(--border); background:var(--bg-card); color:var(--text-secondary); font-weight:800; font-family:'JetBrains Mono',monospace; font-size:.9rem; min-width:40px; padding:.4rem .7rem; border-radius:8px; cursor:pointer; transition:all .12s; }
+    .nrw-btns button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .preset-btns { display:flex; gap:.45rem; flex-wrap:wrap; margin:.5rem 0; }
+    .preset-btns button { border:1.5px solid var(--border); background:var(--bg-secondary); color:var(--text-secondary); font-weight:700; font-size:.76rem; padding:.4rem .75rem; border-radius:8px; cursor:pointer; }
+    .preset-btns button:hover { border-color:var(--accent); color:var(--accent-light); }
+    /* LRU slot strip */
+    .cache-strip { display:flex; gap:.5rem; align-items:stretch; flex-wrap:wrap; margin:.9rem 0 .4rem; }
+    .cache-slot { flex:1; min-width:96px; border-radius:10px; border:1.5px solid var(--border); background:var(--bg-card); padding:.6rem .5rem; text-align:center; transition:all .12s; }
+    .cache-slot.filled { border-color:#38bdf8; background:#38bdf812; }
+    .cache-slot.mru { border-color:#22c55e; background:#22c55e14; }
+    .cache-slot.lru { border-color:#fbbf24; background:#fbbf2414; }
+    .cache-slot.empty { border-style:dashed; opacity:.55; }
+    .cache-slot .ck { font-family:'JetBrains Mono',monospace; font-weight:800; font-size:.86rem; color:#e2e8f0; word-break:break-all; }
+    .cache-slot .cl { font-size:.6rem; text-transform:uppercase; letter-spacing:.03em; margin-top:.25rem; font-weight:700; color:var(--text-muted); }
+    .cache-slot.mru .cl { color:#86efac; } .cache-slot.lru .cl { color:#fcd34d; }
+    .strip-ends { display:flex; justify-content:space-between; font-size:.66rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); font-weight:700; margin-bottom:.2rem; }
+    .quick-keys { display:flex; gap:.4rem; flex-wrap:wrap; margin:.3rem 0 .2rem; }
+    .quick-keys button { border:1.5px solid var(--border); background:var(--bg-secondary); color:var(--text-secondary); font-weight:700; font-family:'JetBrains Mono',monospace; font-size:.74rem; padding:.35rem .6rem; border-radius:7px; cursor:pointer; }
+    .quick-keys button:hover { border-color:var(--accent); color:var(--accent-light); }
+    /* mini legend for diagrams */
+    .diagram-caption { font-size:.76rem; color:var(--text-muted); text-align:center; margin-top:.3rem; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phases">Phase 2: Intermediate Systems</a><span class="breadcrumb-sep">/</span>
+      <span>Day 40</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 40 of 90</span>
+      <span class="meta-pill">⏱ ~42 min read</span>
+      <span class="meta-pill">📗 Phase 2 — Intermediate Systems</span>
+      <span class="meta-pill">🗂 Week 6 — Classic System Designs</span>
+    </div>
+    <h1>Design a Distributed Cache<br><span style="color:var(--accent)">The Same Ring, Tuned for Pure Speed</span></h1>
+    <p class="lead">
+      Yesterday we built a key-value store to keep data <em>safe forever</em>. Today we build its speed-obsessed cousin — a
+      <strong>distributed cache</strong> like <strong>Redis</strong> and <strong>Memcached</strong>. It's almost the same machine: consistent
+      hashing to spread keys (Day 14), replicas for availability. But three things flip. The storage is <strong>pure RAM</strong> instead of
+      disk, so a read takes <em>microseconds</em> rather than milliseconds. Entries <strong>expire</strong> on a timer (TTL). And because RAM is
+      tiny and expensive, when memory fills up the cache <strong>throws old entries away</strong> — that's the eviction policy, the one genuinely
+      new idea today. A cache is a small, fast copy of your <em>hottest</em> data sitting in front of a slow database, so the overwhelming
+      majority of reads never touch the database at all. You'll feed keys to a live <strong>LRU cache</strong> and watch it evict, and dial a
+      <strong>hit-ratio calculator</strong> to see why going from a 95% to a 99% hit rate matters more than any hardware you could buy — it's the
+      single most important number in the whole design.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#why">Why This Problem Exists</a>
+        <a href="#design">The Design, Step by Step</a>
+        <a href="#core">The Heart: RAM + Eviction</a>
+        <a href="#writes">Write Strategies &amp; Invalidation</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">☕ 🧾 🔥 🗑️</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Imagine the busiest <strong>coffee shop</strong> in the city at morning rush. Behind the counter is a <strong>warming rail</strong>
+            with room for maybe <em>six</em> finished drinks. In the back, through a door, is the slow <strong>storeroom and espresso machine</strong>
+            where every drink is actually made from scratch — grinding, pulling shots, steaming milk. Making a drink from the back takes a couple
+            of minutes. Handing over a drink that's already sitting on the warming rail takes <em>two seconds</em>. That warming rail is a
+            <strong>cache</strong>; the back room is your <strong>database</strong>.</p>
+            <p>A customer orders a flat white. The barista glances at the rail — there's one already made! Hand it over, two seconds, next please.
+            That's a <strong>cache hit</strong>. The next customer orders something obscure that isn't on the rail. Now the barista has to walk to
+            the back and make it from scratch — slow. That's a <strong>cache miss</strong>. But here's the clever habit: after making it, the
+            barista puts <em>a second copy on the warming rail</em>, betting someone else will order it soon. The next person who wants it gets the
+            fast path. The cache fills itself with whatever people actually ask for.</p>
+            <p>Two problems keep the barista honest. The rail only holds six drinks, so when it's full and a new drink needs a spot, the barista
+            clears the one that <strong>nobody has ordered in the longest time</strong> — the drink gathering dust — to make room. That's
+            <strong>eviction</strong>, and "throw out the least-recently-used one" is the famous <strong>LRU</strong> policy. Separately, any drink
+            that's been sitting too long goes <em>cold</em> and gets tossed regardless — that's a <strong>time-to-live (TTL)</strong> expiry. And
+            there's one nightmare: if headquarters changes the flat-white recipe but an old one is still on the rail, customers get the
+            <em>stale</em> version — the eternal problem of <strong>cache invalidation</strong>. Scale this to a citywide chain where each drink is
+            always made at one assigned shop (hash the drink name to a shop — consistent hashing, Day 14), and the moment a wildly popular new
+            drink drops and <em>every</em> shop rushes to brew it at once, you get a <strong>stampede</strong>. Hold this picture: a tiny fast
+            counter in front of a slow kitchen, filled on demand, cleared by least-recently-used, expired by a timer. <em>That</em> is a
+            distributed cache.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="860" height="440" viewBox="0 0 860 440"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Lena</span> ran the product-page team at a fast-growing shop. Every page load called the database for the
+            same thing — the product's name, price, photos, and rating. The query was correct and even had an index (Day 8), but it still took
+            <strong>~50 milliseconds</strong>, and at 20,000 page views a second the database was drowning. Buying a bigger database bought her a
+            few weeks. She needed reads that <em>didn't touch the database at all</em>.
+          </p>
+          <p>
+            Her first version was almost embarrassingly simple: keep a <code>Map</code> of <code>productId → productJSON</code> in the web server's
+            own memory. On a request, check the map; if it's there, return it in a fraction of a millisecond; if not, query the database, stuff the
+            result into the map, and return it. A <strong>cache-aside</strong> read path. Latency fell off a cliff and the database exhaled. But two
+            cracks appeared fast. First, the map grew without bound and the web server ran out of RAM and crashed — she had forgotten that
+            <em>memory is finite</em>, so a cache <strong>must</strong> throw things away. She added a rule: hold only the most-recently-used
+            10,000 products and <strong>evict</strong> the rest (LRU). Second, she had <em>ten</em> web servers, each with its own private map, so a
+            price change had to be fixed in ten places and they constantly disagreed.
+          </p>
+          <p>
+            The fix was to pull the cache <em>out</em> of the web servers into a <strong>shared tier</strong> all of them talk to — a cluster of
+            <strong>Redis</strong> nodes. Now there was one source of cached truth. To scale it past one box she sharded keys across the Redis nodes
+            with the exact tool from yesterday: <strong>consistent hashing (Day 14)</strong>, so adding a node moved only a slice of keys. She gave
+            every entry a <strong>TTL</strong> of five minutes so even if she forgot to update something, it could never be more than five minutes
+            stale. And when the marketing team changed a price, the write path did two things: update the database <em>and</em> delete that key from
+            the cache (<strong>invalidate</strong>), so the next reader would miss, re-fetch the fresh value, and re-populate.
+          </p>
+          <p>
+            It worked — until a flash sale. A single hot product's cache entry happened to expire at the peak second, and in the next instant
+            <em>thousands</em> of simultaneous requests all missed and all hammered the database for the same row at once — a
+            <strong>thundering herd</strong> that nearly took the database down the cache was supposed to protect. Her senior engineer showed her the
+            standard defenses: let only the <em>first</em> missing request rebuild the entry while the others wait (a lock), serve slightly stale
+            data while the rebuild happens, and jitter the TTLs so a thousand keys don't all expire on the same tick. By the next sale the product
+            pages served 99% of reads from RAM in under a millisecond and the database barely noticed the traffic. Lena had, piece by piece, built
+            exactly what Facebook, Twitter, and Netflix put in front of <em>their</em> databases — a distributed cache.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">A distributed cache is a <strong>small, fast, in-memory copy of your hottest data that sits in front of a
+          slow data store</strong>, so the vast majority of reads never reach the store. It's a key-value store (Day 39) with three deliberate
+          trades: storage is <strong>RAM, not disk</strong> (microseconds, but volatile — losing it is OK, it's just a copy); entries carry a
+          <strong>TTL</strong> and expire; and because RAM is small, when it fills up the cache <strong>evicts</strong> something to make room —
+          usually the <strong>least-recently-used (LRU)</strong> entry. The one number that rules everything is the <strong>hit ratio</strong>: the
+          fraction of reads served from cache. At a 95% hit ratio you've removed 95% of the load from your database; pushing it to 99% removes
+          <em>five times</em> more of the remaining load — which is why hit ratio beats any hardware upgrade. The read path is almost always
+          <strong>cache-aside</strong>: check cache → on a miss, read the store and populate the cache → return. The write path must keep the two
+          copies honest — the simplest safe choice is <strong>update the store, then delete (invalidate) the cache key</strong>. You scale the tier
+          across nodes with <strong>consistent hashing (Day 14)</strong>, exactly like yesterday. One-line test: <em>a cache is a KV store in RAM
+          with an eviction policy and a TTL, measured by its hit ratio — and the two hard questions are always "what do I throw away?" and "how do I
+          avoid serving stale data?"</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Fill an LRU Cache, then Dial the Hit Ratio</h2>
+        <div class="sim-box">
+          <p>Two real, working demos. In <strong>LRU Cache</strong> mode you feed keys to a fixed-size cache and watch it work: a <code>GET</code>
+          either hits (served from RAM) or misses (fetched from the "database" and populated); when the cache is full, the
+          <span style="color:#fcd34d;font-weight:700">least-recently-used</span> entry is <em>evicted</em> to make room. Every access is counted, so
+          the live <strong>hit ratio</strong> is genuinely computed. In <strong>Hit-Ratio Calculator</strong> mode you set the hit ratio, the
+          cache and database latencies, and the traffic, and the panel computes — for real — your average latency, the load that still reaches the
+          database, and your speedup. Watch what one percentage point of hit ratio is worth.</p>
+
+          <div class="mode-toggle" id="mode-toggle">
+            <button data-mode="lru" class="active">🧊 LRU Cache (eviction live)</button>
+            <button data-mode="calc">🎚️ Hit-Ratio Calculator</button>
+          </div>
+
+          <!-- LRU PANEL -->
+          <div class="sim-panel active" id="panel-lru">
+            <div class="kv-field-label">Cache capacity (how many entries fit in RAM)</div>
+            <div class="nrw-btns" id="cap-btns">
+              <button data-cap="3" class="active">3</button>
+              <button data-cap="4">4</button>
+              <button data-cap="5">5</button>
+            </div>
+
+            <div class="kv-field-label">A key to look up (e.g. product:42, user:7, img:logo)</div>
+            <input class="kv-input" id="lru-key" type="text" value="product:42" />
+            <div class="quick-keys" id="lru-quick"></div>
+            <div class="sim-controls">
+              <button class="btn btn-primary btn-sm" id="lru-get">GET (read path) ▶</button>
+              <button class="btn btn-outline btn-sm" id="lru-put">PUT (write to cache)</button>
+              <button class="btn btn-outline btn-sm" id="lru-reset">↺ Clear cache</button>
+            </div>
+
+            <div class="strip-ends"><span>◄ most-recently-used</span><span>least-recently-used ►</span></div>
+            <div class="cache-strip" id="lru-strip"></div>
+
+            <div class="q-status info" id="lru-status">Empty cache. Press <b>GET</b> — the first read of any key always misses, is fetched from the database, and gets cached. Keep going and watch evictions begin once you exceed the capacity.</div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv good" id="lru-hits">0</div><div class="sl">hits</div></div>
+              <div class="stat-chip"><div class="sv bad" id="lru-misses">0</div><div class="sl">misses</div></div>
+              <div class="stat-chip"><div class="sv blue" id="lru-rate">—</div><div class="sl">hit ratio</div></div>
+              <div class="stat-chip"><div class="sv warn" id="lru-evict">0</div><div class="sl">evictions</div></div>
+            </div>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem;">A <code>GET</code> hit moves the key to the
+            <span style="color:#86efac;font-weight:700">front</span> (it's now the most-recently-used). A miss fetches it from the database and
+            inserts it at the front — and if the cache was full, the entry at the <span style="color:#fcd34d;font-weight:700">back</span> (used
+            longest ago) is evicted first. Try reading three keys, then a fourth: on capacity 3, the oldest falls off. Re-read an evicted key and
+            you'll see it miss again — that's the cost of a cache too small for the working set.</p>
+          </div>
+
+          <!-- CALCULATOR PANEL -->
+          <div class="sim-panel" id="panel-calc">
+            <div class="kv-field-label">Hit ratio — fraction of reads served from cache</div>
+            <div class="nrw-btns" id="hr-btns">
+              <button data-hr="0.80">80%</button>
+              <button data-hr="0.90">90%</button>
+              <button data-hr="0.95" class="active">95%</button>
+              <button data-hr="0.99">99%</button>
+              <button data-hr="0.999">99.9%</button>
+            </div>
+
+            <div class="kv-field-label">Cache latency (RAM read)</div>
+            <div class="nrw-btns" id="cl-btns">
+              <button data-cl="0.5">0.5 ms</button>
+              <button data-cl="1" class="active">1 ms</button>
+              <button data-cl="2">2 ms</button>
+            </div>
+
+            <div class="kv-field-label">Database latency (on a miss)</div>
+            <div class="nrw-btns" id="dl-btns">
+              <button data-dl="10">10 ms</button>
+              <button data-dl="50" class="active">50 ms</button>
+              <button data-dl="100">100 ms</button>
+            </div>
+
+            <div class="kv-field-label">Total read traffic</div>
+            <div class="nrw-btns" id="qps-btns">
+              <button data-qps="10000">10k/s</button>
+              <button data-qps="100000" class="active">100k/s</button>
+              <button data-qps="1000000">1M/s</button>
+            </div>
+
+            <div class="kv-field-label">Quick scenarios</div>
+            <div class="preset-btns" id="calc-presets">
+              <button data-hr="0.95" data-cl="1" data-dl="50" data-qps="100000">Good cache · 95%</button>
+              <button data-hr="0.99" data-cl="1" data-dl="50" data-qps="100000">Great cache · 99%</button>
+              <button data-hr="0.80" data-cl="1" data-dl="50" data-qps="100000">Weak cache · 80%</button>
+              <button data-hr="0.999" data-cl="1" data-dl="100" data-qps="1000000">Hyperscale · 99.9%</button>
+            </div>
+
+            <div class="q-status info" id="calc-verdict">—</div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv blue" id="c-avg">—</div><div class="sl">avg read latency</div></div>
+              <div class="stat-chip"><div class="sv warn" id="c-dbqps">—</div><div class="sl">load still hitting DB</div></div>
+              <div class="stat-chip"><div class="sv good" id="c-offload">—</div><div class="sl">DB load removed</div></div>
+              <div class="stat-chip"><div class="sv good" id="c-speedup">—</div><div class="sl">speedup vs no cache</div></div>
+            </div>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem;">Average latency = <code>hit% × cacheLatency + miss% ×
+            (cacheLatency + dbLatency)</code>; the load reaching the database = <code>totalQPS × miss%</code>. Notice the non-intuitive part: going
+            from 95% → 99% barely changes <em>latency</em>, but it cuts the <strong>database load by 5×</strong> (from 5% of traffic to 1%). The
+            last few percent of hit ratio are where a cache earns its keep — that's why teams obsess over it.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="why">
+        <h2>Why This Problem Exists</h2>
+        <p>Databases are built to be <em>correct and durable</em>, not fast. They write to disk, hold locks, honor transactions, and run flexible
+        queries — all of which cost time, typically single-to-double-digit milliseconds per read. That's fine at low traffic. But most large systems
+        are <strong>read-heavy</strong> and ask for the <em>same</em> data over and over: the same trending tweet, the same product page, the same
+        user profile, the same homepage. Re-computing or re-fetching an identical answer millions of times is pure waste — and eventually the
+        database simply can't keep up, no matter how big you make it.</p>
+        <p>A cache attacks this with a single idea: <strong>keep a copy of the answer somewhere much faster, and reuse it</strong>. "Faster" almost
+        always means <strong>RAM</strong>, which is roughly a hundred times quicker to read than disk, so a cache hit is measured in microseconds.
+        Because popular data is accessed far more than unpopular data (the classic <em>80/20</em>, or power-law, distribution), a cache that holds
+        just the hot slice can absorb the overwhelming majority of reads. The database shrinks from "serves every read" to "serves only the misses"
+        — often a 10× to 100× reduction in load. The catch, and the entire design problem, is that a cache is a <em>second copy</em> of the truth
+        living in <em>limited, volatile</em> memory. That forces two permanent questions that the rest of this lesson answers: <strong>when memory
+        is full, what do I throw away?</strong> and <strong>when the real data changes, how do I avoid serving the stale copy?</strong></p>
+
+        <div class="code-label">The entire public API — it's a KV store that forgets</div>
+        <div class="code-panel"><span class="muted"># A cache looks just like yesterday's key-value store — plus a timer and a size limit.</span>
+<span class="f">get</span>(key)                 <span class="s">→  value, in microseconds — or MISS if absent/expired/evicted</span>
+<span class="f">set</span>(key, value, ttl)      <span class="s">→  store in RAM; auto-delete after ttl seconds</span>
+<span class="f">delete</span>(key)              <span class="b"># invalidate — the write path uses this constantly</span>
+
+<span class="muted"># The cache may drop ANY key at ANY time (eviction or expiry). That's allowed —
+# it's only a copy. The database (Day 39/11) is always the source of truth.</span></div>
+      </section>
+
+      <section id="design">
+        <h2>The Design, Step by Step</h2>
+        <p>Same discipline as the last two designs: scope it, size it, sketch the API, then draw the boxes. The data model is a KV store, so the new
+        design effort goes into <em>what to keep</em>, <em>what to throw away</em>, and <em>how to stay fresh</em>.</p>
+
+        <h3>Step 1 — Scope the requirements</h3>
+        <div class="pillar-grid">
+          <div class="pillar-card conf"><h4>✅ Functional</h4>
+            <p><code>get(key)</code> → value or miss, in microseconds.</p>
+            <p><code>set(key, value, ttl)</code> → store with expiry.</p>
+            <p><code>delete(key)</code> → invalidate on writes.</p></div>
+          <div class="pillar-card avail"><h4>🎯 Non-functional</h4>
+            <p><strong>Very low latency</strong> — sub-millisecond reads.</p>
+            <p><strong>High hit ratio</strong> — serve most reads from RAM.</p>
+            <p><strong>Scalable &amp; available</strong> — add nodes, survive one dying.</p></div>
+          <div class="pillar-card amber"><h4>🤔 Clarify early</h4>
+            <p><strong>Staleness</strong> tolerance — seconds? minutes?</p>
+            <p><strong>Eviction</strong> policy and total memory budget?</p>
+            <p>Is losing the cache on restart acceptable? (Usually yes.)</p></div>
+        </div>
+
+        <h3>Step 2 — Size it (back-of-the-envelope, Day 30)</h3>
+        <p>Suppose a product catalog of <strong>10 million items</strong>, each cached entry ~<strong>2 KB</strong>, with reads at
+        <strong>100,000/sec</strong> following an 80/20 pattern, and we want a <strong>99% hit ratio</strong>.</p>
+        <div class="code-panel"><span class="muted"># how much RAM? We don't need to cache everything — just the hot working set.</span>
+hot set  ≈ 20% of 10M items × 2 KB        = <span class="n">~4 GB</span>     <span class="muted"># fits in RAM on a few nodes</span>
+all items = 10M × 2 KB                     = <span class="n">~20 GB</span>    <span class="muted"># caching ALL of it is wasteful + low return</span>
+
+<span class="muted"># what does 99% buy us? (the whole point)</span>
+reads     = 100,000/sec
+to cache  = 99% → <span class="s">99,000/sec served from RAM (microseconds)</span>
+to DB     = 1%  → <span class="b">1,000/sec reach the database</span>        <span class="muted"># a 100× reduction — the DB is now bored</span>
+
+<span class="muted"># nodes — RAM-bound, not CPU-bound; replicate hot shards for availability</span>
+nodes    ≈ 4 GB hot set / per-node RAM, ×2 for replicas → <span class="s">a small cluster absorbs 100k/s</span></div>
+        <p style="margin-top:1rem;">The sizing reveals the cache's superpower: you cache the <em>hot 20%</em>, not everything, and still deflect 99% of
+        reads. It also fixes the shape — the cache is <strong>RAM-bound</strong> (how much hot data fits), the eviction policy decides <em>which</em>
+        20% stays resident, and the hit ratio is the metric you live and die by.</p>
+
+        <h3>Step 3 — Sketch the API</h3>
+        <div class="code-panel"><span class="k">GET</span> /cache/{key}
+  <span class="muted">response</span>  200   { "value": …, "ttl_left": 142 }     <span class="muted"># hit — straight from RAM</span>
+            or   <span class="b">404</span>  (miss)                            <span class="muted"># caller then reads the DB &amp; repopulates</span>
+
+<span class="k">SET</span> /cache/{key}
+  <span class="muted">request</span>   { "value": …, "ttl": 300 }           <span class="muted"># store for 300s, then auto-expire</span>
+  <span class="muted">response</span>  204   No Content
+
+<span class="k">DELETE</span> /cache/{key}                                  <span class="muted"># invalidate after a DB write</span></div>
+        <p style="margin-top:1rem;">In practice you rarely call this over HTTP — you use a Redis/Memcached client speaking a thin binary protocol
+        over a kept-open TCP connection, because the whole value proposition is <em>latency</em>, and an HTTP round-trip per read would defeat it.</p>
+
+        <h3>Step 4 — Draw the architecture</h3>
+        <p>The cache tier is a <strong>shared cluster</strong> that all app servers talk to, sharded by <strong>consistent hashing (Day 14)</strong>
+        so each key lives on a known node. It sits <em>between</em> the app and the database, short-circuiting the slow path for hot keys.</p>
+        <div class="diagram-box">
+          <svg id="cache-diagram" width="880" height="500" viewBox="0 0 880 500"></svg>
+        </div>
+        <div class="flow-box">
+          <div class="flow-step"><span class="n">1</span><div><strong>App server gets a read request.</strong> It doesn't go straight to the
+          database. It first asks the cache tier for the key.</div></div>
+          <div class="flow-step"><span class="n">2</span><div><strong>Locate the shard (Day 14).</strong> The client hashes the key onto the ring
+          and talks to the one cache node that owns it — spreading keys evenly and moving only a slice when a node is added or removed.</div></div>
+          <div class="flow-step"><span class="n">3</span><div><strong>Hit → done in microseconds.</strong> If the node has the key (and it hasn't
+          expired), return it immediately. The database is never touched. This is the fast path 95–99% of reads take.</div></div>
+          <div class="flow-step"><span class="n">4</span><div><strong>Miss → read-through to the database, then populate.</strong> On a miss the
+          app reads the database (slow, Day 39/11), writes the value back into the cache with a TTL, and returns it — so the <em>next</em> reader
+          hits.</div></div>
+          <div class="flow-step"><span class="n">5</span><div><strong>Writes invalidate.</strong> When data changes, the app updates the database
+          and <strong>deletes</strong> the cache key. Meanwhile each node evicts its least-recently-used entries when full and drops entries whose
+          TTL has passed.</div></div>
+        </div>
+      </section>
+
+      <section id="core">
+        <h2>The Heart: In-Memory Storage + Eviction</h2>
+        <p>Two properties separate a cache from the durable KV store we built yesterday. One gives it its speed; the other is the genuinely new idea
+        of the day.</p>
+
+        <h3>In-memory storage — why it's fast, and what you give up</h3>
+        <p>A cache keeps its data in <strong>RAM</strong>, not on disk. Reading from RAM is roughly <em>100× faster</em> than reading from an SSD and
+        far faster than a spinning disk — microseconds versus milliseconds. That single choice is the whole reason a cache exists. The price you pay
+        is that RAM is <strong>volatile</strong> (a reboot or crash loses everything) and <strong>expensive and limited</strong> (you get gigabytes,
+        not terabytes). Both are acceptable <em>because the cache is only a copy</em>: if a node dies and its data vanishes, the database still has
+        the truth — the cache just refills from misses. This is the mindset shift from Day 39: yesterday losing data was a catastrophe; today it's a
+        shrug.</p>
+
+        <h3>Eviction — because memory is finite, you must choose what to throw away</h3>
+        <p>Since the cache can't hold everything, the instant it's full and a new entry arrives, it must <strong>evict</strong> an existing one. The
+        rule it uses is the <strong>eviction policy</strong>, and the goal is always the same: throw away the entry <em>least likely to be asked for
+        next</em>, to keep the hit ratio high. You can't see the future, so policies approximate it:</p>
+        <table class="algo-table">
+          <tr><th>Policy</th><th>Evicts…</th><th>Good when</th></tr>
+          <tr><td><strong>LRU</strong> — Least Recently Used</td><td>the entry not touched for the longest time</td><td><strong>The default.</strong>
+          Recently-used data tends to be used again (temporal locality). Simple, effective, used almost everywhere.</td></tr>
+          <tr><td><strong>LFU</strong> — Least Frequently Used</td><td>the entry accessed the fewest times</td><td>Access frequency is stable and
+          some keys are permanently hotter. Guards a steady favorite against a burst of one-offs.</td></tr>
+          <tr><td><strong>FIFO</strong> — First In, First Out</td><td>the oldest-inserted entry, regardless of use</td><td>Rarely ideal — ignores
+          how often an entry is used. Simple, but can evict a hot entry just because it's old.</td></tr>
+          <tr><td><strong>TTL</strong> — Time To Live</td><td>any entry past its expiry timer</td><td>Freshness, not space. Pairs <em>with</em> the
+          others — TTL bounds staleness; LRU/LFU manage capacity.</td></tr>
+        </table>
+        <p>The demo above implements <strong>LRU</strong>, the workhorse: every access moves a key to the "front," and eviction always takes from the
+        "back." It's cheap to maintain (a hash map plus a doubly-linked list = O(1) per operation) and matches how real traffic behaves — what you
+        used a moment ago, you'll probably want again soon.</p>
+
+        <div class="rule-box">
+          <span class="hb">✔ RAM for speed, eviction for finiteness, TTL for freshness</span> — these three are what turn a key-value store into a
+          cache. RAM makes reads microseconds; an eviction policy (usually LRU) keeps the <em>right</em> data resident when space runs out; a TTL
+          caps how stale any entry can get. <br>
+          <span class="cc">✘ Don't cache everything or cache forever</span> — a cache with no eviction is a memory leak that crashes the node; a
+          cache with no TTL and no invalidation serves stale data forever. The art is caching the hot slice and bounding its staleness.
+        </div>
+      </section>
+
+      <section id="writes">
+        <h2>Write Strategies &amp; Invalidation</h2>
+        <p>Reads are the easy part — almost everyone uses cache-aside. The <em>writes</em> are where caches get subtle, because now you have
+        <strong>two copies of the data</strong> (cache and database) and they can disagree. How you keep them in sync is the write strategy.</p>
+
+        <div class="diagram-box">
+          <svg id="strat-diagram" width="860" height="360" viewBox="0 0 860 360"></svg>
+        </div>
+
+        <h3>The four patterns</h3>
+        <table class="algo-table">
+          <tr><th>Strategy</th><th>How it works</th><th>Trade</th></tr>
+          <tr><td><strong>Cache-aside</strong><br>(lazy loading)</td><td>App checks cache; on a miss it reads the DB and populates the cache. On a
+          write, it updates the DB and <strong>deletes</strong> the cache key.</td><td><strong>The default.</strong> Only requested data is cached;
+          resilient to cache failure. Downside: the first read of each key always misses.</td></tr>
+          <tr><td><strong>Read-through</strong></td><td>App only talks to the cache; the <em>cache</em> fetches from the DB on a miss and stores
+          it.</td><td>Cleaner app code (caching logic lives in the cache layer). Same first-miss penalty; needs cache support for it.</td></tr>
+          <tr><td><strong>Write-through</strong></td><td>Every write goes to the cache <em>and</em> the DB synchronously, together.</td><td>Cache is
+          always fresh; reads are always consistent. Downside: writes are slower (two hops), and you cache data that may never be read.</td></tr>
+          <tr><td><strong>Write-back</strong><br>(write-behind)</td><td>Write to the cache only; flush to the DB asynchronously later, in
+          batches.</td><td><strong>Fastest writes</strong>, absorbs bursts. Dangerous: if the cache dies before the flush, you <em>lose
+          data</em> — only for loss-tolerant workloads.</td></tr>
+        </table>
+
+        <h3>Why "update the DB, then delete the cache" is the safe default</h3>
+        <p>For most systems the winning write path is <strong>cache-aside with invalidation</strong>: write the database (the source of truth),
+        then <em>delete</em> the cache key rather than trying to update it. Deleting is safer than updating because two concurrent writers can race
+        and leave a <em>wrong</em> value cached, whereas a delete just forces the next reader to fetch the fresh value from the database. It's the
+        humble version of the famous quip that <strong>cache invalidation is one of the two hard problems in computer science</strong> — and the
+        reason a <strong>TTL</strong> is your safety net: even if an invalidation is somehow missed, the entry can't be stale longer than its TTL.</p>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>A cache is trivial to add and surprisingly easy to get subtly wrong. Four edges separate a toy from a production cache tier.</p>
+
+        <h3>Cache invalidation — staleness vs freshness</h3>
+        <p>The moment the database changes, the cached copy is a lie until it's updated or deleted. Invalidate too aggressively and your hit ratio
+        collapses (you're constantly re-fetching); invalidate too little and users see stale data. The pragmatic toolkit: <strong>TTL</strong> to
+        bound worst-case staleness, <strong>delete-on-write</strong> to invalidate precisely, and accepting that for most data (a product
+        description, a follower count) being a few seconds stale is completely fine. Decide your <em>staleness budget</em> per kind of data — it's a
+        product decision as much as an engineering one.</p>
+
+        <h3>Thundering herd / cache stampede</h3>
+        <p>A single hot key expires (or the cache restarts) and suddenly thousands of concurrent requests all miss at once and all stampede the
+        database for the <em>same</em> value — the thing the cache was there to prevent. Defenses: a <strong>lock / single-flight</strong> so only the
+        first miss rebuilds the entry while the rest wait for it; <strong>serve-stale-while-revalidate</strong> (hand back the old value and refresh
+        in the background); and <strong>TTL jitter</strong> (randomize expiry times so a million keys don't all expire on the same second).</p>
+
+        <h3>Hot keys &amp; cold starts</h3>
+        <p>One wildly popular key (a celebrity post, a flash-sale item) can overwhelm the single shard that owns it no matter how large the cluster
+        is — the <strong>hot-key</strong> problem, same as yesterday. Fixes: replicate the hot key to multiple nodes, or keep a tiny local in-process
+        cache in front of the shared tier for the very hottest handful. The opposite failure is the <strong>cold start</strong>: a freshly-restarted
+        or newly-deployed cache is empty, so <em>every</em> read misses and the database is briefly swamped. Mitigate by warming the cache (pre-load
+        known-hot keys) and ramping traffic gradually.</p>
+
+        <h3>Consistency — a cache is eventual by nature</h3>
+        <p>Because it's a second copy that lags the database, a cache is fundamentally an <strong>eventual-consistency</strong> tool (echoes of
+        Day 10's CAP). For a bank balance or an inventory count at checkout, do <em>not</em> trust the cache for the decision — read the source of
+        truth, or use a cache only for display with a tiny TTL. Know which data tolerates staleness (almost everything that's read-heavy and
+        display-only) and which doesn't (money, inventory, permissions). The cache is a performance tool, never the arbiter of correctness.</p>
+
+        <p style="margin-top:1rem;">The through-line: <code>get</code>/<code>set</code> is trivial; <em>deciding what to evict and keeping copies
+        honest</em> is the whole discipline. Store in RAM for speed, evict with LRU to keep the hot set resident, bound staleness with TTL plus
+        delete-on-write, and defend the database behind the cache against stampedes and cold starts. Chase the hit ratio — it's the number that
+        turns a struggling database into a bored one.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">☕</span><div><strong>Next Bench in the Workshop — The Coffee Counter</strong>
+          — <span>Still in the Week-6 <strong>workshop</strong>, you step past the locker wall to a gleaming <strong>coffee counter</strong>. Behind
+          it, a <strong>warming rail</strong> holds a handful of finished drinks (that's <strong>RAM</strong>); through a door is the slow back
+          kitchen (the <strong>database</strong>). Order something on the rail → handed over in two seconds (a <strong>hit</strong>); order something
+          that isn't → the barista brews it from the back, slow, then leaves a copy on the rail (a <strong>miss</strong>, then populate).</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🗑️</span><div><strong>The Six-Slot Rail &amp; the Cold-Drink Bin</strong> —
+          <span>The rail holds only six drinks, so when it's full the barista clears the one <strong>nobody's ordered in the longest time</strong>
+          (<strong>LRU eviction</strong>). Any drink sitting too long goes cold and gets tossed on a timer (<strong>TTL</strong>). A little sign
+          warns: <em>if HQ changes a recipe, pull the old drink off the rail</em> (<strong>invalidation</strong>) — and whatever you do, chase the
+          share of orders filled straight from the rail (the <strong>hit ratio</strong>).</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Door Ahead</strong> — <span>A bench further on is labelled
+          <strong>Day 41: Design a Web Crawler</strong>. Through it you glimpse a swarm of little robots fanning out across the web, fetching pages,
+          following links, and politely obeying each site's rules — a system that's all about <em>scale, queues, and not visiting the same place
+          twice</em>. Today we served data fast; tomorrow we go <em>collect</em> it at planetary scale.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Design: Key-Value Store (Day 39)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Design: Distributed Cache (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Design: Web Crawler (Day 41)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Today builds on…</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Caching Strategies (Day 7)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">CAP Theorem (Day 10)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Consistent Hashing (Day 14)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Key-Value Store (Day 39)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Estimation (Day 30)</span>
+        </div>
+        <p>Today is the third <strong>Classic System Design</strong> of Week 6, and it's the mirror image of yesterday. The key-value store (Day 39)
+        optimized for <em>durability</em>; the distributed cache takes the same architecture — <strong>consistent hashing (Day 14)</strong> for
+        sharding, replicas for availability — and optimizes for <em>raw speed</em> instead, trading durability for microseconds. It turns the
+        caching <em>strategies</em> we met back in Day 7 into a full distributed <em>system</em>, and its tolerance for staleness is a direct
+        application of <strong>CAP (Day 10)</strong>: a cache is the eventual-consistency side of the dial made useful. Next, <strong>Day 41</strong>
+        flips from <em>serving</em> data fast to <em>gathering</em> it at scale — a web crawler, where queues, deduplication, and politeness take
+        center stage.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"A cache is just a hash map in memory."</td><td>The hash map is the easy 5%. The other 95% is <strong>eviction, TTL,
+          invalidation, stampede defense, sharding, and hot keys</strong> — managing a limited, volatile <em>second copy</em> of the truth.</td></tr>
+          <tr><td>"Cache everything to be safe."</td><td>A cache with no eviction is a <strong>memory leak</strong> that crashes the node, and
+          caching cold data just wastes RAM. Cache the <strong>hot slice</strong>; let eviction keep it resident.</td></tr>
+          <tr><td>"More hit ratio barely matters once it's high."</td><td>Backwards. 95% → 99% barely changes latency but cuts <strong>database load
+          5×</strong> (misses go 5% → 1%). The last few percent are where the cache pays off.</td></tr>
+          <tr><td>"On a write, update the cached value."</td><td>Prefer <strong>delete</strong> (invalidate) the key. Two concurrent updaters can
+          race and leave a wrong value cached; a delete just forces a clean re-fetch next read.</td></tr>
+          <tr><td>"The cache can be my source of truth."</td><td>Never for correctness-critical data. A cache is a <strong>volatile copy</strong> and
+          <strong>eventually consistent</strong> — trust the database for money, inventory, and permissions.</td></tr>
+          <tr><td>"TTL alone keeps data fresh."</td><td>TTL bounds <em>worst-case</em> staleness but doesn't react to writes. Combine
+          <strong>TTL + delete-on-write</strong>: invalidate precisely, and let TTL be the safety net for missed invalidations.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ Your product-page database is overloaded by reads of the same popular items. You add a distributed
+          cache. (1) What read path do you use, and what happens on a hit vs a miss? (2) Your cache fills up — what decides which entry is thrown
+          out, and which policy is the usual default and why? (3) A single hot item's entry expires at peak and the database nearly falls over from
+          the sudden flood of identical misses — what is this called and how do you defend against it? (click to reveal)</div>
+          <div class="recall-answer"><strong>(1) Cache-aside.</strong> On a read, check the cache first. A <strong>hit</strong> returns the value
+          from RAM in microseconds — the database is never touched. A <strong>miss</strong> reads the value from the database (slow), writes it into
+          the cache with a TTL, and returns it, so the next reader hits. Writes update the database and <strong>delete</strong> (invalidate) the
+          key.
+          <br><br><strong>(2) Eviction policy.</strong> When memory is full, the cache evicts the entry least likely to be used next. The usual
+          default is <strong>LRU (Least Recently Used)</strong> — it throws out whatever hasn't been touched for the longest time, because recently
+          used data tends to be used again (temporal locality), and it's O(1) to maintain with a hash map + doubly-linked list.
+          <br><br><strong>(3) Thundering herd / cache stampede.</strong> Defenses: a <strong>lock / single-flight</strong> so only the first missing
+          request rebuilds the entry while others wait; <strong>serve-stale-while-revalidate</strong>; and <strong>TTL jitter</strong> so many keys
+          don't expire on the same instant. Keeping a high overall <strong>hit ratio</strong> and warming the cache after a restart (to avoid a
+          <em>cold start</em>) round it out.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">⚡ Redis</div><p>The most popular distributed cache — an in-memory data store with
+          rich types (strings, hashes, lists, sorted sets), configurable eviction (<code>allkeys-lru</code>, <code>lfu</code>, and more), TTLs, and
+          optional persistence. <strong>Redis Cluster</strong> shards keys across nodes using hash slots (its flavor of consistent hashing) and
+          replicates each shard for failover.</p></div>
+          <div class="realworld-card"><div class="rw-company">🧊 Memcached</div><p>The classic, deliberately minimal cache: pure in-memory
+          key→value with LRU and TTL, nothing else. Its simplicity makes it blazing fast and easy to scale horizontally — the client hashes keys
+          across a pool of independent nodes. The textbook "just a cache."</p></div>
+          <div class="realworld-card"><div class="rw-company">📘 Facebook / Meta</div><p>Famously runs one of the largest cache tiers on earth —
+          thousands of Memcached servers (the <em>mcrouter</em> and TAO systems) in front of MySQL. Their published work on <strong>cache
+          invalidation, leases (stampede control), and regional consistency</strong> is the canonical study of caching at hyperscale.</p></div>
+          <div class="realworld-card"><div class="rw-company">🌐 CDNs &amp; browsers</div><p>Caching isn't only a server tier. <strong>CDNs</strong>
+          (Day 7) cache responses at edge locations near users, and your <strong>browser</strong> caches assets locally — the same ideas (TTL,
+          eviction, invalidation via cache-control headers) applied at every layer from the client to the database.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: What three changes turn a key-value store into a cache?</div>
+          <div class="fc-a">A: <strong>(1)</strong> Storage is <strong>RAM</strong> not disk (microsecond reads, but volatile); <strong>(2)</strong>
+          entries have a <strong>TTL</strong> and expire; <strong>(3)</strong> when full it <strong>evicts</strong> an entry (usually
+          <strong>LRU</strong>). It's a copy, so losing it is fine — the database is the source of truth.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why does hit ratio matter so much, and why do the last few percent count most?</div>
+          <div class="fc-a">A: Hit ratio is the fraction of reads served from RAM, so miss% is the load that reaches the DB. Going 95%→99% barely
+          changes latency but cuts DB load <strong>5×</strong> (5%→1% of traffic). The last few percent are where a cache truly protects the
+          database.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is LRU eviction and why is it the usual default?</div>
+          <div class="fc-a">A: <strong>Least Recently Used</strong> — evict the entry untouched for the longest time. It exploits temporal locality
+          (recently-used data is used again soon), is O(1) with a hash map + doubly-linked list, and matches real traffic better than FIFO.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: On a write, should you update the cached value or delete it? Why?</div>
+          <div class="fc-a">A: <strong>Delete (invalidate)</strong> the key after writing the DB. Two concurrent writers can race and leave a
+          <em>wrong</em> value if you update; a delete just forces a clean re-fetch on the next read. TTL is the safety net for any missed
+          invalidation.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is a cache stampede (thundering herd) and how do you prevent it?</div>
+          <div class="fc-a">A: A hot key expires and thousands of concurrent requests all miss and hit the DB for the same value at once. Defenses:
+          a <strong>lock / single-flight</strong> (only the first miss rebuilds), <strong>serve-stale-while-revalidate</strong>, and
+          <strong>TTL jitter</strong> so keys don't all expire together.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Explain what a cache is in one sentence, and the two reasons databases are slow enough to need one.</li>
+          <li>Walk through the cache-aside read path on a hit and on a miss.</li>
+          <li>Define hit ratio, and explain why 95% → 99% matters far more than it sounds.</li>
+          <li>Name the four eviction-related policies (LRU, LFU, FIFO, TTL) and when each is appropriate.</li>
+          <li>Compare the four write strategies (cache-aside, read-through, write-through, write-back) and their trades.</li>
+          <li>Why is "update the DB then delete the cache key" the safer write default over updating the cached value?</li>
+          <li>Describe the thundering-herd problem and three defenses against it.</li>
+          <li>Why is a cache fundamentally eventually consistent, and which kinds of data should never be trusted from it?</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>a distributed cache is a small, fast, in-memory copy of your hottest data in front of a slow
+          store — a key-value store with an eviction policy and a TTL, measured by its hit ratio.</strong> Keep data in <strong>RAM</strong> for
+          microsecond reads; <strong>evict</strong> with LRU so the hot set stays resident when memory fills; bound staleness with a
+          <strong>TTL</strong> plus <strong>delete-on-write</strong> invalidation; and shard across nodes with <strong>consistent hashing
+          (Day 14)</strong>. Chase the <strong>hit ratio</strong> — pushing it from 95% to 99% removes five times more load from your database than
+          it sounds like. Everything hard is about the two eternal questions: <em>what do I throw away?</em> and <em>how do I avoid serving stale
+          data?</em> Get those right and a struggling database becomes a bored one. Next, <strong>Day 41 — Design a Web Crawler</strong>: from
+          serving data fast to gathering it at planetary scale.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-39.html">← Day 39: Design a Key-Value Store</a>
+        <a href="day-41.html" class="coming-soon-link">Day 41: Design a Web Crawler →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 40 of 90 — Design a Distributed Cache</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ══════════════════════════════════════════════════════════════════════
+  //  INTERACTIVE DEMOS — a live LRU cache and a hit-ratio latency/load calc.
+  //  Everything computes for real; the hit ratios and latencies are genuine.
+  // ══════════════════════════════════════════════════════════════════════
+  function fmt(n){ return n.toLocaleString('en-US'); }
+
+  // ── mode toggle ──────────────────────────────────────────────────────
+  Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(btn){
+    btn.addEventListener('click', function(){
+      var mode = btn.getAttribute('data-mode');
+      Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      document.getElementById('panel-lru').classList.toggle('active', mode === 'lru');
+      document.getElementById('panel-calc').classList.toggle('active', mode === 'calc');
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 1 — LRU CACHE (genuine: hash map + recency order, O(1) ops)
+  // ══════════════════════════════════════════════════════════════════════
+  var cap = 3;
+  var order = [];       // order[0] = most-recently-used, last = least (next evict)
+  var store = {};       // key -> value present in cache
+  var hits = 0, misses = 0, evictions = 0;
+  var QUICK = ['product:42','user:7','img:logo','cart:9','post:3'];
+
+  function touch(key){ var i = order.indexOf(key); if(i >= 0) order.splice(i,1); order.unshift(key); }
+
+  function renderStrip(){
+    var strip = document.getElementById('lru-strip');
+    strip.innerHTML = '';
+    for(var i=0;i<cap;i++){
+      var slot = document.createElement('div');
+      var key = order[i];
+      if(key === undefined){
+        slot.className = 'cache-slot empty';
+        slot.innerHTML = '<div class="ck">·</div><div class="cl">empty</div>';
+      } else {
+        var isMru = (i === 0);
+        var isLru = (i === order.length - 1 && order.length === cap);
+        slot.className = 'cache-slot filled' + (isMru ? ' mru' : '') + (isLru && !isMru ? ' lru' : '');
+        var label = isMru ? 'most recent' : (isLru ? 'next to evict' : 'cached');
+        slot.innerHTML = '<div class="ck">' + key + '</div><div class="cl">' + label + '</div>';
+      }
+      strip.appendChild(slot);
+    }
+  }
+
+  function renderStats(){
+    document.getElementById('lru-hits').textContent = hits;
+    document.getElementById('lru-misses').textContent = misses;
+    document.getElementById('lru-evict').textContent = evictions;
+    var total = hits + misses;
+    document.getElementById('lru-rate').textContent = total ? Math.round(hits/total*100) + '%' : '—';
+  }
+
+  function evictIfNeeded(status){
+    var evicted = null;
+    while(order.length > cap){
+      evicted = order.pop();
+      delete store[evicted];
+      evictions++;
+    }
+    return evicted;
+  }
+
+  function doGet(rawKey){
+    var key = (rawKey || '').trim();
+    var status = document.getElementById('lru-status');
+    if(!key){ status.className = 'q-status bad'; status.innerHTML = 'Type a key first.'; return; }
+    if(store.hasOwnProperty(key)){
+      hits++; touch(key);
+      status.className = 'q-status ok';
+      status.innerHTML = '✅ <b>HIT</b> — <code>' + key + '</code> was in RAM. Served in microseconds, database untouched. Moved to the front (most-recently-used).';
+    } else {
+      misses++;
+      // cache-aside: fetch from DB, then populate
+      store[key] = true; touch(key);
+      var ev = evictIfNeeded();
+      status.className = 'q-status warn';
+      status.innerHTML = '🐢 <b>MISS</b> — <code>' + key + '</code> not cached. Fetched from the database (slow), then stored in the cache.' +
+        (ev ? ' Cache was full → evicted <code>' + ev + '</code> (least-recently-used).' : '');
+    }
+    renderStrip(); renderStats();
+  }
+
+  function doPut(rawKey){
+    var key = (rawKey || '').trim();
+    var status = document.getElementById('lru-status');
+    if(!key){ status.className = 'q-status bad'; status.innerHTML = 'Type a key first.'; return; }
+    var existed = store.hasOwnProperty(key);
+    store[key] = true; touch(key);
+    var ev = evictIfNeeded();
+    status.className = 'q-status info';
+    status.innerHTML = '✍️ <b>PUT</b> — wrote <code>' + key + '</code> to the cache (' + (existed ? 'updated' : 'new') + '), now most-recently-used.' +
+      (ev ? ' Cache was full → evicted <code>' + ev + '</code>.' : '') + ' (A PUT is not counted as a read hit or miss.)';
+    renderStrip(); renderStats();
+  }
+
+  function buildCapButtons(){
+    Array.prototype.forEach.call(document.querySelectorAll('#cap-btns button'), function(btn){
+      btn.addEventListener('click', function(){
+        cap = parseInt(btn.getAttribute('data-cap'),10);
+        Array.prototype.forEach.call(document.querySelectorAll('#cap-btns button'), function(b){ b.classList.toggle('active', b===btn); });
+        evictIfNeeded();   // shrink to fit if capacity dropped
+        renderStrip(); renderStats();
+      });
+    });
+  }
+
+  function buildQuickKeys(){
+    var wrap = document.getElementById('lru-quick');
+    wrap.innerHTML = '';
+    QUICK.forEach(function(k){
+      var b = document.createElement('button');
+      b.textContent = k;
+      b.addEventListener('click', function(){ document.getElementById('lru-key').value = k; doGet(k); });
+      wrap.appendChild(b);
+    });
+  }
+
+  document.getElementById('lru-get').addEventListener('click', function(){ doGet(document.getElementById('lru-key').value); });
+  document.getElementById('lru-put').addEventListener('click', function(){ doPut(document.getElementById('lru-key').value); });
+  document.getElementById('lru-key').addEventListener('keydown', function(e){ if(e.key==='Enter') doGet(this.value); });
+  document.getElementById('lru-reset').addEventListener('click', function(){
+    order = []; store = {}; hits = 0; misses = 0; evictions = 0;
+    var status = document.getElementById('lru-status');
+    status.className = 'q-status info';
+    status.innerHTML = 'Cleared. Press <b>GET</b> to start — the first read of any key misses and populates the cache.';
+    renderStrip(); renderStats();
+  });
+
+  buildCapButtons(); buildQuickKeys(); renderStrip(); renderStats();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 2 — HIT-RATIO LATENCY + LOAD CALCULATOR (genuine arithmetic)
+  // ══════════════════════════════════════════════════════════════════════
+  var hr = 0.95, cl = 1, dl = 50, qps = 100000;
+
+  function activate(groupSel, attr, val){
+    Array.prototype.forEach.call(document.querySelectorAll(groupSel + ' button'), function(b){
+      b.classList.toggle('active', parseFloat(b.getAttribute(attr)) === val);
+    });
+  }
+
+  function recomputeCalc(){
+    var miss = 1 - hr;
+    var avg = hr * cl + miss * (cl + dl);          // avg read latency (ms)
+    var dbqps = qps * miss;                          // reads reaching the DB
+    var baseline = dl;                               // no cache: every read hits the DB
+    var speedup = baseline / avg;
+
+    var eAvg = document.getElementById('c-avg');
+    var eDb  = document.getElementById('c-dbqps');
+    var eOff = document.getElementById('c-offload');
+    var eSp  = document.getElementById('c-speedup');
+
+    eAvg.textContent = avg.toFixed(2) + ' ms';
+    eDb.textContent  = fmt(Math.round(dbqps)) + '/s';
+    eOff.textContent = (hr*100).toFixed(hr >= 0.999 ? 1 : 0) + '%';
+    eSp.textContent  = speedup.toFixed(1) + '×';
+
+    eDb.className = 'sv ' + (dbqps > baseline_warn() ? 'bad' : 'warn');
+
+    var v = document.getElementById('calc-verdict');
+    var missPct = (miss*100).toFixed(miss < 0.01 ? 1 : 0);
+    v.className = 'q-status ' + (hr >= 0.99 ? 'ok' : (hr >= 0.9 ? 'info' : 'warn'));
+    v.innerHTML = 'At a <b>' + (hr*100).toFixed(hr>=0.999?1:0) + '%</b> hit ratio, only <b>' + missPct + '%</b> of reads miss, so just <b>' +
+      fmt(Math.round(dbqps)) + '/s</b> of the <b>' + fmt(qps) + '/s</b> reach the database — a <b>' + speedup.toFixed(1) +
+      '×</b> speedup over going straight to the DB (' + dl + ' ms). ' +
+      (hr >= 0.99
+        ? 'The database is barely working; the cache is doing its job. ✔'
+        : 'Raise the hit ratio: each step up removes a large share of the remaining DB load.');
+  }
+  function baseline_warn(){ return qps * 0.1; }     // flag if >10% of traffic reaches the DB
+
+  function wireCalcGroup(sel, attr, assign){
+    Array.prototype.forEach.call(document.querySelectorAll(sel + ' button'), function(btn){
+      btn.addEventListener('click', function(){
+        assign(parseFloat(btn.getAttribute(attr)));
+        Array.prototype.forEach.call(document.querySelectorAll(sel + ' button'), function(b){ b.classList.toggle('active', b===btn); });
+        recomputeCalc();
+      });
+    });
+  }
+  wireCalcGroup('#hr-btns','data-hr', function(v){ hr = v; });
+  wireCalcGroup('#cl-btns','data-cl', function(v){ cl = v; });
+  wireCalcGroup('#dl-btns','data-dl', function(v){ dl = v; });
+  wireCalcGroup('#qps-btns','data-qps', function(v){ qps = v; });
+
+  Array.prototype.forEach.call(document.querySelectorAll('#calc-presets button'), function(btn){
+    btn.addEventListener('click', function(){
+      hr = parseFloat(btn.getAttribute('data-hr'));
+      cl = parseFloat(btn.getAttribute('data-cl'));
+      dl = parseFloat(btn.getAttribute('data-dl'));
+      qps = parseFloat(btn.getAttribute('data-qps'));
+      activate('#hr-btns','data-hr',hr); activate('#cl-btns','data-cl',cl);
+      activate('#dl-btns','data-dl',dl); activate('#qps-btns','data-qps',qps);
+      recomputeCalc();
+    });
+  });
+
+  recomputeCalc();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  roughjs (Excalidraw-style) diagrams
+  // ══════════════════════════════════════════════════════════════════════
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+  function arrow(rs, svg, x1, y1, x2, y2, col, dashed) {
+    var opts = { stroke:col, strokeWidth:1.8, roughness:0.9 };
+    if (dashed) opts.strokeLineDash = [6,5];
+    svg.appendChild(rs.line(x1, y1, x2, y2, opts));
+    var ang = Math.atan2(y2-y1, x2-x1);
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang - 0.4), y2 - 10*Math.sin(ang - 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang + 0.4), y2 - 10*Math.sin(ang + 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+  }
+
+  // Anchor: the coffee-shop counter = a cache.
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+
+    T(430, 24, '☕ The coffee-shop counter = a cache in front of a slow kitchen', '#e2e8f0', '13', '800');
+
+    // customer / request
+    svg.appendChild(rs.rectangle(28, 92, 120, 60, { stroke:'#cbd5e1', strokeWidth:1.6, roughness:1.1, fill:'#1e293b', fillStyle:'solid' }));
+    T(88, 116, '👤 Customer', '#e2e8f0', '10.5', '800');
+    T(88, 133, 'orders a drink', '#94a3b8', '8.3', '600');
+    T(88, 170, '= a read request', '#94a3b8', '8.3', '700');
+
+    // warming rail = cache
+    arrow(rs, svg, 150, 122, 222, 122, '#64748b');
+    svg.appendChild(rs.rectangle(228, 80, 210, 86, { stroke:'#22c55e', strokeWidth:1.7, roughness:1, fill:'#22c55e10', fillStyle:'solid' }));
+    T(333, 102, '🔥 WARMING RAIL = CACHE (RAM)', '#86efac', '10', '800');
+    T(333, 120, 'a few ready drinks · hand over in 2s', '#cbd5e1', '8.6', '600');
+    T(333, 138, 'on the rail? → HIT (microseconds)', '#86efac', '8.8', '700');
+    T(333, 156, 'holds only ~6 · evicts the dustiest (LRU)', '#86efac', '8.2', '600');
+
+    // back kitchen = database
+    arrow(rs, svg, 440, 150, 540, 190, '#fb7185', true);
+    T(505, 160, 'not on rail?', '#fca5a5', '8', '700');
+    T(505, 173, 'MISS', '#fca5a5', '8.5', '800');
+    svg.appendChild(rs.rectangle(560, 150, 270, 80, { stroke:'#fb7185', strokeWidth:1.7, roughness:1, fill:'#fb718510', fillStyle:'solid' }));
+    T(695, 174, '🏭 BACK KITCHEN = DATABASE (disk)', '#fca5a5', '10', '800');
+    T(695, 192, 'brew from scratch · slow (ms)', '#cbd5e1', '8.6', '600');
+    T(695, 210, 'source of truth · always correct', '#fca5a5', '8.4', '600');
+
+    // populate arrow back to rail
+    arrow(rs, svg, 625, 150, 420, 110, '#a78bfa', true);
+    T(520, 128, 'leave a copy on the rail (populate)', '#c4b5fd', '8', '700');
+
+    // three mechanism bands
+    svg.appendChild(rs.rectangle(28, 258, 262, 56, { stroke:'#fbbf24', strokeWidth:1.5, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(159, 280, '🗑️ Rail full → clear the drink', '#fcd34d', '9.3', '800');
+    T(159, 298, 'nobody ordered longest = LRU eviction', '#fcd34d', '8.1', '600');
+    svg.appendChild(rs.rectangle(300, 258, 262, 56, { stroke:'#38bdf8', strokeWidth:1.5, roughness:1, fill:'#38bdf808', fillStyle:'solid' }));
+    T(431, 280, '⏲️ Drink gone cold → toss it', '#7dd3fc', '9.3', '800');
+    T(431, 298, 'on a timer = TTL expiry', '#7dd3fc', '8.1', '600');
+    svg.appendChild(rs.rectangle(572, 258, 258, 56, { stroke:'#fb7185', strokeWidth:1.5, roughness:1, fill:'#fb718508', fillStyle:'solid' }));
+    T(701, 280, '📋 HQ changed the recipe →', '#fca5a5', '9.3', '800');
+    T(701, 298, 'pull the old one = invalidation', '#fca5a5', '8.1', '600');
+
+    // verdict
+    svg.appendChild(rs.rectangle(28, 330, 802, 62, { stroke:'#a78bfa', strokeWidth:1.6, roughness:1, fill:'#a78bfa0a', fillStyle:'solid' }));
+    T(430, 352, 'A tiny fast counter in front of a slow kitchen · filled on demand · cleared least-recently-used · expired by a timer.', '#c4b5fd', '10', '800');
+    T(430, 374, 'That is a cache: serve the hot few from RAM, send only the misses to the database — chase the share you fill from the rail (hit ratio).', '#c4b5fd', '9', '700');
+  }
+
+  // Architecture: app servers → sharded cache tier (ring) → database.
+  function drawCacheDiagram() {
+    var svg = document.getElementById('cache-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.7,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+
+    T(440, 22, 'Cache-tier architecture — check the cache first; only misses reach the database', '#e2e8f0', '12', '700');
+
+    // app servers
+    box(30, 150, 120, 70, '#cbd5e1', '#1e293b');
+    T(90, 178, '🖥️ App', '#e2e8f0', '10.5', '800');
+    T(90, 196, 'servers', '#e2e8f0', '9', '700');
+    T(90, 211, 'read request', '#94a3b8', '7.6', '600');
+
+    // cache tier = ring of nodes
+    var cx=430, cy=250, r=92;
+    svg.appendChild(rs.circle(cx, cy, r*2, {stroke:'#22c55e', strokeWidth:1.6, roughness:1.1}));
+    T(cx, cy-6, 'CACHE TIER', '#86efac', '9.5', '800');
+    T(cx, cy+8, 'sharded by', '#86efac', '8', '600');
+    T(cx, cy+21, 'consistent hashing', '#86efac', '8', '600');
+    T(cx, cy+33, '(Day 14)', '#86efac', '7.6', '600');
+    var cacheNodes = [{a:-90},{a:-18},{a:54},{a:126},{a:198}];
+    cacheNodes.forEach(function(cn,i){
+      var th = cn.a*Math.PI/180;
+      var x = cx + r*Math.cos(th), y = cy + r*Math.sin(th);
+      svg.appendChild(rs.circle(x, y, 34, {stroke:'#22c55e', strokeWidth:1.8, roughness:1, fill:'#22c55e1e', fillStyle:'solid'}));
+      T(x, y-1, '🧊', '#86efac', '12', '800');
+      T(x, y+12, 'RAM', '#86efac', '7', '700');
+    });
+
+    // app -> cache (check first)
+    arrow(rs, svg, 152, 180, 340, 210, '#22c55e');
+    T(255, 180, '1. check cache', '#86efac', '8', '800');
+
+    // hit band
+    box(30, 250, 150, 56, '#22c55e', '#22c55e10');
+    T(105, 272, 'HIT (95–99%)', '#86efac', '9.5', '800');
+    T(105, 290, 'RAM · microseconds', '#86efac', '8', '600');
+    arrow(rs, svg, 182, 276, 340, 260, '#22c55e');
+    T(265, 250, 'fast path', '#86efac', '7.6', '700');
+
+    // database
+    box(690, 210, 160, 80, '#fb7185', '#fb718510');
+    T(770, 240, '🗄️ Database', '#fca5a5', '10.5', '800');
+    T(770, 258, 'disk · source of truth', '#fca5a5', '8', '600');
+    T(770, 274, 'Day 39 / 11', '#fca5a5', '7.8', '600');
+
+    // miss -> DB -> populate
+    arrow(rs, svg, 520, 240, 688, 245, '#fb7185', true);
+    T(600, 228, '2. MISS → read DB (slow)', '#fca5a5', '8', '800');
+    arrow(rs, svg, 688, 272, 522, 290, '#a78bfa', true);
+    T(600, 300, '3. populate cache + TTL', '#c4b5fd', '8', '800');
+
+    // write path
+    box(30, 338, 300, 50, '#fbbf24', '#fbbf2408');
+    T(180, 358, '✍️ WRITE: update DB, then DELETE cache key', '#fcd34d', '9', '800');
+    T(180, 374, '(invalidate — next read re-fetches fresh)', '#fcd34d', '8', '600');
+    arrow(rs, svg, 332, 360, 688, 300, '#fbbf24', true);
+
+    // eviction / ttl band
+    svg.appendChild(rs.rectangle(30, 404, 820, 42, { stroke:'#38bdf8', strokeWidth:1.4, roughness:1, fill:'#38bdf80a', fillStyle:'solid' }));
+    T(440, 422, 'Each node: evicts least-recently-used entries when full (LRU) · drops entries past their TTL · losing a node just drops a copy.', '#7dd3fc', '9.1', '800');
+    T(440, 438, 'The cache is only a copy — the database is always the source of truth. Add cache nodes to absorb more reads.', '#7dd3fc', '8.3', '600');
+
+    // hit-ratio reminder
+    svg.appendChild(rs.rectangle(30, 456, 820, 38, { stroke:'#a78bfa', strokeWidth:1.4, roughness:1, fill:'#a78bfa08', fillStyle:'solid' }));
+    T(440, 474, 'The number that matters: HIT RATIO. 95% → 99% barely changes latency but cuts the load reaching the DB by 5×.', '#c4b5fd', '9.1', '800');
+    T(440, 489, 'Cache the hot ~20%, not everything, and deflect ~99% of reads.', '#c4b5fd', '8.2', '600');
+  }
+
+  // Write strategies: cache-aside vs write-through vs write-back.
+  function drawStratDiagram() {
+    var svg = document.getElementById('strat-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.6,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+
+    T(430, 22, 'Three ways to write — how do you keep the two copies (cache + DB) honest?', '#e2e8f0', '12', '800');
+
+    var cols = [
+      { x:30,  col:'#22c55e', fillt:'#22c55e10', title:'CACHE-ASIDE', sub:'(the default)',
+        l1:'write DB', l2:'then DELETE', l3:'cache key',
+        note:'Next read misses →', note2:'re-fetches fresh. Safe,', note3:'resilient. First read misses.' },
+      { x:300, col:'#38bdf8', fillt:'#38bdf810', title:'WRITE-THROUGH', sub:'(always fresh)',
+        l1:'write cache', l2:'AND DB', l3:'together',
+        note:'Cache never stale, but', note2:'writes are slower (2 hops)', note3:'& may cache unread data.' },
+      { x:570, col:'#fbbf24', fillt:'#fbbf2410', title:'WRITE-BACK', sub:'(write-behind)',
+        l1:'write cache', l2:'flush to DB', l3:'later, async',
+        note:'Fastest writes, absorbs', note2:'bursts — but a crash before', note3:'flush LOSES data. Risky.' }
+    ];
+    cols.forEach(function(c){
+      box(c.x, 54, 260, 70, c.col, c.fillt);
+      T(c.x+130, 80, c.title, c.col, '11', '800');
+      T(c.x+130, 100, c.sub, c.col, '8.5', '600');
+      T(c.x+130, 116, '✍️ a write arrives', '#cbd5e1', '8.3', '600');
+      // step boxes
+      box(c.x+10, 142, 110, 40, c.col, c.fillt);
+      T(c.x+65, 160, c.l1, '#e2e8f0', '9', '800'); T(c.x+65, 174, c.l2, '#e2e8f0', '8', '600');
+      arrow(rs, svg, c.x+124, 162, c.x+150, 162, '#64748b');
+      box(c.x+150, 142, 100, 40, c.col, c.fillt);
+      T(c.x+200, 166, c.l3, '#e2e8f0', '8.6', '700');
+      // note band
+      svg.appendChild(rs.rectangle(c.x, 200, 260, 70, {stroke:c.col, strokeWidth:1.3, roughness:1, fill:c.fillt, fillStyle:'solid'}));
+      T(c.x+130, 220, c.note, c.col, '8.4', '600');
+      T(c.x+130, 236, c.note2, c.col, '8.4', '600');
+      T(c.x+130, 252, c.note3, c.col, '8.4', '600');
+    });
+
+    // bottom verdict
+    svg.appendChild(rs.rectangle(30, 288, 800, 50, {stroke:'#a78bfa', strokeWidth:1.5, roughness:1, fill:'#a78bfa0a', fillStyle:'solid'}));
+    T(430, 308, 'Default: cache-aside + delete-on-write. Deleting beats updating — concurrent writers can race and cache a WRONG value.', '#c4b5fd', '9.4', '800');
+    T(430, 326, 'A TTL is the safety net: even a missed invalidation can’t keep data stale longer than its expiry.', '#c4b5fd', '8.6', '700');
+  }
+
+  function drawAll(){ drawAnchorDiagram(); drawCacheDiagram(); drawStratDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
