@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 43: Design a Pastebin | System Design Mastery</title>
+  <meta name="description" content="Your first complete little product, end to end. A pastebin takes a chunk of text or code, stores it, and hands back a short URL anyone can open — the write-heavy sibling of Day 38's URL shortener. We design it from scratch: generating a short, unguessable key (and why auto-increment IDs are a security hole); the single most important architectural move — splitting the tiny metadata record (in a database) from the large content blob (in object storage) so your DB never bloats; serving a read-heavy workload cheaply by caching immutable content behind a CDN; expiring pastes with a TTL (lazy delete plus a background sweeper); and access control through unlisted unguessable links, private pastes, and passwords. Taught with a train-station-locker-wall memory anchor, a live paste-key generator that computes keyspace and birthday-bound collision odds, a cache-vs-origin read simulator you can watch warm up, three Excalidraw-style diagrams, the real tradeoffs, and how Pastebin.com, GitHub Gist, PrivateBin, and S3 + CloudFront do it in production." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; vertical-align:top; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; gap:1rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .flow-step > span.n { font-weight:800; color: var(--accent-light); min-width:1.6rem; font-family:'JetBrains Mono',monospace; }
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .sim-panel { display:none; } .sim-panel.active { display:block; }
+    .q-status { text-align:center; font-weight:700; font-size:.88rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.75rem 0 1rem; line-height:1.6; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+    .q-status.info { background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .sim-controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 1rem; }
+    .stat-row { display:flex; gap:.6rem; flex-wrap:wrap; margin:.9rem 0; }
+    .stat-chip { flex:1; min-width:120px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:.6rem .8rem; text-align:center; }
+    .stat-chip .sv { font-size:1.2rem; font-weight:800; color:var(--text-primary); font-family:'JetBrains Mono',monospace; }
+    .stat-chip .sv.good { color:#86efac; } .stat-chip .sv.warn { color:#fbbf24; } .stat-chip .sv.blue { color:#7dd3fc; } .stat-chip .sv.bad { color:#fca5a5; } .stat-chip .sv.violet { color:#c4b5fd; }
+    .stat-chip .sl { font-size:.65rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin-top:.2rem; }
+    .rule-box { background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius); padding:.9rem 1.1rem; margin:1rem 0; font-size:.84rem; }
+    .rule-box code { font-family:'JetBrains Mono',monospace; color:#7dd3fc; }
+    .rule-box .cc { color:#fca5a5; font-weight:700; } .rule-box .hb { color:#86efac; font-weight:700; }
+    /* ── pastebin widgets ──────────────────────────────────── */
+    .nrw-btns { display:flex; gap:.4rem; flex-wrap:wrap; margin:.35rem 0; align-items:center; }
+    .nrw-btns button { border:1.5px solid var(--border); background:var(--bg-card); color:var(--text-secondary); font-weight:800; font-family:'JetBrains Mono',monospace; font-size:.9rem; min-width:40px; padding:.4rem .7rem; border-radius:8px; cursor:pointer; transition:all .12s; }
+    .nrw-btns button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .kv-field-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; margin-top:.6rem; }
+    .paste-textarea { width:100%; min-height:90px; background:#0b1120; border:1.5px solid var(--border); border-radius:10px; color:#cbd5e1; font-family:'JetBrains Mono',monospace; font-size:.8rem; padding:.7rem .85rem; resize:vertical; line-height:1.5; }
+    .url-bar { display:flex; align-items:center; gap:.5rem; background:#0b1120; border:1.5px solid #38bdf8; border-radius:10px; padding:.6rem .85rem; margin:.6rem 0; font-family:'JetBrains Mono',monospace; font-size:.95rem; overflow-x:auto; }
+    .url-bar .host { color:#64748b; } .url-bar .key { color:#7dd3fc; font-weight:800; }
+    .split-wrap { display:grid; grid-template-columns:1fr 1fr; gap:.7rem; margin:.7rem 0; }
+    @media (max-width:620px){ .split-wrap { grid-template-columns:1fr; } }
+    .split-card { background:var(--bg-card); border:1.5px solid var(--border); border-radius:12px; padding:.7rem .85rem; }
+    .split-card.meta { border-color:#a78bfa55; } .split-card.blob { border-color:#f59e0b55; }
+    .split-card h5 { margin:0 0 .45rem; font-size:.78rem; font-weight:800; display:flex; align-items:center; gap:.35rem; }
+    .split-card.meta h5 { color:#c4b5fd; } .split-card.blob h5 { color:#fcd34d; }
+    .split-card pre { margin:0; font-family:'JetBrains Mono',monospace; font-size:.72rem; color:#cbd5e1; white-space:pre-wrap; word-break:break-word; line-height:1.5; }
+    .preset-btns { display:flex; gap:.45rem; flex-wrap:wrap; margin:.5rem 0; }
+    .preset-btns button { border:1.5px solid var(--border); background:var(--bg-secondary); color:var(--text-secondary); font-weight:700; font-size:.76rem; padding:.4rem .75rem; border-radius:8px; cursor:pointer; }
+    .preset-btns button:hover { border-color:var(--accent); color:var(--accent-light); }
+    .preset-btns button.active { border-color:var(--accent); background:var(--accent); color:#fff; }
+    /* cache grid */
+    .cache-grid { display:flex; gap:.4rem; flex-wrap:wrap; margin:.6rem 0; }
+    .cache-slot { width:58px; height:52px; border:1.5px dashed var(--border); border-radius:9px; display:flex; flex-direction:column; align-items:center; justify-content:center; font-family:'JetBrains Mono',monospace; font-size:.72rem; color:#64748b; background:#0b1120; }
+    .cache-slot.full { border-style:solid; border-color:#22c55e; color:#86efac; background:#22c55e10; }
+    .cache-slot .sk { font-weight:800; }
+    .cache-slot .shit { font-size:.58rem; color:#64748b; }
+    .read-trail { min-height:44px; margin:.4rem 0; }
+    .req-flash { display:inline-block; font-family:'JetBrains Mono',monospace; font-size:.7rem; font-weight:700; padding:.2rem .5rem; border-radius:6px; margin:.15rem; }
+    .req-flash.ok { background:#22c55e18; color:#86efac; border:1px solid #22c55e55; }
+    .req-flash.bad { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .diagram-caption { font-size:.76rem; color:var(--text-muted); text-align:center; margin-top:.3rem; }
+    .http-chip { display:inline-block; font-family:'JetBrains Mono',monospace; font-size:.78rem; font-weight:700; padding:.15rem .5rem; border-radius:6px; background:#0b1120; border:1px solid var(--border); color:#7dd3fc; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phases">Phase 2: Intermediate Systems</a><span class="breadcrumb-sep">/</span>
+      <span>Day 43</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 43 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📗 Phase 2 — Intermediate Systems</span>
+      <span class="meta-pill">🗂 Week 6 — Classic System Designs</span>
+    </div>
+    <h1>Design a Pastebin<br><span style="color:var(--accent)">Your First Complete Little Product</span></h1>
+    <p class="lead">
+      For five days you've been building <em>components</em> — a shortener, a key-value store, a cache, a crawler, a rate limiter. Today you assemble your
+      first whole <strong>product</strong>, end to end: a <strong>pastebin</strong>. Someone drops in a chunk of text or code, you store it, and you hand
+      back a <strong>short URL</strong> anyone can open to read it back — think Pastebin.com or a GitHub Gist. It looks almost identical to
+      <strong>Day 38's URL shortener</strong>, and that's the point: it's the <em>write-heavy sibling</em> — the shortener saved a tiny string and
+      returned a tiny key; the pastebin saves a <em>big blob</em> and returns a tiny key. That one difference drives the whole design. You'll generate a
+      short <strong>unguessable</strong> key (and see exactly why auto-increment IDs leak every paste you've got), make the single most important move —
+      <strong>splitting the tiny metadata from the large content</strong> so your database never bloats — serve a brutally read-heavy workload from a
+      <strong>cache and CDN</strong> because the content never changes, and expire old pastes with a <strong>TTL</strong>. You'll fire a live key generator
+      and watch keyspace and collision odds move, then warm up a <strong>cache-vs-origin</strong> read simulator and watch the hit ratio climb.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#why">Why This Problem Exists</a>
+        <a href="#design">The Design, Step by Step</a>
+        <a href="#core">The Heart: Metadata vs Blob</a>
+        <a href="#reads">Scaling the Reads</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🎫 🔢 🗄️ 🔒</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Picture the <strong>wall of lockers at a train station</strong>, hundreds of numbered metal doors, and next to them a little
+            <strong>ticket machine</strong>. You've scribbled something on a sheet of paper — a long message, a page of notes — and you want a friend to be
+            able to read it later without you being there. So you find an <strong>empty locker</strong>, put your sheet inside, and the machine prints you a
+            tiny <strong>ticket with a short code</strong> on it: <code>7h3k2q</code>. That's it. You text your friend just those six characters.</p>
+            <p>Your friend walks up to the wall, taps <code>7h3k2q</code> into the machine, and <em>that exact locker</em> pops open with your sheet inside.
+            The <strong>short code is the whole address</strong> — nobody browses the wall, nobody opens lockers at random; you either have the code or you
+            don't. Notice the quiet split that makes this work: the <strong>lockers are big</strong> and hold the bulky paper (that's your
+            <strong>content</strong>), but the machine's little <strong>logbook</strong> only records one tiny line — "<em>ticket 7h3k2q → locker 4412,
+            clear it at midnight, padlocked</em>." The logbook is small and quick to flip through; the lockers are big and dumb and just hold stuff. Keep
+            those two things <em>separate</em> and everything stays fast.</p>
+            <p>Two more details complete the picture. Some lockers have a <strong>padlock</strong> — a private paste that needs a password, or one only you
+            can open. And a <strong>janitor</strong> walks the wall clearing out lockers whose time is up — that's <strong>expiry</strong>, the paste that
+            vanishes after ten minutes or a week. Hold the image: a <strong>wall of big lockers</strong> (the content, in object storage), a
+            <strong>tiny logbook</strong> of ticket-codes pointing at lockers (the metadata, in a database), a <strong>six-character ticket</strong> you can
+            text to anyone (the short key), a <strong>padlock</strong> (access control), and a <strong>janitor</strong> (TTL expiry). That picture
+            <em>is</em> a pastebin — and the entire rest of today is just making that wall work for a billion lockers and ten thousand people a second.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="860" height="470" viewBox="0 0 860 470"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Sofia</span> was tired of watching her team paste enormous stack traces into chat, where they'd get truncated,
+            lose their formatting, and become un-searchable an hour later. So one weekend she built a tiny internal pastebin: a text box, a "Create" button,
+            and a page that showed the text back. On the backend she did the obvious thing — stored each paste as a row in Postgres with the text in a
+            <code>TEXT</code> column, auto-increment integer primary key, and returned a URL like <code>/p/1</code>, <code>/p/2</code>, <code>/p/3</code>.
+            It worked on Monday and everyone loved it.
+          </p>
+          <p>
+            On Tuesday a security-minded colleague sent her a screenshot. He'd simply changed the number in the URL — <code>/p/1</code>,
+            <code>/p/2</code>, <code>/p/3</code> — and <em>walked the entire database</em>, reading every paste anyone had ever made, including one with a
+            database password in it. Her sequential IDs weren't just ugly, they were an <strong>enumeration hole</strong>: a predictable ID means anyone can
+            guess every other ID by counting. Sofia swapped the integer for a <strong>random short key</strong> — six base62 characters, like the shortener
+            from Day 38 — generated at creation and stored as the lookup key. Now a paste's URL was <code>/7h3k2q</code>, and the only way to reach it was
+            to <em>already have the link</em>. Unguessable by default.
+          </p>
+          <p>
+            By Thursday the database was in trouble. Someone had pasted a 4&nbsp;MB log file; others followed. The Postgres table ballooned, nightly backups
+            crawled, and — worse — every single <em>read</em> dragged the whole fat blob through the database and over the wire, even for a one-line snippet.
+            Sofia realized the mistake: she was storing a <strong>big, opaque content blob</strong> in a system built for <strong>small, structured rows</strong>.
+            She split them. The <em>content</em> — the actual bytes of the paste — went into <strong>object storage</strong> (an S3 bucket), which is built
+            to hold huge blobs cheaply. The <em>metadata</em> — the key, who made it, when, when it expires, whether it's private — stayed in the database as
+            a tiny row that just held a <strong>pointer</strong> (the object-storage key) to where the content lived. The database got small and fast again;
+            the blobs lived somewhere built for blobs.
+          </p>
+          <p>
+            Finally, she noticed the shape of the traffic. One paste — an incident postmortem link dropped in the company Slack — got read
+            <em>thousands</em> of times while most pastes were read once or twice. Pastebins are <strong>wildly read-heavy</strong>, and the content is
+            <strong>immutable</strong>: once written, a paste never changes. That's the dream case for caching. Sofia put a <strong>cache</strong> in front
+            (Redis for metadata, a <strong>CDN</strong> for the content bytes) with a long TTL, because immutable content can be cached forever without fear
+            of staleness. Popular pastes were served straight from the edge; the origin barely noticed. She added <strong>expiry</strong> (10 minutes / 1 day
+            / never) checked lazily on read plus a nightly sweeper, and <strong>visibility</strong> (unlisted / private / password). Without meaning to,
+            Sofia had rebuilt exactly what Pastebin.com and GitHub Gist are — a short unguessable key, a tiny metadata row pointing at a big immutable blob,
+            served read-heavy through a cache.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">A pastebin is a <strong>write-once, read-many key-value store for text</strong> — the write-heavy twin of the URL
+          shortener. The whole product is two operations: <strong>create</strong> (take text → return a short key) and <strong>read</strong> (take a key →
+          return the text). Three decisions carry the design. <strong>(1) The key:</strong> generate a short, <em>random</em>, <strong>unguessable</strong>
+          base62 key — never an auto-increment integer, which lets anyone enumerate every paste by counting. <strong>(2) The split:</strong> store the big
+          <em>content blob</em> in <strong>object storage</strong> (S3), built for large cheap blobs, and keep only tiny <em>metadata</em> (key, owner,
+          timestamps, expiry, visibility, and a <em>pointer</em> to the blob) in a <strong>database</strong> — so the DB never bloats and stays fast.
+          <strong>(3) The reads:</strong> the workload is brutally read-heavy and the content is <strong>immutable</strong>, so cache it hard — a
+          <strong>CDN</strong> for the bytes, Redis for metadata — with long TTLs, because content that never changes can never go stale in a cache.
+          Everything else is tuning: <strong>expire</strong> pastes with a TTL (lazy-delete on read plus a background sweeper), and control access through
+          unlisted unguessable links, private pastes, and passwords. One-line test: <em>a pastebin is an unguessable short key mapping to an immutable blob
+          in object storage, with tiny metadata in a database, served read-heavy through a cache.</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Mint a Paste Key, then Warm Up the Read Cache</h2>
+        <div class="sim-box">
+          <p>Two real, working demos. In <strong>Paste Lab</strong> you type some text, pick a key length and visibility, and hit <em>Create</em> — the
+          widget mints a real random base62 key, splits your paste into the tiny <strong>metadata row</strong> and the big <strong>content blob</strong>
+          exactly as the design does, and computes the <strong>keyspace</strong> and the <strong>birthday-bound</strong> collision odds so you can see why
+          key length matters. In <strong>Read Cache</strong> mode you fire reads at a set of pastes (a few are wildly popular, most are cold) and watch an
+          immutable-content cache <strong>warm up</strong> — hit ratio climbing, origin load dropping — the whole reason a pastebin stays cheap.</p>
+
+          <div class="mode-toggle" id="mode-toggle">
+            <button data-mode="paste" class="active">🎫 Paste Lab (key generator)</button>
+            <button data-mode="cache">⚡ Read Cache (hit/miss)</button>
+          </div>
+
+          <!-- PASTE LAB PANEL -->
+          <div class="sim-panel active" id="panel-paste">
+            <p style="font-size:.85rem;">Write (or load) a paste, choose how long the key should be, and create it. Watch the <strong>short URL</strong>
+            appear, the paste get <strong>split</strong> into metadata + blob, and the <strong>collision math</strong> update — more characters means a
+            vastly bigger keyspace and far rarer clashes.</p>
+
+            <div class="preset-btns" id="paste-presets">
+              <button data-sample="snippet" class="active">📝 Code snippet</button>
+              <button data-sample="log">🪵 4 MB log file</button>
+              <button data-sample="note">💬 Short note</button>
+            </div>
+            <textarea class="paste-textarea" id="paste-text">function debounce(fn, ms) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}</textarea>
+
+            <div class="kv-field-label">Key length (base62 characters)</div>
+            <div class="nrw-btns" id="len-btns">
+              <button data-len="4">4</button>
+              <button data-len="6">6</button>
+              <button data-len="7" class="active">7</button>
+              <button data-len="8">8</button>
+            </div>
+            <div class="kv-field-label">Visibility</div>
+            <div class="nrw-btns" id="vis-btns">
+              <button data-vis="unlisted" class="active">🔗 Unlisted</button>
+              <button data-vis="private">🔒 Private</button>
+              <button data-vis="public">🌐 Public</button>
+            </div>
+            <div class="kv-field-label">Expiry</div>
+            <div class="nrw-btns" id="exp-btns">
+              <button data-exp="600">10 min</button>
+              <button data-exp="86400" class="active">1 day</button>
+              <button data-exp="0">Never</button>
+            </div>
+
+            <div class="sim-controls" style="margin-top:.9rem;">
+              <button class="btn btn-primary btn-sm" id="pl-create">Create paste ▶</button>
+              <button class="btn btn-outline btn-sm" id="pl-again">↻ New key (same paste)</button>
+            </div>
+
+            <div class="url-bar"><span class="host">https://pb.io/</span><span class="key" id="pl-key">—</span></div>
+
+            <div class="split-wrap">
+              <div class="split-card meta">
+                <h5>🗂️ Metadata row → Database</h5>
+                <pre id="pl-meta">create a paste to see the row</pre>
+              </div>
+              <div class="split-card blob">
+                <h5>🧱 Content blob → Object storage</h5>
+                <pre id="pl-blob">create a paste to see the blob</pre>
+              </div>
+            </div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv blue" id="pl-space">—</div><div class="sl">keyspace (62^len)</div></div>
+              <div class="stat-chip"><div class="sv warn" id="pl-collide">—</div><div class="sl">pastes until ~1% collision risk</div></div>
+              <div class="stat-chip"><div class="sv violet" id="pl-size">—</div><div class="sl">blob size (DB stays tiny)</div></div>
+            </div>
+            <div class="q-status info" id="pl-status">Pick a length and hit Create. Notice the metadata row is a handful of bytes no matter how big the blob is.</div>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem;">The <code>metadata</code> row is the same tiny size whether the paste is
+            80 bytes or 4&nbsp;MB — that's the whole trick: the database only ever holds the little logbook line, and the bulky bytes live in object
+            storage. The collision stat is a <em>birthday-bound</em> estimate: with random keys you'll hit a clash far sooner than "keyspace minus pastes"
+            suggests, which is why real systems either add length or <strong>check-and-retry on insert</strong> using the database's unique constraint.</p>
+          </div>
+
+          <!-- READ CACHE PANEL -->
+          <div class="sim-panel" id="panel-cache">
+            <p style="font-size:.85rem;">Eight pastes, Zipf-style popularity: paste <code>#1</code> is a viral Slack link read constantly; most others are
+            cold. The <strong>cache</strong> holds a few pastes (LRU). Because paste content is <strong>immutable</strong>, a cached copy is <em>never</em>
+            stale — so every hit is a free, instant read and the origin (object storage) is spared. Fire reads and watch it warm up.</p>
+
+            <div class="kv-field-label">Cache size (slots)</div>
+            <div class="nrw-btns" id="cap-btns">
+              <button data-cap="1">1</button>
+              <button data-cap="3" class="active">3</button>
+              <button data-cap="5">5</button>
+            </div>
+            <div class="kv-field-label" id="cache-mode-label">Caching</div>
+            <div class="nrw-btns" id="cache-on-btns">
+              <button data-on="1" class="active">⚡ Cache ON</button>
+              <button data-on="0">🚫 Cache OFF (origin only)</button>
+            </div>
+
+            <div class="cache-grid" id="cache-grid"></div>
+
+            <div class="sim-controls">
+              <button class="btn btn-primary btn-sm" id="rc-one">Send 1 read ▶</button>
+              <button class="btn btn-outline btn-sm" id="rc-many">▶▶ Simulate 50 reads</button>
+              <button class="btn btn-outline btn-sm" id="rc-reset">↺ Reset</button>
+            </div>
+            <div class="q-status info" id="rc-status">Reads land on hot pastes most of the time. A warm cache serves them from the edge in ~3 ms instead of ~65 ms from origin.</div>
+            <div class="read-trail" id="rc-trail"></div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv" id="rc-reads">0</div><div class="sl">total reads</div></div>
+              <div class="stat-chip"><div class="sv good" id="rc-hitrate">0%</div><div class="sl">cache hit ratio</div></div>
+              <div class="stat-chip"><div class="sv blue" id="rc-latency">—</div><div class="sl">avg latency</div></div>
+              <div class="stat-chip"><div class="sv bad" id="rc-origin">0</div><div class="sl">origin (S3) fetches</div></div>
+            </div>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem;">With caching <strong>on</strong>, the hit ratio climbs fast because a few
+            hot pastes dominate the reads — the cache quickly holds exactly the pastes everyone wants, and the origin only sees cold misses. Flip caching
+            <strong>off</strong> and every read pays the full origin latency and hammers object storage. The reason this works so cleanly is immutability:
+            unlike a cache of changing data (where you fight invalidation), a paste's bytes never change, so a hit is <em>always</em> correct.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="why">
+        <h2>Why This Problem Exists</h2>
+        <p>People constantly need to share a <strong>block of text</strong> that's too big, too ugly, or too formatted to drop into a chat message or an
+        email — a stack trace, a config file, a SQL query, a page of logs, a code snippet for a colleague. Chat apps mangle it, email buries it, and neither
+        gives you a stable <em>link</em> you can point other people at. A pastebin solves exactly that: <strong>paste once, get a short URL, share the URL.</strong>
+        The content lives at a stable address, keeps its formatting, and anyone with the link can read it — no accounts, no attachments, no truncation.
+        It's one of the most-used utilities on the internet precisely because it does one humble thing reliably.</p>
+        <p>Under the hood it's deceptively close to the URL shortener you built on <strong>Day 38</strong> — both map a <strong>short key</strong> to
+        something you stored — but the <em>direction</em> of the data flips the whole design. The shortener <em>receives</em> a big thing (a long URL) and
+        <em>stores a tiny thing</em> (just that string); a pastebin <em>receives</em> a big thing (kilobytes or megabytes of text) and must <em>store that
+        big thing</em>, then serve it back many times. That's why a pastebin forces two lessons the shortener didn't: <strong>where do you put a large
+        blob</strong> (not in your metadata database), and <strong>how do you serve it cheaply when it's read far more than it's written</strong> (cache the
+        immutable content). The core logic is trivial — two operations, create and read — but, as always, the <em>difficulty is in the details</em>: an
+        unguessable key, the metadata/blob split, read-side caching, expiry, and access control.</p>
+
+        <div class="code-label">The entire pastebin, in pseudocode — two operations; everything else is where you put the bytes</div>
+        <div class="code-panel"><span class="k">def</span> <span class="f">create</span>(text, visibility, ttl):
+    key  = <span class="f">gen_random_key</span>(length=<span class="n">7</span>)        <span class="muted"># short, UNGUESSABLE base62 — not an auto-increment id</span>
+    blob_id = <span class="f">object_store.put</span>(text)       <span class="b"># the BIG content goes to S3 / object storage</span>
+    db.<span class="f">insert</span>({                            <span class="muted"># the DB holds only a tiny row...</span>
+        <span class="s">"key"</span>: key, <span class="s">"blob_id"</span>: blob_id,     <span class="muted"># ...with a POINTER to the blob</span>
+        <span class="s">"visibility"</span>: visibility,
+        <span class="s">"expires_at"</span>: now() + ttl })        <span class="muted"># expiry = a timestamp + a sweeper</span>
+    <span class="k">return</span> <span class="s">"https://pb.io/"</span> + key          <span class="muted"># the short URL you share</span>
+
+<span class="k">def</span> <span class="f">read</span>(key):
+    meta = <span class="f">cache.get</span>(key) <span class="k">or</span> db.<span class="f">lookup</span>(key)  <span class="s"># read-heavy → serve metadata from cache</span>
+    <span class="k">if</span> meta <span class="k">is</span> <span class="k">None</span> <span class="k">or</span> <span class="f">expired</span>(meta): <span class="k">return</span> <span class="n">404</span>  <span class="muted"># lazy-delete on read</span>
+    <span class="k">return</span> <span class="f">cdn_or_object_store.get</span>(meta.blob_id)   <span class="s"># immutable content → cache / CDN forever</span></div>
+      </section>
+
+      <section id="design">
+        <h2>The Design, Step by Step</h2>
+        <p>The same discipline as the last five designs: scope it, size it, sketch the interface, then draw the boxes. The twist today is that there are
+        <em>two</em> kinds of data with wildly different sizes and access patterns — tiny metadata and big content — and almost every decision follows from
+        keeping them in the right homes.</p>
+
+        <h3>Step 1 — Scope the requirements</h3>
+        <div class="pillar-grid">
+          <div class="pillar-card conf"><h4>✅ Functional</h4>
+            <p><strong>Create</strong> a paste from text → return a <strong>short URL</strong>.</p>
+            <p><strong>Read</strong> a paste by its key (with syntax highlighting, optionally).</p>
+            <p>Support <strong>expiry</strong> (TTL) and <strong>visibility</strong> (unlisted / private / password).</p></div>
+          <div class="pillar-card avail"><h4>🎯 Non-functional</h4>
+            <p><strong>Read-heavy</strong> — reads vastly outnumber writes; reads must be fast and cheap.</p>
+            <p><strong>Durable</strong> — a paste shouldn't vanish before its expiry.</p>
+            <p><strong>Cheap at scale</strong> — storage grows forever; it must cost little per paste.</p></div>
+          <div class="pillar-card amber"><h4>🤔 Clarify early</h4>
+            <p><strong>How big</strong> can a paste be? (caps change storage + upload design.)</p>
+            <p><strong>Edit/delete?</strong> Usually immutable — simplifies caching enormously.</p>
+            <p><strong>Anonymous</strong> or accounts? Who may read a private paste?</p></div>
+        </div>
+
+        <h3>Step 2 — Size it (back-of-the-envelope, Day 30)</h3>
+        <p>Say <strong>1,000,000 new pastes/day</strong>, a read:write ratio of about <strong>10:1</strong> (10M reads/day), and an average paste of
+        <strong>10&nbsp;KB</strong>.</p>
+        <div class="code-panel"><span class="muted"># throughput — note how lopsided reads vs writes are</span>
+writes/sec = 1,000,000 / 86,400  ≈ <span class="n">~12 / s</span>   <span class="muted"># avg; peak ~5× ≈ 60/s</span>
+reads/sec  = 10,000,000 / 86,400 ≈ <span class="s">~115 / s</span>  <span class="muted"># avg; peak ~600/s → READ-heavy</span>
+
+<span class="muted"># storage — the content is the whole cost, and it only grows</span>
+content/day = 1,000,000 × 10 KB = <span class="s">~10 GB / day</span>  <span class="muted"># ≈ 3.6 TB/yr → OBJECT STORAGE (cheap), not the DB</span>
+metadata/day= 1,000,000 × 100 B = <span class="n">~100 MB / day</span> <span class="muted"># ≈ 36 GB/yr → a tiny DB, easily indexed</span>
+
+<span class="muted"># key length — how many characters before clashes bite?</span>
+5 yrs of pastes ≈ 1.8e9        <span class="muted"># base62: 62^6 ≈ 5.7e10, 62^7 ≈ 3.5e12</span>
+→ <span class="s">7 chars</span>: keyspace ≫ pastes, so random keys rarely clash (still check on insert)</div>
+        <p style="margin-top:1rem;">The sizing screams the shape of the system. The <strong>content</strong> is ~100× the size of the metadata and grows
+        forever — it belongs in cheap, elastic <strong>object storage</strong>, never swelling your database. The <strong>metadata</strong> is tiny and
+        heavily indexed — a natural database job. And the traffic is <strong>read-heavy by 10×</strong>, which points straight at a cache and a CDN. Two
+        data types, two homes, one cache: that's the architecture before you've drawn a single box.</p>
+
+        <h3>Step 3 — The core interface</h3>
+        <div class="code-panel"><span class="k">POST</span> /pastes   { text, visibility, ttl }   → { key, url }
+<span class="k">GET</span>  /{key}                              → the paste content (or 404 if missing/expired)
+   <span class="muted"># key  = short random base62 string, generated at create time</span>
+   <span class="muted"># create writes the blob to object storage + a metadata row to the DB</span>
+   <span class="muted"># read is the hot path: cache → metadata → (CDN / object storage) for the bytes</span></div>
+        <p style="margin-top:1rem;">Two endpoints — that's the entire product surface. The asymmetry is the whole story: <code>POST</code> is rare and
+        does the heavy lifting (write a blob, write a row); <code>GET</code> is constant and must be as close to free as possible, which is why the read path
+        leans on caching while the write path doesn't need to.</p>
+
+        <h3>Step 4 — Draw the architecture</h3>
+        <p>Writes fan the data into its two homes; reads come back mostly from the cache and CDN, barely touching the origin. The metadata DB and the blob
+        store are deliberately <em>different systems</em>, each doing what it's best at.</p>
+        <div class="diagram-box">
+          <svg id="arch-diagram" width="880" height="560" viewBox="0 0 880 560"></svg>
+        </div>
+        <div class="flow-box">
+          <div class="flow-step"><span class="n">1</span><div><strong>Create (write path).</strong> The request hits the app through a load balancer. The
+          app <strong>generates a short random key</strong>, writes the <strong>content blob to object storage</strong>, and writes a <strong>tiny
+          metadata row</strong> (key → blob pointer, owner, expiry, visibility) to the database.</div></div>
+          <div class="flow-step"><span class="n">2</span><div><strong>Return the short URL.</strong> The caller gets back <code>https://pb.io/{key}</code> —
+          the only thing they need to share. Nothing about the URL hints at how many pastes exist or how to find another.</div></div>
+          <div class="flow-step"><span class="n">3</span><div><strong>Read (hot path).</strong> A <code>GET /{key}</code> first checks the
+          <strong>cache</strong> for the metadata; on a miss it reads the one small row from the DB and caches it. The <strong>content bytes</strong> are
+          served from a <strong>CDN / object storage</strong> — and because content is immutable, the CDN can cache it with a very long TTL.</div></div>
+          <div class="flow-step"><span class="n">4</span><div><strong>Check expiry & access.</strong> If the paste is past <code>expires_at</code>, return
+          <span class="http-chip">404</span> and lazily delete it. If it's private or password-protected, enforce that before serving the bytes.</div></div>
+          <div class="flow-step"><span class="n">5</span><div><strong>Reclaim space.</strong> A background <strong>sweeper</strong> periodically deletes
+          expired pastes' blobs and rows so storage doesn't grow without bound — the janitor clearing out old lockers.</div></div>
+        </div>
+      </section>
+
+      <section id="core">
+        <h2>The Heart: Metadata vs Blob (and the Key)</h2>
+        <p>Two decisions make or break a pastebin, and both are about <em>where things go</em>. First, <strong>how you generate the key</strong>. Second —
+        and this is the one that separates a toy from a real system — <strong>keeping the small metadata and the large content in separate stores</strong>.</p>
+
+        <h3>Generating the key — four approaches</h3>
+        <div class="diagram-box">
+          <svg id="keygen-diagram" width="860" height="430" viewBox="0 0 860 430"></svg>
+        </div>
+        <table class="algo-table">
+          <tr><th>Strategy</th><th>How it makes a key</th><th>Verdict</th></tr>
+          <tr><td><strong>Auto-increment ID</strong></td><td>Use the database's sequential primary key: 1, 2, 3, … (optionally base62-encoded).</td><td>
+          <strong>❌ Enumerable.</strong> Anyone can read every paste by counting. A security hole and an information leak (reveals your total count).</td></tr>
+          <tr><td><strong>Random base62 key</strong></td><td>Generate <em>N</em> random characters from <code>[a-zA-Z0-9]</code> at create time.</td><td>
+          <strong>✅ The default.</strong> Unguessable and short. Needs a <em>uniqueness check on insert</em> (rare clash → retry) via a DB unique constraint.</td></tr>
+          <tr><td><strong>Hash of content</strong></td><td>Key = first <em>N</em> chars of <code>hash(content)</code>.</td><td><strong>✅ for dedup.</strong>
+          Identical pastes collapse to one blob automatically. But it's deterministic — two people pasting the same text share a URL, which may leak that a
+          paste exists.</td></tr>
+          <tr><td><strong>Pre-generated keys (KGS)</strong></td><td>A <strong>Key Generation Service</strong> makes random unique keys offline and hands them
+          out from a pool.</td><td><strong>✅ at huge scale.</strong> No collision check on the hot path — the key is <em>already</em> known-unique. The same
+          trick used by big URL shorteners (Day 38).</td></tr>
+        </table>
+        <p>For almost everyone, a <strong>random base62 key with a uniqueness check</strong> is right. Why not auto-increment? Because a predictable key
+        isn't a key at all — it's an invitation to walk your whole dataset, exactly Sofia's Tuesday. The unguessable key is doing double duty here: it's both
+        the <em>address</em> of a paste and the <em>access control</em> for an "unlisted" one — you can't read what you can't guess.</p>
+
+        <h3>The split that keeps the database fast</h3>
+        <p>Here's the move that matters most. A naïve pastebin shoves the whole paste text into a column in the metadata database. It works for a week, then
+        the table bloats with megabytes of opaque text, backups slow to a crawl, the cache of "hot rows" the DB keeps in memory gets polluted with giant
+        blobs, and every read drags the full content through a system optimized for small, structured, indexed rows. The fix is to recognize that you have
+        <strong>two completely different kinds of data</strong>:</p>
+        <table class="algo-table">
+          <tr><th></th><th>Metadata</th><th>Content blob</th></tr>
+          <tr><td><strong>Size</strong></td><td>~100 bytes</td><td>KB to MB (100× bigger, and it's most of your bytes)</td></tr>
+          <tr><td><strong>Shape</strong></td><td>Structured: key, owner, timestamps, expiry, visibility, blob pointer</td><td>Opaque bytes — never queried by
+          its contents</td></tr>
+          <tr><td><strong>Access</strong></td><td>Looked up, filtered, indexed, checked for expiry</td><td>Fetched whole by key; never searched or partially
+          read</td></tr>
+          <tr><td><strong>Right home</strong></td><td><strong>Database</strong> (SQL or a KV store) — fast, indexed, cheap for small rows</td><td><strong>Object
+          storage</strong> (S3/GCS) — built for large blobs, cheap per GB, served via CDN</td></tr>
+        </table>
+        <p>The metadata row holds a <strong>pointer</strong> (the object-storage key) to where the content lives. The database stays tiny and quick no matter
+        how big the pastes get; the blobs live in a store designed for exactly that, and can be fronted by a CDN for free, fast reads. This "small structured
+        record points at a big opaque blob" pattern is <em>everywhere</em> in system design — user profiles pointing at profile photos, messages pointing at
+        attachments, products pointing at images. Learn it here and you'll reuse it for the rest of the course.</p>
+
+        <div class="rule-box">
+          <span class="hb">✔ Split tiny metadata (in a DB) from the large content blob (in object storage), joined by a pointer</span> — the DB stays small,
+          fast, and cheap to back up; the blobs live where blobs belong and ride a CDN. Generate a <strong>random, unguessable</strong> key. <br>
+          <span class="cc">✘ Don't store big pastes in a column of your metadata database, and never use auto-increment IDs as the public key</span> — the
+          first bloats and slows the DB; the second lets anyone enumerate every paste you have.
+        </div>
+      </section>
+
+      <section id="reads">
+        <h2>Scaling the Reads — Immutable Content Is a Cache's Dream</h2>
+        <p>A pastebin is read-heavy by an order of magnitude, and a handful of pastes (the one in the viral Slack thread, the popular tutorial snippet) soak
+        up most of the reads while the long tail is read once and forgotten. That's a <strong>Zipf distribution</strong> — exactly the shape caching loves.
+        And there's a gift that makes caching here even easier than usual: paste content is <strong>immutable</strong>. Once written, a paste never changes,
+        so a cached copy can <em>never</em> be stale. You get to skip the single hardest part of caching — invalidation (Day 22) — entirely.</p>
+
+        <h3>Three layers of read acceleration</h3>
+        <p><strong>CDN for the content.</strong> The blob bytes are static and immutable, so a CDN (Day 23) can cache them at the edge, close to readers,
+        with a very long TTL. A popular paste gets served from a city near the reader without the origin ever being touched — fast for them, nearly free for
+        you. <strong>Redis for the metadata.</strong> The small metadata row (is it expired? private? where's the blob?) is looked up on every read; cache it
+        in Redis (Day 40) so the hot path rarely hits the database. <strong>The database last.</strong> Only cold reads — a paste's first view, or one that
+        aged out of cache — fall through to the metadata DB, which then fetches the blob.</p>
+
+        <h3>Why immutability changes everything</h3>
+        <p>In most systems, caching is a constant battle against staleness: the moment data changes, every cached copy is wrong, and you need an
+        invalidation strategy (TTLs, write-through, explicit purges). A pastebin sidesteps all of it. Because the content for a given key is fixed forever,
+        you can set <code>Cache-Control</code> headers to cache the bytes for a year, let the CDN keep them as long as it likes, and never worry about a
+        reader getting an old version — there is no old version. The <em>only</em> cache subtlety is <strong>expiry</strong>: when a paste's TTL passes it
+        should stop resolving, which you handle at the metadata layer (short-TTL the metadata, or check <code>expires_at</code> on the lookup) rather than by
+        invalidating the immutable content.</p>
+
+        <div class="rule-box">
+          <span class="hb">✔ Cache the immutable content aggressively — CDN for the bytes, Redis for the metadata, long TTLs</span> — read-heavy +
+          never-changing content is the ideal caching case, and it lets you serve most reads without touching the origin. <br>
+          <span class="cc">✘ Don't serve every read from origin object storage, and don't over-think invalidation</span> — immutable content never goes
+          stale, so the hard part of caching simply isn't here; the one thing to honor is expiry, handled at the metadata layer.
+        </div>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>Create-and-read is trivial. These four edges are what separate a weekend hack from a pastebin that survives real traffic, real abuse, and real
+        storage bills.</p>
+
+        <h3>Expiry — lazy delete plus a sweeper</h3>
+        <p>Pastes that live forever make storage grow without bound, so most pastebins support a TTL (10 minutes, a day, a week, never). Storing
+        <code>expires_at</code> is easy; actually reclaiming the space is the subtle part. The standard pattern is two-pronged: <strong>lazy delete</strong>
+        on read (if someone fetches an expired paste, return 404 and delete it then) <em>plus</em> a <strong>background sweeper</strong> that periodically
+        scans for expired rows and deletes their blobs — because a paste that's never read again would otherwise never get cleaned up. It's the janitor
+        walking the locker wall. This is the same TTL instinct you've met in caches (Day 22) and the rate limiter (Day 42), applied to durable storage.</p>
+
+        <h3>Access control — the unguessable link <em>is</em> the lock</h3>
+        <p>Most pastebins offer three visibilities. <strong>Public</strong> pastes are listed and searchable. <strong>Unlisted</strong> — the common default
+        — aren't listed anywhere; the only way to reach one is the link, and its security rests entirely on the key being <em>unguessable</em> (this is why
+        random keys matter so much, and why a short 4-character key is risky — it's brute-forceable). <strong>Private</strong> pastes require being the
+        owner or knowing a password. For genuinely sensitive content, some tools (PrivateBin) go further and <strong>encrypt the paste in the browser</strong>
+        so the server never even sees the plaintext — the decryption key lives in the URL fragment after the <code>#</code>, which browsers never send to the
+        server.</p>
+
+        <h3>Abuse — you're hosting other people's content</h3>
+        <p>The moment you let anonymous strangers store arbitrary bytes and share links, you've built a tool people will abuse: malware payloads, phishing
+        pages, leaked credentials, spam. Real pastebins need <strong>rate limiting</strong> (Day 42, to stop automated flooding), content scanning and
+        abuse-reporting, and a takedown process. It's the unglamorous but unavoidable cost of being a public content host — the system design isn't just
+        boxes and arrows, it's also "what happens when someone uses this for evil?"</p>
+
+        <h3>Big pastes & deduplication</h3>
+        <p>What's the maximum paste size? A cap (say a few MB) keeps the system sane; truly large uploads might stream directly to object storage rather than
+        through your app servers. And if you key by <strong>content hash</strong>, identical pastes automatically <strong>deduplicate</strong> — a million
+        people pasting the same viral snippet store exactly one blob — at the cost of making URLs deterministic (which can leak that a given paste exists).
+        Whether that trade is worth it depends on whether you value storage savings or unguessability more.</p>
+
+        <p style="margin-top:1rem;">The through-line: <code>create → store → read</code> is easy; doing it with an <em>unguessable key</em>, the
+        <em>metadata/blob split</em>, <em>immutable-content caching</em>, honest <em>expiry</em>, and real <em>abuse handling</em> is the craft. Get those
+        right and two endpoints become a product used by millions.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">🎫</span><div><strong>From the Club Door to the Locker Wall</strong>
+          — <span>You leave the rate limiter's <strong>nightclub</strong> and arrive at the station's <strong>wall of lockers</strong> with its little
+          <strong>ticket machine</strong>. You put your paper in an empty <strong>locker</strong> (the <strong>content blob</strong> in object storage) and
+          the machine prints a six-character <strong>ticket</strong> (the short <strong>unguessable key</strong>). The only way in is to <em>have the
+          ticket</em> — an auto-increment number would let anyone count their way through every locker.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🗄️</span><div><strong>The Tiny Logbook &amp; the Padlock</strong> —
+          <span>The machine keeps a slim <strong>logbook</strong> (the <strong>metadata database</strong>): one line per ticket — "<em>7h3k2q → locker 4412,
+          clear at midnight, padlocked</em>." The logbook stays thin no matter how fat the lockers get, because it only holds a <strong>pointer</strong>, not
+          the paper. A <strong>padlock</strong> is <strong>access control</strong> (private / password), and because the paper never changes once stored, a
+          <strong>photocopy pinned by the door</strong> (the <strong>CDN / cache</strong>) is always accurate — the reason reads are nearly free.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Door Ahead</strong> — <span>A signpost reads
+          <strong>Day 44: Design a Type-Ahead / Autocomplete Search</strong>. Today you stored a blob and handed back one exact key; next you flip it around —
+          given just the <em>first few letters</em> someone types, return the best <em>completions</em> in milliseconds, which pulls in the trie, caching, and
+          ranking instincts you've been collecting.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Design: Rate Limiter (Day 42)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Design: Pastebin (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Design: Type-Ahead Search (Day 44)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Today builds on…</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">URL Shortener (Day 38)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Object Storage (Day 25)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">CDNs (Day 23)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Caching / Redis (Day 22 &amp; 40)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Estimation (Day 30)</span>
+        </div>
+        <p>Today is the sixth <strong>Classic System Design</strong> of Week 6, and it's the deliberate mirror of <strong>Day 38's URL shortener</strong>:
+        same short-key idea, flipped to be <em>write-heavy</em>, which forces the <strong>object storage (Day 25)</strong> and <strong>CDN (Day 23)</strong>
+        lessons the shortener let you skip. The read path leans on <strong>caching (Day 22 / Redis, Day 40)</strong>, the whole thing sits behind the
+        <strong>rate limiter (Day 42)</strong> you just built to survive abuse, and the "how big, how many, how long a key" math is
+        <strong>estimation (Day 30)</strong>. The metadata-points-at-a-blob split you learned here is the reusable pattern behind half the designs still to
+        come. Next, <strong>Day 44</strong> inverts the lookup: from "give me this exact key" to "complete what I've started typing."</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Use an auto-increment ID as the paste URL — it's simplest."</td><td>Sequential IDs are <strong>enumerable</strong>: anyone can read every
+          paste by counting 1, 2, 3… Use a <strong>random, unguessable key</strong>, which also serves as access control for unlisted pastes.</td></tr>
+          <tr><td>"Store the paste text in a column of the database."</td><td>Big blobs <strong>bloat the DB</strong>, slow backups, and drag through every
+          read. Put content in <strong>object storage</strong> and keep only a tiny metadata row with a <strong>pointer</strong>.</td></tr>
+          <tr><td>"A pastebin is basically a URL shortener."</td><td>Same short-key idea, but it's <strong>write-heavy</strong>: you store a big blob, not a
+          tiny string. That forces object storage + CDN decisions the shortener never needed.</td></tr>
+          <tr><td>"Caching pastes is hard because of invalidation."</td><td>Paste content is <strong>immutable</strong> — it never changes, so a cached copy
+          is never stale. You get to skip invalidation entirely; cache the bytes for a year.</td></tr>
+          <tr><td>"Just set <code>expires_at</code> and you're done with expiry."</td><td>You must actually <strong>reclaim</strong> the space:
+          <strong>lazy-delete</strong> on read <em>and</em> a <strong>background sweeper</strong>, or expired-but-never-read pastes pile up forever.</td></tr>
+          <tr><td>"Nobody will abuse a text-sharing tool."</td><td>Anonymous arbitrary content invites malware, phishing, and leaks. You need
+          <strong>rate limiting</strong>, abuse reporting, and takedowns — hosting others' content is a responsibility.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ You're designing a pastebin. (1) Your first version uses <code>/p/1</code>, <code>/p/2</code>… as URLs —
+          what's the problem and the fix? (2) Reads get slow and the database keeps bloating as people paste big files — what did you get wrong, and how do
+          you fix it? (3) One paste goes viral and gets read thousands of times — how do you serve that cheaply, and why is it easier than caching usually
+          is? (click to reveal)</div>
+          <div class="recall-answer"><strong>(1) Enumerable IDs.</strong> Sequential integers let anyone walk the whole dataset by counting, reading every
+          paste — including private ones. Fix: a <strong>short random unguessable base62 key</strong> generated at create time (check uniqueness on insert).
+          The unguessable key doubles as access control for unlisted pastes. <br><br><strong>(2) You stored the big content blob in the metadata database.</strong>
+          Megabyte blobs bloat the table, slow backups, and drag through every read. Fix: the <strong>metadata/blob split</strong> — put the content in
+          <strong>object storage (S3)</strong> and keep only a tiny metadata row (with a pointer to the blob) in the database, which stays small and fast.
+          <br><br><strong>(3) Cache it — and it's easy because paste content is immutable.</strong> Serve the bytes from a <strong>CDN</strong> (and metadata
+          from Redis) with a long TTL. Since content never changes, a cached copy is never stale, so you skip cache invalidation (the usual hard part)
+          entirely — the only thing to honor is expiry, handled at the metadata layer.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">📋 Pastebin.com</div><p>The original, serving billions of pastes since 2008. Short random keys,
+          public/unlisted/private visibility, and configurable expiry (10 minutes to never) — the canonical feature set this whole lesson reconstructs, built
+          around short-key lookup and heavy read caching.</p></div>
+          <div class="realworld-card"><div class="rw-company">🐙 GitHub Gist</div><p>A pastebin with git underneath: every gist is a tiny repository, so you
+          get <strong>version history</strong>, comments, and forking for free. It shows the metadata/content split taken to an extreme — the content lives in
+          git objects, the metadata (visibility, owner) in GitHub's databases.</p></div>
+          <div class="realworld-card"><div class="rw-company">🔐 PrivateBin</div><p>A privacy-first pastebin that <strong>encrypts content in the browser</strong>
+          before it's ever sent — the server stores only ciphertext and never holds the key, which travels in the URL fragment after <code>#</code> (never
+          sent to the server). The purest expression of "unguessable link = the lock."</p></div>
+          <div class="realworld-card"><div class="rw-company">☁️ S3 + CloudFront</div><p>The textbook production stack: put the immutable blobs in <strong>S3</strong>
+          (cheap, durable object storage), front them with <strong>CloudFront</strong> (a CDN) using long cache headers, and keep metadata in DynamoDB or
+          Postgres. Most of your reads never touch your servers at all.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: In one sentence, what is a pastebin?</div>
+          <div class="fc-a">A: A <strong>write-once, read-many store for text</strong> that maps a <strong>short unguessable key</strong> to an
+          <strong>immutable content blob</strong> — the content lives in <strong>object storage</strong>, a tiny <strong>metadata row</strong> in a database
+          points at it, and reads are served <strong>read-heavy through a cache/CDN</strong>.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is an auto-increment integer a bad choice for a paste's public key?</div>
+          <div class="fc-a">A: It's <strong>enumerable</strong> — anyone can read every paste (including private ones) by counting 1, 2, 3…, and it leaks
+          your total count. Use a <strong>short random base62 key</strong> that's unguessable; it also acts as the access control for unlisted pastes.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is the metadata/blob split and why does it matter?</div>
+          <div class="fc-a">A: Store the <strong>large content blob</strong> in <strong>object storage</strong> (built for cheap big blobs) and keep only a
+          <strong>tiny metadata row</strong> (key, expiry, visibility, and a <em>pointer</em> to the blob) in the <strong>database</strong>. The DB stays
+          small and fast; the blobs ride a CDN. Shoving big text into a DB column bloats it and slows every read and backup.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is a pastebin unusually easy to cache?</div>
+          <div class="fc-a">A: Paste content is <strong>immutable</strong> — once written it never changes — so a cached copy can never be stale. You skip
+          cache <strong>invalidation</strong> (the usual hard part) entirely and can cache the bytes on a CDN for a year. The only subtlety is honoring
+          <strong>expiry</strong>, handled at the metadata layer.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: How do you handle paste expiry properly?</div>
+          <div class="fc-a">A: Store <code>expires_at</code>, then reclaim space two ways: <strong>lazy-delete on read</strong> (expired fetch → 404 + delete)
+          <em>and</em> a <strong>background sweeper</strong> that scans for and deletes expired pastes that are never read again. Setting the timestamp alone
+          doesn't free the storage.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Explain what a pastebin does and the two operations it supports, in a single sentence.</li>
+          <li>Why is a pastebin the "write-heavy sibling" of a URL shortener, and what does that difference force into the design?</li>
+          <li>Walk through the four key-generation strategies and give the one-line verdict on each; which is the usual default and why?</li>
+          <li>Describe the metadata/blob split: what goes where, why, and what connects them.</li>
+          <li>Why is immutable content a gift for caching, and which two cache layers serve a read (metadata vs content)?</li>
+          <li>Give the two mechanisms you need to actually reclaim storage from expired pastes.</li>
+          <li>Name three ways a pastebin gets abused and the defenses, including which earlier lesson protects the write path.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>a pastebin is an unguessable short key mapping to an immutable blob in object storage, with tiny metadata
+          in a database, served read-heavy through a cache.</strong> It's the write-heavy twin of the URL shortener — same short-key idea, but now you're
+          storing a <em>big</em> thing, which forces two moves: put the <strong>content blob in object storage</strong> (never in a database column) with only
+          a tiny <strong>metadata row pointing at it</strong>, and serve the brutally read-heavy traffic from a <strong>CDN and cache</strong> — easy, because
+          immutable content never goes stale. Generate a <strong>random, unguessable key</strong> (auto-increment IDs let anyone enumerate every paste),
+          <strong>expire</strong> old pastes with lazy-delete plus a sweeper, and gate access with unlisted links, private pastes, and passwords. Two
+          endpoints, one reusable pattern — small record points at big blob — that you'll meet again and again. Next, <strong>Day 44 — Design a Type-Ahead
+          Search</strong>: from one exact key to the best completions of a half-typed word.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-42.html">← Day 42: Design a Rate Limiter</a>
+        <a href="day-44.html" class="coming-soon-link">Day 44: Design a Type-Ahead Search →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 43 of 90 — Design a Pastebin</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ══════════════════════════════════════════════════════════════════════
+  //  INTERACTIVE DEMOS — a real base62 key generator with keyspace/collision
+  //  math, and a genuine immutable-content read cache (LRU) that warms up.
+  // ══════════════════════════════════════════════════════════════════════
+
+  // ── mode toggle ──────────────────────────────────────────────────────
+  Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(btn){
+    btn.addEventListener('click', function(){
+      var mode = btn.getAttribute('data-mode');
+      Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      document.getElementById('panel-paste').classList.toggle('active', mode === 'paste');
+      document.getElementById('panel-cache').classList.toggle('active', mode === 'cache');
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 1 — PASTE LAB (real random base62 key + keyspace/collision math)
+  // ══════════════════════════════════════════════════════════════════════
+  var ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  var KLEN = 7, VIS = 'unlisted', EXP = 86400;
+
+  var SAMPLES = {
+    snippet: { label:'code snippet', bytes: null, text:
+'function debounce(fn, ms) {\n  let t;\n  return (...args) => {\n    clearTimeout(t);\n    t = setTimeout(() => fn(...args), ms);\n  };\n}' },
+    log:     { label:'4 MB log file', bytes: 4194304, text:
+'[2026-11-18T09:14:22Z] ERROR db: connection pool exhausted (50/50)\n...(≈ 48,000 more lines of stack traces and log output)...' },
+    note:    { label:'short note', bytes: null, text: 'meeting moved to 3pm — bring the Q3 numbers' }
+  };
+
+  function genKey(len){
+    var s = '';
+    for (var i = 0; i < len; i++) s += ALPHABET.charAt(Math.floor(Math.random() * 62));
+    return s;
+  }
+  function fmtBig(n){
+    if (n >= 1e12) return (n/1e12).toFixed(1) + ' trillion';
+    if (n >= 1e9)  return (n/1e9).toFixed(1) + ' billion';
+    if (n >= 1e6)  return (n/1e6).toFixed(1) + ' million';
+    if (n >= 1e3)  return (n/1e3).toFixed(1) + 'k';
+    return String(Math.round(n));
+  }
+  function fmtBytes(b){
+    if (b >= 1048576) return (b/1048576).toFixed(1) + ' MB';
+    if (b >= 1024)    return (b/1024).toFixed(1) + ' KB';
+    return b + ' B';
+  }
+  function pasteBytes(){
+    var sample = SAMPLES[currentSample];
+    if (sample && sample.bytes) return sample.bytes;           // the "4 MB" sample reports its real size
+    return new Blob([document.getElementById('paste-text').value]).size;
+  }
+
+  var currentSample = 'snippet';
+  var lastKey = null;
+
+  function createPaste(newKeyOnly){
+    var key = genKey(KLEN);
+    lastKey = key;
+    var bytes = pasteBytes();
+    var keyspace = Math.pow(62, KLEN);
+    // birthday bound: expected #keys for ~1% chance of ANY collision ≈ sqrt(2 * M * 0.01)
+    var onePct = Math.sqrt(2 * keyspace * 0.01);
+
+    document.getElementById('pl-key').textContent = key;
+    document.getElementById('pl-space').textContent = fmtBig(keyspace);
+    document.getElementById('pl-collide').textContent = '~' + fmtBig(onePct);
+    document.getElementById('pl-size').textContent = fmtBytes(bytes);
+
+    var blobId = 'blob_' + genKey(12).toLowerCase();
+    var expLabel = EXP === 0 ? 'null  (never)' : (EXP === 600 ? '"+10 min"' : '"+1 day"');
+    var meta =
+      '{\n' +
+      '  "key":        "' + key + '",\n' +
+      '  "blob_id":    "' + blobId + '",   // pointer → object storage\n' +
+      '  "visibility": "' + VIS + '",\n' +
+      '  "size_bytes": ' + bytes + ',\n' +
+      '  "created_at": "2026-11-18T09:14Z",\n' +
+      '  "expires_at": ' + expLabel + '\n' +
+      '}';
+    document.getElementById('pl-meta').textContent = meta;
+
+    var preview = document.getElementById('paste-text').value;
+    if (SAMPLES[currentSample] && SAMPLES[currentSample].bytes) preview = SAMPLES[currentSample].text;
+    if (preview.length > 160) preview = preview.slice(0, 160) + '\n… (' + fmtBytes(bytes) + ' total)';
+    document.getElementById('pl-blob').textContent = blobId + '  (' + fmtBytes(bytes) + ')\n──────────\n' + preview;
+
+    var s = document.getElementById('pl-status');
+    s.className = 'q-status ok';
+    s.innerHTML = (newKeyOnly ? '↻ <b>New key minted</b> for the same paste — ' : '✅ <b>Paste created</b> — ') +
+      'short URL <code>pb.io/' + key + '</code>. The metadata row is <b>' + meta.length +
+      ' bytes</b> of structured data; the blob (<b>' + fmtBytes(bytes) + '</b>) lives in object storage. ' +
+      'Keyspace <b>' + fmtBig(keyspace) + '</b> → expect a clash after only ~<b>' + fmtBig(onePct) +
+      '</b> pastes, so check uniqueness on insert.';
+  }
+
+  document.getElementById('pl-create').addEventListener('click', function(){ createPaste(false); });
+  document.getElementById('pl-again').addEventListener('click', function(){ createPaste(true); });
+
+  Array.prototype.forEach.call(document.querySelectorAll('#paste-presets button'), function(btn){
+    btn.addEventListener('click', function(){
+      currentSample = btn.getAttribute('data-sample');
+      Array.prototype.forEach.call(document.querySelectorAll('#paste-presets button'), function(b){ b.classList.toggle('active', b === btn); });
+      document.getElementById('paste-text').value = SAMPLES[currentSample].text;
+    });
+  });
+
+  function wireNrw(sel, attr, apply){
+    Array.prototype.forEach.call(document.querySelectorAll(sel + ' button'), function(btn){
+      btn.addEventListener('click', function(){
+        apply(btn.getAttribute(attr));
+        Array.prototype.forEach.call(document.querySelectorAll(sel + ' button'), function(b){ b.classList.toggle('active', b === btn); });
+      });
+    });
+  }
+  wireNrw('#len-btns', 'data-len', function(v){ KLEN = parseInt(v,10); createPaste(false); });
+  wireNrw('#vis-btns', 'data-vis', function(v){ VIS = v; });
+  wireNrw('#exp-btns', 'data-exp', function(v){ EXP = parseInt(v,10); });
+
+  createPaste(false);
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 2 — READ CACHE (genuine LRU over immutable-content reads, Zipf)
+  // ══════════════════════════════════════════════════════════════════════
+  var HIT_MS = 3, ORIGIN_MS = 65;
+  var POP = [40, 20, 12, 8, 6, 5, 5, 4];     // popularity % for pastes #1..#8 (Zipf-ish, sums to 100)
+  var CAP = 3, CACHE_ON = 1;
+  var cache = [];            // array of paste indices, most-recent last (LRU)
+  var reads = 0, hits = 0, totalMs = 0, origin = 0;
+  var trail = [];
+
+  function pickPaste(){
+    var r = Math.random() * 100, acc = 0;
+    for (var i = 0; i < POP.length; i++){ acc += POP[i]; if (r <= acc) return i; }
+    return POP.length - 1;
+  }
+  function renderCache(){
+    var g = document.getElementById('cache-grid');
+    g.innerHTML = '';
+    for (var i = 0; i < CAP; i++){
+      var slot = document.createElement('div');
+      var idx = cache[i];
+      if (idx === undefined){ slot.className = 'cache-slot'; slot.innerHTML = '<div class="sk">·</div><div class="shit">empty</div>'; }
+      else { slot.className = 'cache-slot full'; slot.innerHTML = '<div class="sk">#' + (idx+1) + '</div><div class="shit">cached</div>'; }
+      g.appendChild(slot);
+    }
+  }
+  function renderStats(){
+    document.getElementById('rc-reads').textContent = reads;
+    document.getElementById('rc-hitrate').textContent = reads ? Math.round(hits/reads*100) + '%' : '0%';
+    document.getElementById('rc-latency').textContent = reads ? (totalMs/reads).toFixed(1) + ' ms' : '—';
+    document.getElementById('rc-origin').textContent = origin;
+    var tr = document.getElementById('rc-trail');
+    tr.innerHTML = trail.slice(-20).map(function(t){
+      return '<span class="req-flash ' + (t.hit ? 'ok' : 'bad') + '">#' + (t.idx+1) + (t.hit ? ' ⚡hit' : ' S3') + '</span>';
+    }).join('');
+  }
+  function doRead(){
+    var idx = pickPaste();
+    reads++;
+    var hit = false;
+    if (CACHE_ON){
+      var pos = cache.indexOf(idx);
+      if (pos !== -1){                       // HIT — immutable content, always valid
+        hit = true; hits++;
+        cache.splice(pos, 1); cache.push(idx);   // LRU bump
+        totalMs += HIT_MS;
+      } else {                               // MISS — fetch origin, insert, maybe evict
+        origin++;
+        cache.push(idx);
+        if (cache.length > CAP) cache.shift();    // evict least-recently-used
+        totalMs += ORIGIN_MS;
+      }
+    } else {
+      origin++; totalMs += ORIGIN_MS;        // no cache → always origin
+    }
+    trail.push({ idx: idx, hit: hit });
+    return hit;
+  }
+  function updateStatus(batch){
+    var s = document.getElementById('rc-status');
+    var rate = reads ? Math.round(hits/reads*100) : 0;
+    if (!CACHE_ON){
+      s.className = 'q-status warn';
+      s.innerHTML = '🚫 <b>Cache off</b> — every one of ' + reads + ' reads went to origin object storage at ~' + ORIGIN_MS +
+        ' ms. Hit ratio <b>0%</b>, origin fetches <b>' + origin + '</b>. This is what a pastebin would cost without caching.';
+    } else if (rate >= 55){
+      s.className = 'q-status ok';
+      s.innerHTML = '⚡ <b>Cache warm</b> — hit ratio <b>' + rate + '%</b>. The hot pastes now live at the edge, served in ~' + HIT_MS +
+        ' ms, and origin saw only <b>' + origin + '</b> fetches across ' + reads + ' reads. Immutable content = every hit is correct.';
+    } else {
+      s.className = 'q-status info';
+      s.innerHTML = (batch ? '▶▶ ' : '') + 'Reads: <b>' + reads + '</b>, hit ratio <b>' + rate + '%</b>. Keep reading — the cache is learning which pastes are hot and will warm up fast.';
+    }
+  }
+  function resetCache(){
+    cache = []; reads = 0; hits = 0; totalMs = 0; origin = 0; trail = [];
+    renderCache(); renderStats();
+    var s = document.getElementById('rc-status');
+    s.className = 'q-status info';
+    s.innerHTML = 'Reads land on hot pastes most of the time. A warm cache serves them from the edge in ~' + HIT_MS + ' ms instead of ~' + ORIGIN_MS + ' ms from origin.';
+  }
+
+  document.getElementById('rc-one').addEventListener('click', function(){ doRead(); renderCache(); renderStats(); updateStatus(false); });
+  document.getElementById('rc-many').addEventListener('click', function(){ for (var i=0;i<50;i++) doRead(); renderCache(); renderStats(); updateStatus(true); });
+  document.getElementById('rc-reset').addEventListener('click', resetCache);
+  wireNrw('#cap-btns', 'data-cap', function(v){ CAP = parseInt(v,10); resetCache(); });
+  wireNrw('#cache-on-btns', 'data-on', function(v){ CACHE_ON = parseInt(v,10); resetCache(); });
+  resetCache();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  roughjs (Excalidraw-style) diagrams
+  // ══════════════════════════════════════════════════════════════════════
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+  function arrow(rs, svg, x1, y1, x2, y2, col, dashed) {
+    var opts = { stroke:col, strokeWidth:1.8, roughness:0.9 };
+    if (dashed) opts.strokeLineDash = [6,5];
+    svg.appendChild(rs.line(x1, y1, x2, y2, opts));
+    var ang = Math.atan2(y2-y1, x2-x1);
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang - 0.4), y2 - 10*Math.sin(ang - 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang + 0.4), y2 - 10*Math.sin(ang + 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+  }
+
+  // Anchor: locker wall + ticket machine = a pastebin.
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.6,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+
+    T(430, 24, '🎫 A ticket machine + a wall of lockers = a pastebin', '#e2e8f0', '13', '800');
+
+    // writer
+    box(28, 92, 108, 70, '#cbd5e1', '#1e293b');
+    T(82, 120, '✍️ You', '#e2e8f0', '10.5', '800');
+    T(82, 136, 'a page of text', '#94a3b8', '8', '600');
+    T(82, 149, '(the content)', '#94a3b8', '7.6', '600');
+    arrow(rs, svg, 136, 126, 206, 126, '#64748b');
+    T(171, 116, 'paste', '#94a3b8', '7.8', '700');
+
+    // ticket machine + logbook (metadata)
+    box(208, 86, 150, 120, '#a78bfa', '#a78bfa10');
+    T(283, 108, '🖨️ TICKET MACHINE', '#c4b5fd', '9.6', '800');
+    svg.appendChild(rs.rectangle(224, 120, 118, 54, {stroke:'#a78bfa', strokeWidth:1.4, roughness:1, fill:'#a78bfa12', fillStyle:'solid'}));
+    T(283, 136, '🗂️ tiny LOGBOOK', '#c4b5fd', '8', '800');
+    T(283, 150, '7h3k2q → locker 4412', '#cbd5e1', '7.2', '600', true);
+    T(283, 162, 'midnight · 🔒', '#cbd5e1', '7.2', '600', true);
+    T(283, 196, '= METADATA (database)', '#c4b5fd', '8', '700');
+
+    // prints a ticket (the key)
+    arrow(rs, svg, 358, 120, 430, 96, '#38bdf8');
+    box(432, 72, 150, 46, '#38bdf8', '#38bdf810');
+    T(507, 92, '🎫 TICKET: 7h3k2q', '#7dd3fc', '10', '800');
+    T(507, 106, 'short unguessable key', '#cbd5e1', '7.6', '600');
+
+    // lockers wall (blob storage)
+    box(620, 70, 220, 150, '#f59e0b', '#f59e0b0c');
+    T(730, 90, '🗄️ WALL OF LOCKERS', '#fcd34d', '10', '800');
+    [0,1,2].forEach(function(r){ [0,1,2,3].forEach(function(c){
+      var lx = 636 + c*50, ly = 100 + r*36;
+      var isTarget = (r===1 && c===2);
+      svg.appendChild(rs.rectangle(lx, ly, 44, 30, {stroke: isTarget ? '#38bdf8' : '#f59e0b', strokeWidth: isTarget?1.8:1.3, roughness:1, fill: isTarget ? '#38bdf820':'#f59e0b10', fillStyle:'solid'}));
+    });});
+    T(730, 120, '', '#fcd34d','8','700');
+    T(730, 212, '= big CONTENT blobs (object storage)', '#fcd34d', '8', '700');
+    arrow(rs, svg, 507, 118, 710, 150, '#f59e0b', true);
+    T(600, 140, 'store the page', '#fcd34d', '7.4', '700');
+
+    // friend reads with ticket
+    arrow(rs, svg, 283, 206, 283, 246, '#64748b');
+    box(208, 248, 150, 50, '#22c55e', '#22c55e10');
+    T(283, 268, '👀 Friend taps 7h3k2q', '#86efac', '9', '800');
+    T(283, 282, 'logbook → exact locker', '#cbd5e1', '7.6', '600');
+    arrow(rs, svg, 358, 272, 630, 210, '#22c55e');
+    T(500, 250, 'opens that one locker, reads the page', '#86efac', '8', '700');
+
+    // bands
+    svg.appendChild(rs.rectangle(28, 316, 266, 70, { stroke:'#38bdf8', strokeWidth:1.5, roughness:1, fill:'#38bdf808', fillStyle:'solid' }));
+    T(161, 338, '🎫 TICKET = short unguessable key', '#7dd3fc', '9', '800');
+    T(161, 355, 'have the code or you don’t — no', '#cbd5e1', '7.8', '600');
+    T(161, 368, 'counting your way through lockers', '#7dd3fc', '7.8', '700');
+    svg.appendChild(rs.rectangle(300, 316, 266, 70, { stroke:'#a78bfa', strokeWidth:1.5, roughness:1, fill:'#a78bfa08', fillStyle:'solid' }));
+    T(433, 338, '🗂️ LOGBOOK vs 🗄️ LOCKERS', '#c4b5fd', '9', '800');
+    T(433, 355, 'thin logbook (metadata, DB) points', '#cbd5e1', '7.8', '600');
+    T(433, 368, 'at big lockers (blobs, object store)', '#c4b5fd', '7.8', '700');
+    svg.appendChild(rs.rectangle(572, 316, 268, 70, { stroke:'#fbbf24', strokeWidth:1.5, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(706, 338, '🔒 padlock + 🧹 janitor', '#fcd34d', '9', '800');
+    T(706, 355, 'private/password = access control;', '#cbd5e1', '7.8', '600');
+    T(706, 368, 'clear-out-on-a-timer = TTL expiry', '#fcd34d', '7.8', '700');
+
+    // verdict
+    svg.appendChild(rs.rectangle(28, 400, 812, 56, { stroke:'#a78bfa', strokeWidth:1.6, roughness:1, fill:'#a78bfa0a', fillStyle:'solid' }));
+    T(434, 422, 'A wall of big lockers, a thin logbook of ticket-codes pointing at them, a six-character ticket you can text to anyone, a padlock, and a janitor.', '#c4b5fd', '9.2', '800');
+    T(434, 440, 'That picture IS a pastebin. The rest of today is making the wall work for a billion lockers and ten thousand readers a second — cheaply.', '#94a3b8', '8.4', '600');
+  }
+
+  // Architecture: write path fans into two stores; read path comes from cache/CDN.
+  function drawArchDiagram() {
+    var svg = document.getElementById('arch-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.7,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+
+    T(440, 22, 'Two data types, two homes, one cache — writes fan out; reads come back from the edge', '#e2e8f0', '12', '700');
+
+    // WRITE PATH label
+    T(130, 52, '— WRITE PATH (rare) —', '#fca5a5', '9.5', '800');
+    // client write
+    box(40, 70, 118, 64, '#cbd5e1', '#1e293b');
+    T(99, 96, '✍️ Create', '#e2e8f0', '10', '800');
+    T(99, 112, 'POST text', '#94a3b8', '8', '600');
+    T(99, 124, '+ ttl, visibility', '#94a3b8', '7.4', '600');
+    arrow(rs, svg, 158, 102, 222, 102, '#64748b');
+
+    // app (gen key)
+    box(224, 70, 170, 78, '#38bdf8', '#38bdf810');
+    T(309, 92, '🖥️ APP SERVER', '#7dd3fc', '10', '800');
+    T(309, 108, 'generate random key', '#cbd5e1', '8', '600');
+    T(309, 121, 'write blob, then row', '#cbd5e1', '8', '600');
+    T(309, 136, 'return pb.io/{key}', '#7dd3fc', '7.8', '700');
+
+    // fan out to object storage (blob) and DB (metadata)
+    arrow(rs, svg, 340, 148, 470, 196, '#f59e0b');
+    T(430, 168, 'big blob', '#fcd34d', '7.6', '800');
+    box(452, 200, 190, 74, '#f59e0b', '#f59e0b12');
+    T(547, 224, '🗄️ OBJECT STORAGE', '#fcd34d', '10', '800');
+    T(547, 240, 'S3 / GCS — the content', '#cbd5e1', '8', '600');
+    T(547, 254, 'cheap, elastic, huge blobs', '#fcd34d', '7.6', '600');
+    T(547, 267, 'immutable once written', '#fcd34d', '7.4', '700');
+
+    arrow(rs, svg, 300, 148, 270, 196, '#a78bfa');
+    T(236, 170, 'tiny row', '#c4b5fd', '7.6', '800');
+    box(140, 200, 190, 74, '#a78bfa', '#a78bfa12');
+    T(235, 224, '🗂️ METADATA DB', '#c4b5fd', '10', '800');
+    T(235, 240, 'key → blob pointer', '#cbd5e1', '8', '600');
+    T(235, 254, 'owner · expiry · visibility', '#cbd5e1', '7.6', '600');
+    T(235, 267, '~100 bytes/row, indexed', '#c4b5fd', '7.4', '700');
+    // pointer between the two stores
+    arrow(rs, svg, 330, 237, 450, 237, '#64748b', true);
+    T(390, 230, 'pointer', '#94a3b8', '7', '600');
+
+    // READ PATH label
+    T(720, 52, '— READ PATH (constant) —', '#86efac', '9.5', '800');
+    // reader
+    box(760, 70, 96, 64, '#cbd5e1', '#1e293b');
+    T(808, 96, '👀 Read', '#e2e8f0', '10', '800');
+    T(808, 112, 'GET /{key}', '#94a3b8', '7.8', '600');
+    arrow(rs, svg, 758, 110, 700, 134, '#64748b');
+
+    // CDN
+    box(560, 140, 150, 64, '#22c55e', '#22c55e10');
+    T(635, 164, '🌐 CDN / EDGE', '#86efac', '10', '800');
+    T(635, 180, 'caches immutable', '#cbd5e1', '8', '600');
+    T(635, 193, 'bytes, long TTL', '#86efac', '7.6', '700');
+    // CDN serves most reads from edge
+    arrow(rs, svg, 635, 134, 635, 138, '#22c55e');
+    T(715, 124, 'most reads stop here', '#86efac', '7.6', '700');
+    // CDN miss -> object storage
+    arrow(rs, svg, 620, 204, 575, 240, '#22c55e', true);
+    T(560, 224, 'cold miss', '#86efac', '7', '600');
+
+    // Redis metadata cache
+    box(560, 300, 150, 60, '#38bdf8', '#38bdf810');
+    T(635, 322, '⚡ REDIS (metadata)', '#7dd3fc', '9', '800');
+    T(635, 338, 'is it expired? private?', '#cbd5e1', '7.6', '600');
+    T(635, 350, 'where’s the blob?', '#7dd3fc', '7.4', '600');
+    arrow(rs, svg, 635, 204, 635, 298, '#38bdf8', true);
+    arrow(rs, svg, 560, 330, 330, 262, '#38bdf8', true);
+    T(455, 312, 'cold → DB', '#7dd3fc', '7.2', '600');
+
+    // bottom bands
+    svg.appendChild(rs.rectangle(40, 392, 800, 30, { stroke:'#a78bfa', strokeWidth:1.3, roughness:1, fill:'#a78bfa08', fillStyle:'solid' }));
+    T(440, 411, 'THE SPLIT: tiny structured metadata in the DB (indexed, cheap, fast) + the big opaque content blob in object storage, joined by a pointer.', '#c4b5fd', '8.6', '700');
+    svg.appendChild(rs.rectangle(40, 430, 800, 30, { stroke:'#22c55e', strokeWidth:1.3, roughness:1, fill:'#22c55e08', fillStyle:'solid' }));
+    T(440, 449, 'READ-HEAVY + IMMUTABLE: content never changes, so the CDN/Redis can cache it for a long time with zero invalidation — most reads skip the origin.', '#86efac', '8.6', '700');
+    svg.appendChild(rs.rectangle(40, 468, 800, 30, { stroke:'#fbbf24', strokeWidth:1.3, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(440, 487, 'EXPIRY: expires_at on the metadata row, enforced by lazy-delete on read + a background sweeper (the janitor) so storage doesn’t grow forever.', '#fcd34d', '8.6', '700');
+    svg.appendChild(rs.rectangle(40, 506, 800, 30, { stroke:'#38bdf8', strokeWidth:1.3, roughness:1, fill:'#38bdf808', fillStyle:'solid' }));
+    T(440, 525, 'THE KEY: short + random + unguessable — it is both the address of a paste and the access control for an unlisted one. Never auto-increment.', '#7dd3fc', '8.6', '700');
+  }
+
+  // Key generation: four strategies side by side.
+  function drawKeygenDiagram() {
+    var svg = document.getElementById('keygen-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.6,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+
+    T(430, 22, 'Four ways to make a key — same job (a short address), very different safety', '#e2e8f0', '12', '800');
+
+    // Auto-increment (bad)
+    box(24, 44, 196, 176, '#fb7185', '#fb71850a');
+    T(122, 66, '🔢 AUTO-INCREMENT', '#fca5a5', '9.6', '800');
+    T(122, 86, '1, 2, 3, 4, 5 …', '#fca5a5', '10', '800', true);
+    svg.appendChild(rs.line(60, 98, 184, 98, {stroke:'#fb7185', strokeWidth:1.2, roughness:1}));
+    T(122, 120, 'the DB’s sequential id', '#cbd5e1', '8', '600');
+    T(122, 133, 'as the public URL.', '#cbd5e1', '8', '600');
+    T(122, 156, '❌ ENUMERABLE —', '#fca5a5', '8.4', '800');
+    T(122, 170, 'count up, read every', '#fca5a5', '7.8', '700');
+    T(122, 182, 'paste you have.', '#fca5a5', '7.8', '700');
+    T(122, 202, 'leaks your total count too', '#94a3b8', '7.4', '600');
+
+    // Random base62 (default)
+    box(236, 44, 196, 176, '#38bdf8', '#38bdf80a');
+    T(334, 66, '🎲 RANDOM base62', '#7dd3fc', '9.6', '800');
+    T(334, 86, '7h3k2q', '#7dd3fc', '11', '800', true);
+    svg.appendChild(rs.line(272, 98, 396, 98, {stroke:'#38bdf8', strokeWidth:1.2, roughness:1}));
+    T(334, 120, 'N random chars from', '#cbd5e1', '8', '600');
+    T(334, 133, '[a-zA-Z0-9] at create.', '#cbd5e1', '8', '600');
+    T(334, 156, '✅ THE DEFAULT —', '#86efac', '8.4', '800');
+    T(334, 170, 'unguessable + short.', '#86efac', '7.8', '700');
+    T(334, 184, 'check uniqueness on', '#cbd5e1', '7.6', '600');
+    T(334, 196, 'insert (rare clash → retry)', '#7dd3fc', '7.6', '700');
+
+    // Hash of content
+    box(448, 44, 196, 176, '#22c55e', '#22c55e0a');
+    T(546, 66, '#️⃣ HASH of content', '#86efac', '9.6', '800');
+    T(546, 86, 'sha(text)[:7]', '#86efac', '9.5', '800', true);
+    svg.appendChild(rs.line(484, 98, 608, 98, {stroke:'#22c55e', strokeWidth:1.2, roughness:1}));
+    T(546, 120, 'key derived from the', '#cbd5e1', '8', '600');
+    T(546, 133, 'content itself.', '#cbd5e1', '8', '600');
+    T(546, 156, '✅ auto-DEDUP —', '#86efac', '8.4', '800');
+    T(546, 170, 'same text → one blob.', '#86efac', '7.8', '700');
+    T(546, 184, '➖ deterministic: can leak', '#fca5a5', '7.6', '600');
+    T(546, 196, 'that a paste exists', '#fca5a5', '7.6', '600');
+
+    // Pre-generated KGS
+    box(660, 44, 176, 176, '#a78bfa', '#a78bfa0a');
+    T(748, 66, '🏭 PRE-GEN (KGS)', '#c4b5fd', '9.6', '800');
+    T(748, 86, 'pool → b9Xk2', '#c4b5fd', '9.5', '800', true);
+    svg.appendChild(rs.line(684, 98, 812, 98, {stroke:'#a78bfa', strokeWidth:1.2, roughness:1}));
+    T(748, 120, 'a service makes unique', '#cbd5e1', '8', '600');
+    T(748, 133, 'keys offline, hands out.', '#cbd5e1', '8', '600');
+    T(748, 156, '✅ at HUGE scale —', '#86efac', '8.4', '800');
+    T(748, 170, 'no collision check on', '#c4b5fd', '7.8', '700');
+    T(748, 184, 'the hot path (already', '#c4b5fd', '7.8', '700');
+    T(748, 196, 'known-unique). Day 38.', '#c4b5fd', '7.6', '700');
+
+    // verdict band
+    svg.appendChild(rs.rectangle(24, 240, 812, 54, { stroke:'#38bdf8', strokeWidth:1.6, roughness:1, fill:'#38bdf80a', fillStyle:'solid' }));
+    T(430, 262, 'For almost everyone a RANDOM base62 key with a uniqueness-check-on-insert is right: unguessable, short, and simple. Hash-keys when you', '#7dd3fc', '9', '800');
+    T(430, 280, 'want dedup; a Key Generation Service when you’re so big the insert-time collision check hurts. Never ship auto-increment as the public key.', '#7dd3fc', '8.4', '700');
+
+    // enumeration note
+    svg.appendChild(rs.rectangle(24, 302, 812, 30, { stroke:'#fb7185', strokeWidth:1.3, roughness:1, fill:'#fb718508', fillStyle:'solid' }));
+    T(430, 321, 'The unguessable key is also the access control for an "unlisted" paste — you cannot read what you cannot guess. A 4-char key is brute-forceable; use 7+.', '#fca5a5', '8.6', '700');
+
+    // tie back to keyspace
+    svg.appendChild(rs.rectangle(24, 340, 812, 30, { stroke:'#86efac', strokeWidth:1.3, roughness:1, fill:'#22c55e08', fillStyle:'solid' }));
+    T(430, 359, 'Keyspace = 62^len: 6 chars ≈ 57 billion, 7 chars ≈ 3.5 trillion. Pick a length whose keyspace dwarfs how many pastes you’ll ever store.', '#86efac', '8.6', '700');
+  }
+
+  function drawAll(){ drawAnchorDiagram(); drawArchDiagram(); drawKeygenDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
