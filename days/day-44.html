@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 44: Design a Type-Ahead Search | System Design Mastery</title>
+  <meta name="description" content="The little dropdown that finishes your sentence as you type — Google's search box, an e-commerce search bar, an @-mention menu. We design it from scratch: why you can't just run a database LIKE query on every keystroke (the QPS meltdown), the data structure that makes prefix lookup fast — the trie — and the one move that makes it instant at scale: precomputing the top-k completions at every node so a query is a walk plus a read, not a scan plus a sort. Then the part nobody expects: rankings change constantly, so you decouple serving from building — log queries, aggregate popularity offline, rebuild the trie periodically and hot-swap it, accepting eventually-consistent suggestions. Plus client debouncing, sharding the trie by prefix, edge caching, fuzzy matching for typos, and personalization. Taught with a trie-of-letters memory anchor, a live in-memory trie you can type into (watch it beat a naive scan), a real debounce + prefix-cache simulator that shows how few backend requests you actually need, three Excalidraw-style diagrams, the real tradeoffs, and how Google, Elasticsearch, and Redis do it in production." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; vertical-align:top; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; gap:1rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .flow-step > span.n { font-weight:800; color: var(--accent-light); min-width:1.6rem; font-family:'JetBrains Mono',monospace; }
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    .code-panel { background:#0b1120; border:1px solid var(--border); border-radius: var(--radius); padding:1rem 1.25rem; margin-top:.5rem; font-family:'JetBrains Mono',monospace; font-size:.82rem; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .code-panel .k { color:#c084fc; } .code-panel .f { color:#7dd3fc; } .code-panel .s { color:#86efac; } .code-panel .n { color:#fcd34d; } .code-panel .muted { color:#64748b; } .code-panel .b { color:#fca5a5; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .sim-panel { display:none; } .sim-panel.active { display:block; }
+    .q-status { text-align:center; font-weight:700; font-size:.88rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.75rem 0 1rem; line-height:1.6; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+    .q-status.info { background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .sim-controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 1rem; }
+    .stat-row { display:flex; gap:.6rem; flex-wrap:wrap; margin:.9rem 0; }
+    .stat-chip { flex:1; min-width:120px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:.6rem .8rem; text-align:center; }
+    .stat-chip .sv { font-size:1.2rem; font-weight:800; color:var(--text-primary); font-family:'JetBrains Mono',monospace; }
+    .stat-chip .sv.good { color:#86efac; } .stat-chip .sv.warn { color:#fbbf24; } .stat-chip .sv.blue { color:#7dd3fc; } .stat-chip .sv.bad { color:#fca5a5; } .stat-chip .sv.violet { color:#c4b5fd; }
+    .stat-chip .sl { font-size:.65rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin-top:.2rem; }
+    .rule-box { background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius); padding:.9rem 1.1rem; margin:1rem 0; font-size:.84rem; }
+    .rule-box code { font-family:'JetBrains Mono',monospace; color:#7dd3fc; }
+    .rule-box .cc { color:#fca5a5; font-weight:700; } .rule-box .hb { color:#86efac; font-weight:700; }
+    /* ── type-ahead widgets ──────────────────────────────────── */
+    .nrw-btns { display:flex; gap:.4rem; flex-wrap:wrap; margin:.35rem 0; align-items:center; }
+    .nrw-btns button { border:1.5px solid var(--border); background:var(--bg-card); color:var(--text-secondary); font-weight:800; font-family:'JetBrains Mono',monospace; font-size:.9rem; min-width:40px; padding:.4rem .7rem; border-radius:8px; cursor:pointer; transition:all .12s; }
+    .nrw-btns button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .kv-field-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; margin-top:.6rem; }
+    /* search box + dropdown */
+    .search-wrap { position:relative; margin:.6rem 0; }
+    .search-box { width:100%; background:#0b1120; border:1.5px solid #38bdf8; border-radius:12px; color:#e2e8f0; font-family:'JetBrains Mono',monospace; font-size:1.05rem; padding:.75rem 1rem .75rem 2.3rem; }
+    .search-box:focus { outline:none; border-color:var(--accent); }
+    .search-ico { position:absolute; left:.8rem; top:50%; transform:translateY(-50%); color:#64748b; font-size:1rem; }
+    .suggest-list { margin:.5rem 0; border:1.5px solid var(--border); border-radius:12px; overflow:hidden; background:var(--bg-card); }
+    .suggest-row { display:flex; align-items:center; gap:.6rem; padding:.5rem .8rem; border-bottom:1px solid var(--border); font-family:'JetBrains Mono',monospace; font-size:.86rem; color:#cbd5e1; }
+    .suggest-row:last-child { border-bottom:none; }
+    .suggest-row .rank { color:#64748b; font-size:.72rem; min-width:1.2rem; }
+    .suggest-row .pfx { color:#7dd3fc; font-weight:800; }
+    .suggest-row .bar-wrap { flex:1; height:8px; background:#0b1120; border-radius:5px; overflow:hidden; border:1px solid var(--border); }
+    .suggest-row .bar { height:100%; background:linear-gradient(90deg,#38bdf8,#22c55e); }
+    .suggest-row .wt { color:#94a3b8; font-size:.72rem; min-width:3rem; text-align:right; }
+    .suggest-empty { padding:.7rem .8rem; color:#64748b; font-family:'JetBrains Mono',monospace; font-size:.82rem; }
+    .path-chips { display:flex; gap:.3rem; flex-wrap:wrap; align-items:center; margin:.5rem 0; }
+    .path-chip { font-family:'JetBrains Mono',monospace; font-size:.8rem; font-weight:800; padding:.25rem .55rem; border-radius:7px; background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .path-chip.root { background:#0b1120; color:#64748b; border-color:var(--border); }
+    .path-arrow { color:#64748b; font-weight:700; }
+    /* debounce trail */
+    .key-stream { display:flex; gap:.3rem; flex-wrap:wrap; align-items:center; min-height:34px; margin:.5rem 0; }
+    .key-cap { font-family:'JetBrains Mono',monospace; font-weight:800; font-size:.82rem; min-width:26px; text-align:center; padding:.2rem .35rem; border-radius:6px; border:1.5px solid var(--border); background:#0b1120; color:#cbd5e1; }
+    .req-trail { min-height:40px; margin:.4rem 0; }
+    .req-flash { display:inline-block; font-family:'JetBrains Mono',monospace; font-size:.68rem; font-weight:700; padding:.2rem .5rem; border-radius:6px; margin:.15rem; }
+    .req-flash.sent { background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .req-flash.hit { background:#22c55e18; color:#86efac; border:1px solid #22c55e55; }
+    .req-flash.skip { background:#f59e0b14; color:#fbbf24; border:1px dashed #f59e0b55; }
+    .diagram-caption { font-size:.76rem; color:var(--text-muted); text-align:center; margin-top:.3rem; }
+    .http-chip { display:inline-block; font-family:'JetBrains Mono',monospace; font-size:.78rem; font-weight:700; padding:.15rem .5rem; border-radius:6px; background:#0b1120; border:1px solid var(--border); color:#7dd3fc; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phases">Phase 2: Intermediate Systems</a><span class="breadcrumb-sep">/</span>
+      <span>Day 44</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 44 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📗 Phase 2 — Intermediate Systems</span>
+      <span class="meta-pill">🗂 Week 6 — Classic System Designs</span>
+    </div>
+    <h1>Design a Type-Ahead Search<br><span style="color:var(--accent)">The Box That Finishes Your Sentence</span></h1>
+    <p class="lead">
+      You start typing <code>cho</code> into a search box and a little dropdown instantly offers <em>chocolate cake</em>, <em>chocolate chip cookies</em>,
+      <em>chicken curry</em> — ranked by what people actually search. It feels like magic, and it fires on <strong>every single keystroke</strong>, for
+      millions of people at once, in under a tenth of a second. Yesterday's pastebin handed back <em>one exact</em> paste for an exact key; today we flip the
+      lookup around: given just the <strong>first few letters</strong>, return the <strong>best completions</strong>. The naïve answer — run a database query
+      on every keystroke — melts under its own traffic, so you'll meet the data structure built for exactly this, the <strong>trie</strong>, and the single
+      move that makes it instant at scale: <strong>precomputing the top completions at every node</strong>. Then the twist nobody expects — rankings change
+      all the time, so you'll <strong>decouple serving from building</strong>, aggregate popularity offline, and hot-swap a fresh trie, accepting that
+      suggestions can lag by an hour. You'll type into a <strong>live in-memory trie</strong> and watch it crush a naïve scan, then run a real
+      <strong>debounce + prefix-cache</strong> simulator and see how few backend requests you truly need.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#why">Why This Problem Exists</a>
+        <a href="#design">The Design, Step by Step</a>
+        <a href="#core">The Heart: The Trie + Top-K</a>
+        <a href="#scale">Serving, Updating & Scaling</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">🌳 🔤 🏆 ⚡</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Picture a <strong>tree made of letters</strong>, growing sideways. At the very base is an empty trunk. From it sprout branches, one per
+            letter: a branch for <code>a</code>, a branch for <code>b</code>, a branch for <code>c</code>. Walk out along the <code>c</code> branch and it
+            forks again — <code>c→a</code>, <code>c→h</code>, <code>c→o</code>. Keep walking the <code>c→h</code> fork and you're spelling out words one
+            letter at a time: <code>c-h-o-c-o-l-a-t-e</code>. <strong>Every word your users have ever searched is a path from the trunk out to a leaf.</strong>
+            To find all the words that start with <code>ch</code>, you don't search the whole forest — you just <em>walk two steps</em>, to the
+            <code>c→h</code> fork, and everything beyond it begins with <code>ch</code>. That tree-of-letters is a <strong>trie</strong>.</p>
+            <p>Now add the trick that makes it <em>fast</em>. Nailed to <strong>every fork</strong> is a little <strong>leaderboard sign</strong>: the top
+            handful of complete words down that branch, ranked by how often people search them. Stand at the <code>c→h</code> fork and the sign already reads
+            <em>"1. chocolate cake · 2. chocolate chip cookies · 3. chicken curry."</em> You didn't go count every leaf out past the fork — someone wrote the
+            leaderboard <strong>ahead of time</strong>, and you just <em>read it</em>. That's the whole secret of type-ahead: a query isn't a search, it's a
+            <strong>short walk to a fork plus a glance at a pre-written sign</strong>.</p>
+            <p>Two last touches complete the picture. The leaderboards don't write themselves — a <strong>nighttime groundskeeper</strong> tallies up the day's
+            searches and <em>repaints every sign</em> so the rankings stay current (that's the offline job that rebuilds the trie). And because a sign is only
+            repainted now and then, a brand-new trending word might take a little while to climb onto it — nobody minds; the signs are allowed to be
+            <em>slightly</em> out of date. Hold the image: a <strong>sideways tree of letters</strong> (the trie), a <strong>leaderboard nailed to every
+            fork</strong> (precomputed top-k completions), a reader who just <strong>walks a few steps and reads the sign</strong> (an O(prefix-length) query),
+            and a <strong>groundskeeper repainting the signs each night</strong> (the offline rebuild). That picture <em>is</em> a type-ahead search — and the
+            rest of today is making that tree work for millions of words and a flood of keystrokes a second.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="880" height="470" viewBox="0 0 880 470"></svg>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Lena</span> was building the search box for a recipe site, and she wanted it to feel alive — suggestions appearing
+            the instant you typed. The first version was the obvious one. On every keystroke, the frontend hit the backend, which ran a database query:
+            <code>SELECT title FROM recipes WHERE title LIKE 'cho%' ORDER BY searches DESC LIMIT 10</code>. With a few thousand recipes it was flawless —
+            you'd type <code>c</code>, <code>ch</code>, <code>cho</code> and the dropdown kept pace. She shipped it, proud.
+          </p>
+          <p>
+            Then the site got popular, and the database started groaning. Lena did the arithmetic and went pale. A single person typing the word
+            <em>chocolate</em> fired <strong>nine</strong> queries — one per letter. With tens of thousands of people searching at once, each hammering out a
+            word letter by letter, the box was generating an <em>order of magnitude</em> more database queries than every other feature of the site combined.
+            The <code>LIKE 'cho%'</code> query could at least use an index (a B-tree range scan on the title column, from Day&nbsp;11), but it didn't matter —
+            the problem wasn't any one query being slow, it was the sheer <strong>number</strong> of them. The search box was a QPS firehose pointed straight
+            at her database.
+          </p>
+          <p>
+            She needed prefix lookups that never touched the database. A colleague drew her a <strong>trie</strong> — a tree of letters where each path spells
+            a word — and loaded every recipe title into it, in memory. Now <code>cho</code> was just three pointer-hops down the tree; the completions hung
+            right there as the sub-tree below the <code>cho</code> node. No database, no range scan, pure RAM. It was fast — until someone typed a single
+            letter like <code>c</code>, and the server had to walk <em>thousands</em> of descendants under that node, collect them all, and sort them by
+            popularity, on every keystroke. The trie had fixed the database problem and handed her a <strong>CPU</strong> problem.
+          </p>
+          <p>
+            The fix was the move that turns a clever data structure into a real system: <strong>precompute the answer</strong>. Instead of collecting-and-sorting
+            on every query, Lena walked the trie <em>once</em>, offline, and at <strong>every node</strong> stored the <strong>top-k completions</strong> for
+            that prefix, already ranked. Now a query was devastatingly simple: walk to the prefix node (a handful of hops) and <em>read</em> its cached list —
+            no scan, no sort, O(length of what you typed). The last question was how the rankings stayed fresh, since what's popular changes hourly. She
+            refused to rebuild the trie on every search. Instead she <strong>decoupled</strong>: the live service only ever <em>served</em> from the trie,
+            while a separate offline job collected the query logs, aggregated popularity, rebuilt a fresh trie, and <strong>hot-swapped</strong> it in every so
+            often. Suggestions could lag reality by an hour — and nobody cared. Without meaning to, Lena had rebuilt the architecture behind Google's search
+            box and Elasticsearch's completion suggester: a trie with precomputed top-k, served from memory, rebuilt offline.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">Type-ahead search answers one question, billions of times a day: <strong>given a prefix, return the top-k completions,
+          ranked by popularity, in under ~100&nbsp;ms</strong> — and it fires on <em>every keystroke</em>, so the real enemy is <strong>request volume</strong>,
+          not any single slow query. Three decisions carry the design. <strong>(1) The data structure:</strong> a <strong>trie</strong> (prefix tree) held
+          <em>in memory</em> — a word is a path of letters, so finding everything that starts with a prefix is an <strong>O(prefix-length)</strong> walk, not a
+          database scan. <strong>(2) The precompute:</strong> store the <strong>top-k completions at every node</strong>, already ranked, so a query is a
+          <em>walk plus a read</em> — never a collect-and-sort of a hot prefix's millions of descendants. <strong>(3) The update path:</strong> popularity
+          changes constantly, so <strong>decouple serving from building</strong> — the live service only serves from the trie, while an offline job aggregates
+          query logs, rebuilds the trie, and <strong>hot-swaps</strong> it periodically. Suggestions are <em>eventually consistent</em>, and an hour of lag is
+          fine. Everything else is leverage on request volume: <strong>debounce</strong> on the client (don't fire mid-burst), <strong>cache</strong> popular
+          prefixes at the edge, and <strong>shard</strong> the trie by prefix to scale out. One-line test: <em>type-ahead is a prefix walk on an in-memory trie
+          whose every node caches its top-k, served read-heavy and rebuilt offline.</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Type Into a Real Trie, then Count the Keystrokes</h2>
+        <div class="sim-box">
+          <p>Two real, working demos. In <strong>Trie Autocomplete</strong> you type into an actual in-memory trie built from popularity-weighted search
+          terms — watch it walk your prefix, read the precomputed <strong>top-k</strong> off that node, and show you how many operations that took versus a
+          <strong>naïve scan</strong> of every term. In <strong>Keystroke Cost</strong> you type a word and watch how many requests actually reach the backend
+          under three strategies — fire-on-every-key, <strong>debounce</strong>, and debounce&nbsp;+&nbsp;<strong>prefix-cache</strong> — so you can see why the
+          firehose is tameable.</p>
+
+          <div class="mode-toggle" id="mode-toggle">
+            <button data-mode="trie" class="active">🌳 Trie Autocomplete (walk + top-k)</button>
+            <button data-mode="keys">⌨️ Keystroke Cost (debounce)</button>
+          </div>
+
+          <!-- TRIE PANEL -->
+          <div class="sim-panel active" id="panel-trie">
+            <p style="font-size:.85rem;">Start typing a prefix (try <code>ch</code>, <code>pi</code>, <code>ba</code>, or <code>a</code>). The widget walks the
+            trie letter by letter, lights up the <strong>node path</strong> it traversed, and shows the node's <strong>precomputed top-5</strong> completions
+            ranked by search popularity. The counter compares the <strong>trie</strong> cost (walk + read) against a <strong>naïve scan</strong> of all terms.</p>
+
+            <div class="search-wrap">
+              <span class="search-ico">🔍</span>
+              <input class="search-box" id="trie-input" type="text" autocomplete="off" spellcheck="false" placeholder="start typing… e.g. cho" value="cho" />
+            </div>
+
+            <div class="kv-field-label">Node path walked (one hop per letter)</div>
+            <div class="path-chips" id="trie-path"></div>
+
+            <div class="suggest-list" id="trie-suggest"></div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv blue" id="t-triops">—</div><div class="sl">trie cost (walk + read)</div></div>
+              <div class="stat-chip"><div class="sv bad" id="t-naiveops">—</div><div class="sl">naïve scan cost (all terms)</div></div>
+              <div class="stat-chip"><div class="sv good" id="t-terms">—</div><div class="sl">terms in the trie</div></div>
+            </div>
+            <div class="q-status info" id="t-status">Type a prefix. The trie answers in steps equal to the letters you typed — the dataset could be a million words and it wouldn't get slower.</div>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem;">The trie cost is just <code>prefix length + 1</code> — a few pointer hops to
+            reach the node, then one read of its cached list — <em>no matter how many terms exist</em>. The naïve approach re-examines <em>every</em> term on
+            every keystroke. That gap is the whole reason type-ahead uses a trie with precomputed top-k instead of a <code>LIKE 'prefix%'</code> query.</p>
+          </div>
+
+          <!-- KEYSTROKE PANEL -->
+          <div class="sim-panel" id="panel-keys">
+            <p style="font-size:.85rem;">Pick a word and "type" it. Each keystroke <em>could</em> fire a backend request — but it doesn't have to.
+            <strong>Debounce</strong> waits for a pause before firing, so a word typed in one burst becomes a single request. A <strong>prefix cache</strong>
+            then serves any prefix it has already seen for free. Use <strong>Auto-type</strong> to type fast (faster than the debounce window) and watch most
+            requests vanish.</p>
+
+            <div class="kv-field-label">Word to type</div>
+            <div class="nrw-btns" id="word-btns">
+              <button data-word="chocolate" class="active">chocolate</button>
+              <button data-word="pizza dough">pizza&nbsp;dough</button>
+              <button data-word="pasta">pasta</button>
+            </div>
+            <div class="kv-field-label">Strategy</div>
+            <div class="nrw-btns" id="strat-btns">
+              <button data-strat="none">🚨 Fire every keystroke</button>
+              <button data-strat="debounce" class="active">⏲️ Debounce 250&nbsp;ms</button>
+              <button data-strat="cache">⏲️➕🗃️ Debounce + prefix cache</button>
+            </div>
+
+            <div class="kv-field-label">What you've typed so far</div>
+            <div class="key-stream" id="key-stream"></div>
+
+            <div class="sim-controls">
+              <button class="btn btn-primary btn-sm" id="k-type">⌨️ Type next letter</button>
+              <button class="btn btn-outline btn-sm" id="k-auto">▶▶ Auto-type (fast)</button>
+              <button class="btn btn-outline btn-sm" id="k-reset">↺ Reset</button>
+            </div>
+            <div class="q-status info" id="k-status">Type the word a letter at a time, or auto-type it fast. Watch how many of those keystrokes actually become backend requests.</div>
+            <div class="req-trail" id="k-trail"></div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv" id="k-keys">0</div><div class="sl">keystrokes</div></div>
+              <div class="stat-chip"><div class="sv blue" id="k-sent">0</div><div class="sl">backend requests</div></div>
+              <div class="stat-chip"><div class="sv good" id="k-saved">0%</div><div class="sl">requests saved</div></div>
+              <div class="stat-chip"><div class="sv violet" id="k-hits">0</div><div class="sl">cache hits</div></div>
+            </div>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem;">Firing on every keystroke sends one request <em>per letter</em> — the QPS
+            firehose. Debounce collapses a fast burst of typing into a single request at the pause, cutting most of the load for free. Adding a prefix cache
+            makes repeated prefixes (someone else typing <code>cho</code>, or you backspacing and retyping) cost nothing at all. Same suggestions, a fraction of
+            the traffic.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="why">
+        <h2>Why This Problem Exists</h2>
+        <p>Humans are slow, imprecise typists, and they don't know exactly what they want to type until they see it. Type-ahead — also called
+        <strong>autocomplete</strong>, <strong>typeahead</strong>, or <strong>search suggestions</strong> — bridges that gap: it <em>reads your mind a few
+        letters at a time</em>, surfacing the most likely completions so you can pick one instead of finishing the word. It reduces typing, fixes spelling,
+        guides people toward queries that actually return results, and makes a product feel fast and intelligent. The search box on Google, the product bar on
+        Amazon, the <code>@</code>-mention menu in Slack, the destination field in a maps app — they're all the same feature.</p>
+        <p>It looks trivial — "just find words that start with what they typed" — and the naïve version really is a one-liner: a database
+        <code>LIKE 'prefix%'</code> query. The reason type-ahead is a genuine system-design problem is the brutal combination of three constraints that collide.
+        <strong>It fires on every keystroke</strong>, so one user typing one word is many requests, and the whole system sees <em>keystrokes per second</em>,
+        not searches per second — a volume an order of magnitude beyond normal search. <strong>It must feel instant</strong> — below ~100&nbsp;ms, or the
+        suggestions arrive after you've already moved on, which is useless. And <strong>it must be ranked</strong> — not any ten matches, but the <em>best</em>
+        ten, by popularity (and sometimes personalization), because a dropdown only shows a handful. Fast <em>and</em> ranked <em>and</em> at keystroke volume
+        is what rules out the database query and forces the trie-with-precomputed-top-k design.</p>
+
+        <div class="code-label">The naïve version vs. the shape we're building toward</div>
+        <div class="code-panel"><span class="muted"># ❌ the naïve version — one DB query per keystroke</span>
+<span class="k">def</span> <span class="f">suggest</span>(prefix):                       <span class="muted"># called on EVERY keystroke, by everyone, at once</span>
+    <span class="k">return</span> db.<span class="f">query</span>(
+      <span class="s">"SELECT title FROM items WHERE title LIKE ? ORDER BY searches DESC LIMIT 10"</span>,
+      prefix + <span class="s">"%"</span>)                      <span class="b"># range-scans + sorts, on a firehose of requests → DB melts</span>
+
+<span class="muted"># ✅ the shape we want — a walk + a read, from memory, no DB on the hot path</span>
+<span class="k">def</span> <span class="f">suggest</span>(prefix):
+    node = trie.<span class="f">walk</span>(prefix)             <span class="muted"># O(len(prefix)) pointer hops, in RAM</span>
+    <span class="k">if</span> node <span class="k">is</span> <span class="k">None</span>: <span class="k">return</span> []          <span class="muted"># no words start with this prefix</span>
+    <span class="k">return</span> node.top_k                    <span class="s"># PRECOMPUTED, already ranked — just read it</span></div>
+      </section>
+
+      <section id="design">
+        <h2>The Design, Step by Step</h2>
+        <p>Same discipline as the last six designs: scope it, size it, sketch the interface, then draw the boxes. The thing to hold onto today is that there
+        are really <em>two systems</em> glued together — a fast <strong>online</strong> path that serves suggestions from memory, and a slow
+        <strong>offline</strong> path that builds the thing it serves from. Almost every decision is about keeping those two apart.</p>
+
+        <h3>Step 1 — Scope the requirements</h3>
+        <div class="pillar-grid">
+          <div class="pillar-card conf"><h4>✅ Functional</h4>
+            <p>Given a <strong>prefix</strong>, return the <strong>top-k completions</strong> (say 5–10).</p>
+            <p>Completions ranked by <strong>popularity</strong> (what people actually search).</p>
+            <p>Suggestions update over time as search trends shift.</p></div>
+          <div class="pillar-card avail"><h4>🎯 Non-functional</h4>
+            <p><strong>Fast</strong> — well under ~100&nbsp;ms, or it's useless.</p>
+            <p><strong>Huge read volume</strong> — fires per keystroke; built for QPS.</p>
+            <p><strong>Highly available</strong> — the box can't hang the whole page.</p></div>
+          <div class="pillar-card amber"><h4>🤔 Clarify early</h4>
+            <p><strong>Prefix only</strong>, or match words in the middle too? (changes everything.)</p>
+            <p><strong>How fresh</strong> must rankings be? (seconds, or is an hour fine?)</p>
+            <p><strong>Personalized</strong> or one global ranking? (adds a whole dimension.)</p></div>
+        </div>
+
+        <h3>Step 2 — Size it (back-of-the-envelope, Day 30)</h3>
+        <p>Say a big search box: <strong>5&nbsp;billion searches/day</strong>, average query <strong>~20 characters</strong>, and suppose the client debounces
+        so you get roughly <strong>one request per ~4 characters</strong> typed rather than one per keystroke.</p>
+        <div class="code-panel"><span class="muted"># request volume — this is the whole reason the design is hard</span>
+searches/day      = 5e9
+reqs/search       ≈ 20 chars / 4 per request = <span class="n">~5 requests</span>  <span class="muted"># debounced; raw per-keystroke ≈ 20</span>
+suggest reqs/day  = 5e9 × 5 = <span class="s">2.5e10 (25 billion/day)</span>
+avg QPS           = 2.5e10 / 86,400 ≈ <span class="s">~290,000 / s</span>   <span class="muted"># peak several× → ~1M/s. All READS.</span>
+
+<span class="muted"># storage — the trie itself is small enough to hold in memory</span>
+distinct queries  ≈ 1e8 (100M) worth keeping   <span class="muted"># the long tail is dropped, not stored</span>
+trie size         ≈ a few GB in RAM            <span class="muted"># fits on one big box; shard by prefix past that</span>
+per node          : children map + a cached top-k list (~k×(word+score))</div>
+        <p style="margin-top:1rem;">The sizing screams the shape of the system. It's <strong>all reads</strong>, at a volume (hundreds of thousands to a
+        million QPS) that <em>no database survives</em> if each request is a query — so the serving path must be an <strong>in-memory</strong> lookup,
+        <strong>replicated</strong> many times for QPS and <strong>sharded</strong> when the trie outgrows one box. The data itself is modest and changes
+        slowly, so <em>building</em> it is a background job, not something on the request path. Reads enormous, writes rare and offline: that's the architecture
+        before you've drawn a box.</p>
+
+        <h3>Step 3 — The core interface</h3>
+        <div class="code-panel"><span class="k">GET</span> /suggest?q=<span class="s">cho</span>&limit=<span class="n">10</span>     → [ <span class="s">"chocolate cake"</span>, <span class="s">"chocolate chip cookies"</span>, <span class="s">"chicken curry"</span>, … ]
+   <span class="muted"># q    = the prefix typed so far; limit = how many completions to return</span>
+   <span class="muted"># served entirely from an in-memory trie — never touches a database</span>
+   <span class="muted"># cacheable at the edge (a CDN / Day 4): a given prefix returns the same list for everyone</span></div>
+        <p style="margin-top:1rem;">One read endpoint — that's the entire online surface. There is no "write" endpoint a user calls: the <em>writes</em> to this
+        system are the <strong>search logs</strong> flowing in the background, consumed by the offline builder. That split between a trivial read API and an
+        invisible write pipeline is the heart of the design.</p>
+
+        <h3>Step 4 — Draw the architecture (two lanes)</h3>
+        <p>The top lane is the <strong>online serving path</strong>: a keystroke, thinned by debouncing and often answered from an edge cache, reaching an
+        in-memory trie. The bottom lane is the <strong>offline building path</strong>: search logs aggregated into popularity counts, used to rebuild the trie
+        and hot-swap it in. The two lanes meet only at the trie — one reads it, the other replaces it.</p>
+        <div class="diagram-box">
+          <svg id="arch-diagram" width="880" height="560" viewBox="0 0 880 560"></svg>
+        </div>
+        <div class="flow-box">
+          <div class="flow-step"><span class="n">1</span><div><strong>Keystroke → debounce.</strong> The browser waits for a brief pause (and often a minimum
+          of 2–3 characters) before sending anything, so a fast burst of typing becomes <em>one</em> request, not one per letter — the first and cheapest cut
+          at the firehose.</div></div>
+          <div class="flow-step"><span class="n">2</span><div><strong>Edge cache / CDN.</strong> A given prefix returns the <em>same</em> global list for
+          everyone, so popular prefixes (<code>a</code>, <code>ch</code>, <code>new</code>) are served straight from a <strong>CDN / cache</strong> (Day 4) —
+          most requests never reach your service at all.</div></div>
+          <div class="flow-step"><span class="n">3</span><div><strong>Suggestion service (in-memory trie).</strong> A cache miss hits a stateless suggestion
+          server that holds the <strong>trie in RAM</strong>, <strong>walks the prefix</strong>, and <strong>reads the node's precomputed top-k</strong> —
+          O(prefix length), no database. These servers are <strong>replicated</strong> for QPS and <strong>sharded by prefix</strong> when the trie is too big
+          for one box (Day 13).</div></div>
+          <div class="flow-step"><span class="n">4</span><div><strong>Logs → aggregation (offline).</strong> Every real search is logged to a stream
+          (Kafka, Day 19). A background job <strong>aggregates popularity</strong> — counts, time-decayed so trending beats stale — over all those logs.</div></div>
+          <div class="flow-step"><span class="n">5</span><div><strong>Rebuild & hot-swap.</strong> The job <strong>builds a fresh trie</strong> with updated
+          top-k lists and <strong>swaps it into</strong> the suggestion servers (every few minutes to hourly). Suggestions are <em>eventually consistent</em>
+          — a brand-new trend takes a little while to appear, which is fine.</div></div>
+        </div>
+      </section>
+
+      <section id="core">
+        <h2>The Heart: The Trie + Precomputed Top-K</h2>
+        <p>Two ideas do almost all the work, and they stack. First, the <strong>trie</strong> makes <em>finding the prefix</em> fast. Second,
+        <strong>precomputed top-k at each node</strong> makes <em>ranking the completions</em> free. Miss either one and type-ahead falls over.</p>
+
+        <h3>Why a trie, and four ways to answer a prefix query</h3>
+        <div class="diagram-box">
+          <svg id="approach-diagram" width="880" height="430" viewBox="0 0 880 430"></svg>
+        </div>
+        <table class="algo-table">
+          <tr><th>Approach</th><th>How it answers "prefix → completions"</th><th>Verdict</th></tr>
+          <tr><td><strong>DB <code>LIKE 'p%'</code></strong></td><td>A SQL range query per keystroke against an indexed column.</td><td>
+          <strong>❌ Melts.</strong> Works for a toy dataset, but at keystroke volume it's a QPS firehose into your database. <code>LIKE '%mid%'</code> can't
+          even use the index.</td></tr>
+          <tr><td><strong>Plain trie</strong></td><td>Walk the prefix (O(len)), then DFS the sub-tree to collect all completions and sort by score.</td><td>
+          <strong>➖ Fast walk, slow finish.</strong> Great for the prefix match, but collecting + sorting a hot prefix's millions of descendants on every
+          keystroke burns CPU.</td></tr>
+          <tr><td><strong>Trie + precomputed top-k</strong></td><td>Store the ranked top-k completions <em>on every node</em>; a query walks to the node and
+          reads the list.</td><td><strong>✅ The default.</strong> A query is O(prefix length): a few hops plus one read. The sort happened once, offline.
+          Costs a little memory per node.</td></tr>
+          <tr><td><strong>Search-engine suggester</strong></td><td>A completion suggester built on a <strong>finite-state transducer (FST)</strong> —
+          Elasticsearch, Lucene.</td><td><strong>✅ At scale / with extras.</strong> Compact, handles weights, fuzzy typos, and middle-of-string matches.
+          More machinery; Day 55.</td></tr>
+        </table>
+        <p>For almost everyone, a <strong>trie with precomputed top-k</strong> is the answer. The plain trie is the crucial stepping stone — it's <em>why</em>
+        prefix lookup is cheap — but on its own it trades a database bottleneck for a CPU one. Moving the collect-and-sort <em>off</em> the request path and
+        <em>into</em> an offline build is the move that makes it a system: the expensive work happens once, in the background, and every one of the millions of
+        live queries just reads the result.</p>
+
+        <h3>What actually lives on a node</h3>
+        <p>A trie node is tiny: a map from the next character to a child node, and a short, pre-ranked list of the best completions for the prefix ending at
+        that node. That's it. The walk is pure pointer-chasing; the answer is sitting on the node you land on.</p>
+        <div class="code-panel"><span class="k">class</span> <span class="f">TrieNode</span>:
+    children: <span class="s">dict[char → TrieNode]</span>   <span class="muted"># one branch per next letter</span>
+    top_k:    <span class="s">list[(word, score)]</span>     <span class="muted"># PRECOMPUTED, already sorted desc by score</span>
+
+<span class="k">def</span> <span class="f">suggest</span>(prefix):
+    node = root
+    <span class="k">for</span> ch <span class="k">in</span> prefix:                 <span class="muted"># O(len(prefix)) — a few pointer hops</span>
+        node = node.children.<span class="f">get</span>(ch)
+        <span class="k">if</span> node <span class="k">is</span> <span class="k">None</span>: <span class="k">return</span> []     <span class="muted"># nothing starts with this prefix</span>
+    <span class="k">return</span> node.top_k                  <span class="s"># one read — the answer is already ranked</span></div>
+
+        <div class="rule-box">
+          <span class="hb">✔ Use a trie for the prefix walk, and precompute the ranked top-k on every node so a query is walk + read (O(prefix length))</span> —
+          the expensive collect-and-sort happens once, offline, not on every keystroke. <br>
+          <span class="cc">✘ Don't run a <code>LIKE 'prefix%'</code> query per keystroke, and don't DFS-and-sort the sub-tree on the hot path</span> — the first
+          turns your database into a firehose target; the second trades that for a CPU meltdown on popular short prefixes.
+        </div>
+      </section>
+
+      <section id="scale">
+        <h2>Serving, Updating &amp; Scaling</h2>
+        <p>With the trie + top-k in hand, the remaining work is all about <em>volume</em> and <em>freshness</em>: serving a flood of reads, and keeping the
+        rankings current without ever rebuilding on the request path.</p>
+
+        <h3>Serving the flood — debounce, cache, replicate, shard</h3>
+        <p>The read path is attacked in layers, cheapest first. <strong>Debounce on the client</strong> (Day's first widget below): wait for a short pause
+        before sending, so a burst of typing is one request — this alone removes most keystroke traffic for free. <strong>Cache at the edge</strong>: a prefix
+        maps to the same global list for everyone, so popular prefixes are served from a <strong>CDN / cache</strong> (Day 4) and never reach you.
+        <strong>Replicate</strong> the suggestion servers: they're <em>stateless</em> readers of an in-memory trie, so you can run hundreds of identical copies
+        behind a load balancer to absorb QPS. <strong>Shard by prefix</strong> when the trie outgrows one machine: terms starting <code>a–f</code> on one
+        shard, <code>g–m</code> on another (Day 13) — a request is routed by its first letters to the right shard.</p>
+
+        <h3>Updating the rankings — decouple, aggregate, hot-swap</h3>
+        <p>Here's the part that separates a toy from a system. Rankings change constantly — a term goes viral, a product trends — but you can
+        <strong>never</strong> rebuild or re-sort on the live request path. So you <strong>decouple</strong>: the online service only ever <em>reads</em> the
+        trie; a separate <strong>offline pipeline</strong> builds it. Real searches are logged to a stream (<strong>Kafka</strong>, Day 19). A background job
+        <strong>aggregates popularity</strong> — typically with <strong>time decay</strong> so recent searches count more than last month's — builds a fresh
+        trie with new top-k lists, and <strong>hot-swaps</strong> it into the servers every few minutes to hourly. The cost is that suggestions are
+        <strong>eventually consistent</strong> (Day 10): a brand-new trend takes a little while to climb onto the leaderboards. For autocomplete that's a
+        perfectly good trade — nobody notices or minds a few minutes of lag on a <em>suggestion</em>.</p>
+
+        <div class="rule-box">
+          <span class="hb">✔ Serve reads from replicated in-memory tries behind a cache; build the trie in an offline pipeline and hot-swap it periodically</span>
+          — debounce + edge cache kill most traffic, replication absorbs the rest, and offline rebuilds keep rankings fresh enough. <br>
+          <span class="cc">✘ Don't rebuild, re-sort, or recompute rankings on the live request path, and don't insist suggestions be perfectly fresh</span> —
+          eventual consistency (an hour of lag) is the right trade for autocomplete; chasing real-time rankings buys you nothing and costs you everything.
+        </div>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>Prefix-walk-and-read is the easy 80%. These edges are what separate a clever demo from an autocomplete that handles real users, real typos, and
+        real scale.</p>
+
+        <h3>Ranking is the product — and it's more than raw counts</h3>
+        <p>Which completions you show <em>is</em> the feature, and popularity alone isn't enough. Good ranking blends <strong>frequency</strong> (how often a
+        query is searched) with <strong>recency / time-decay</strong> (trending now beats popular last year), and often <strong>context</strong> — your
+        location, your recent searches, the current season. Some systems add light <strong>personalization</strong> (your own history nudges your
+        suggestions), which breaks the "same list for everyone" assumption that made edge-caching so easy — a classic tension between a better result and a
+        cheaper system.</p>
+
+        <h3>Typos and fuzzy matching</h3>
+        <p>A pure trie is unforgiving: type <code>choclate</code> (missing an <code>o</code>) and the walk falls off a cliff — no node, no suggestions, even
+        though you clearly meant <em>chocolate</em>. Real systems add <strong>fuzzy matching</strong>, tolerating an edit or two (an insertion, deletion, or
+        swap) so near-misses still resolve. That's expensive on a plain trie but comes more naturally to an FST-based suggester (Elasticsearch, Day 55), which
+        is a big reason teams reach for one as requirements grow.</p>
+
+        <h3>Memory footprint &amp; the long tail</h3>
+        <p>A trie of every query ever typed would be enormous, and most of it is a <strong>long tail</strong> searched once and never again — pure noise. You
+        <strong>prune</strong>: keep only queries above a frequency threshold, drop the rest. Storing a full top-k list on <em>every</em> node also multiplies
+        memory, so implementations compress — share lists, store only at branch points, or use a compact FST. The guiding instinct: a suggestion that almost
+        nobody wants isn't worth a byte of RAM on the hot path.</p>
+
+        <h3>Multi-word and middle-of-string matching</h3>
+        <p>A plain prefix trie only completes from the <em>start</em>: type <code>cake</code> and it will never suggest <em>chocolate cake</em>, because
+        <code>cake</code> isn't a prefix of it. If you need to match words in the <em>middle</em>, you index every suffix (or every word) as its own entry, or
+        move to an inverted-index / search-engine suggester. It's the same prefix-vs-substring gap Lena hit with <code>LIKE 'p%'</code> (indexable) versus
+        <code>LIKE '%p%'</code> (not) — the data structure has to match the kind of matching you promise.</p>
+
+        <p style="margin-top:1rem;">The through-line: <code>walk → read top-k</code> is easy; doing it with <em>good ranking</em>, <em>typo tolerance</em>,
+        a <em>bounded memory footprint</em>, and an <em>offline rebuild</em> that keeps it fresh is the craft. Get those right and one read endpoint becomes a
+        feature that quietly shapes how billions of people search.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">🌳</span><div><strong>From the Locker Wall to the Tree of Letters</strong>
+          — <span>You leave the pastebin's <strong>station locker wall</strong> and step into a courtyard with a huge <strong>sideways tree made of
+          letters</strong> (the <strong>trie</strong>). To find everything starting with <code>ch</code>, you don't search the forest — you just walk two
+          steps, to the <code>c→h</code> fork. A word is a <em>path</em>; a prefix is a <em>partial path</em>.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🏆</span><div><strong>The Leaderboard on Every Fork &amp; the Nighttime Groundskeeper</strong> —
+          <span>Nailed to every fork is a <strong>leaderboard sign</strong> — the top completions down that branch, <strong>precomputed</strong> and ranked —
+          so a query is a short walk plus a glance, not a search. The signs don't write themselves: a <strong>groundskeeper</strong> tallies the day's searches
+          and <strong>repaints every sign each night</strong> (the offline rebuild + hot-swap), so a brand-new trend climbs on a little late — and that's
+          fine.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Door Ahead</strong> — <span>A signpost reads
+          <strong>Day 45: Design a Social Media Feed</strong>. Today, given a few letters you returned the best <em>completions</em>; next you'll assemble, for
+          each person, the best <em>posts</em> — the fan-out, the ranking, and the caching that decide what shows up when you open the app.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Design: Pastebin (Day 43)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Design: Type-Ahead Search (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Design: Social Media Feed (Day 45)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Today builds on…</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">DB Indexing (Day 11)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Caching / Redis (Day 6 &amp; 40)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">CDN (Day 4)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Sharding (Day 13)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Kafka (Day 19)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Eventual Consistency (Day 10)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Estimation (Day 30)</span>
+        </div>
+        <p>Today is the last <strong>Classic System Design</strong> of Week 6, and it's the deliberate inverse of yesterday's lookups: the pastebin and the
+        URL shortener returned <em>one exact thing</em> for an exact key; type-ahead returns the <em>best few things</em> for a partial key. It leans on
+        <strong>database indexing (Day 11)</strong> to explain why even an indexed <code>LIKE</code> can't survive keystroke volume, on <strong>caching (Day 6
+        / Redis, Day 40)</strong> and <strong>CDNs (Day 4)</strong> to absorb reads, on <strong>sharding (Day 13)</strong> to split the trie, on
+        <strong>Kafka (Day 19)</strong> to stream the query logs, and on <strong>eventual consistency (Day 10)</strong> to justify the offline rebuild. The
+        "serve from a precomputed structure, rebuild it offline" pattern you learned here returns the moment we build the <strong>social media feed (Day 45)</strong>,
+        which precomputes each person's timeline the same way. And the full fuzzy, weighted version lives in the <strong>Elasticsearch (Day 55)</strong>
+        completion suggester.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Just run a <code>LIKE 'prefix%'</code> query on each keystroke."</td><td>It fires <strong>per keystroke, for everyone at once</strong> — a
+          QPS firehose no database survives. Serve from an <strong>in-memory trie</strong> instead; the DB never sees the hot path.</td></tr>
+          <tr><td>"A trie alone makes it fast."</td><td>The trie makes the <em>prefix match</em> fast, but DFS-collecting and sorting a hot prefix's
+          descendants per keystroke is a CPU meltdown. You must <strong>precompute the top-k on each node</strong>.</td></tr>
+          <tr><td>"Rebuild the trie whenever popularity changes."</td><td>You can't rebuild on the request path. <strong>Decouple</strong>: aggregate logs
+          offline, rebuild periodically, and <strong>hot-swap</strong> — suggestions are eventually consistent.</td></tr>
+          <tr><td>"Suggestions must be perfectly up to date."</td><td>Autocomplete tolerates <strong>lag</strong>. An hour-old ranking is fine; chasing
+          real-time freshness adds huge cost for a benefit nobody notices.</td></tr>
+          <tr><td>"A prefix trie can suggest words from the middle of a string."</td><td>No — it only completes from the <strong>start</strong>. For
+          middle-of-string matching you index suffixes/words or use a search-engine suggester.</td></tr>
+          <tr><td>"Store every query anyone ever typed."</td><td>The long tail is noise. <strong>Prune</strong> below a frequency threshold or the trie
+          explodes in memory for suggestions nobody wants.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ You're designing type-ahead search. (1) Your first version queries the database with <code>LIKE 'cho%'</code>
+          on every keystroke and it falls over in production — what's the real problem (it's not "the query is slow"), and what do you serve from instead?
+          (2) You switch to an in-memory trie but typing a single letter like <code>c</code> pegs a CPU core — what did you forget, and what's the fix?
+          (3) Popularity changes all day; how do you keep rankings fresh without ever rebuilding on the request path? (click to reveal)</div>
+          <div class="recall-answer"><strong>(1) It's request <em>volume</em>, not query latency.</strong> Type-ahead fires on every keystroke for every user,
+          so the system sees <em>keystrokes per second</em> — hundreds of thousands to a million QPS — and no database survives that, even with an index. Serve
+          from an <strong>in-memory trie</strong> (replicated, behind a cache), so the database is never on the hot path. <br><br><strong>(2) You're
+          collecting-and-sorting on the hot path.</strong> A plain trie walks the prefix fast, but then DFS-ing a short prefix's millions of descendants and
+          sorting them, per keystroke, melts the CPU. Fix: <strong>precompute the top-k completions at every node</strong>, offline, so a query is a walk plus a
+          single read — O(prefix length). <br><br><strong>(3) Decouple serving from building.</strong> The live service only <em>reads</em> the trie. A
+          separate offline pipeline aggregates the search logs (time-decayed popularity), rebuilds a fresh trie, and <strong>hot-swaps</strong> it in every few
+          minutes to hourly. Suggestions are <strong>eventually consistent</strong> — an hour of lag on a suggestion is perfectly acceptable.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🔎 Google Autocomplete</div><p>The canonical example: predictions appear as you type, ranked by
+          how often queries are searched, <strong>time-decayed</strong> so trending terms surface, and shaded by language, location, and (optionally) your own
+          history. The entire feature is a ranked prefix lookup served in tens of milliseconds, globally.</p></div>
+          <div class="realworld-card"><div class="rw-company">🟣 Elasticsearch Completion Suggester</div><p>A production-grade suggester built on a
+          <strong>finite-state transducer (FST)</strong> — a compressed cousin of a trie — held in memory for speed. It supports <strong>weights</strong>
+          (popularity) and <strong>fuzzy</strong> matching for typos out of the box, which is why teams reach for it as autocomplete requirements grow
+          (Day 55).</p></div>
+          <div class="realworld-card"><div class="rw-company">🧱 Redis Sorted Sets</div><p>A lightweight, popular build-it-yourself approach: for each prefix,
+          keep a <strong>sorted set</strong> (<code>ZADD</code>/<code>ZREVRANGE</code>) of completions scored by popularity, so the top-k is a single
+          range read. It's the "precomputed top-k per prefix" idea mapped straight onto a data store you already run (Day 40).</p></div>
+          <div class="realworld-card"><div class="rw-company">⚙️ The offline log pipeline</div><p>Behind every one of these sits the unglamorous half: search
+          logs streamed through <strong>Kafka</strong> (Day 19), aggregated into time-decayed popularity counts by a batch or stream job, used to rebuild the
+          trie/FST/sorted-sets and <strong>hot-swap</strong> them in. The serving layer is only as good as the pipeline that feeds it.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: In one sentence, what is a type-ahead search?</div>
+          <div class="fc-a">A: Given a <strong>prefix</strong>, return the <strong>top-k completions ranked by popularity</strong> in under ~100&nbsp;ms, on
+          every keystroke — served by walking an <strong>in-memory trie</strong> whose every node caches its <strong>precomputed top-k</strong>, with the trie
+          rebuilt <strong>offline</strong>.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why can't you just run a <code>LIKE 'prefix%'</code> database query per keystroke?</div>
+          <div class="fc-a">A: The problem is <strong>volume, not latency</strong>. Firing on every keystroke for every user generates keystroke-level QPS
+          (hundreds of thousands to ~1M/s) that no database survives, even with an index. Serve from a <strong>replicated in-memory trie</strong> behind a
+          cache instead.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is a trie, and why is precomputing top-k on each node essential?</div>
+          <div class="fc-a">A: A <strong>trie</strong> is a tree where a word is a path of letters, so a prefix lookup is an <strong>O(prefix-length)</strong>
+          walk. Without precomputed top-k, answering requires DFS-collecting and sorting the sub-tree per keystroke — a CPU meltdown on short prefixes. Storing
+          the ranked <strong>top-k on every node</strong> turns a query into a walk + a single read.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: How do you keep rankings fresh without rebuilding on the request path?</div>
+          <div class="fc-a">A: <strong>Decouple serving from building.</strong> The live service only reads the trie; an offline pipeline aggregates search
+          logs (time-decayed popularity), rebuilds a fresh trie, and <strong>hot-swaps</strong> it in periodically. Suggestions become
+          <strong>eventually consistent</strong> — an hour of lag is an acceptable trade.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Name two cheap ways to cut the keystroke request volume before it reaches your service.</div>
+          <div class="fc-a">A: <strong>Debounce</strong> on the client (wait for a typing pause, often requiring 2–3 chars, so a burst becomes one request)
+          and <strong>cache popular prefixes at the edge/CDN</strong> (a prefix returns the same global list for everyone, so hot prefixes never reach the
+          origin).</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>In one sentence, what does a type-ahead search do, and what makes it a hard system-design problem rather than a one-line query?</li>
+          <li>Why is request <em>volume</em> (not query latency) the core enemy, and what does that rule out?</li>
+          <li>What is a trie, and why is a prefix lookup O(prefix length) rather than O(number of terms)?</li>
+          <li>What breaks if you use a plain trie <em>without</em> precomputed top-k, and how does precomputation fix it?</li>
+          <li>Walk through the four approaches (DB LIKE, plain trie, trie + top-k, FST suggester) with a one-line verdict on each.</li>
+          <li>Describe the offline build path: logs → ranking → trie → serving, and why suggestions are eventually consistent.</li>
+          <li>Give two edge/hard problems (ranking, typos, memory, middle-of-string) and how each is handled.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>type-ahead is a prefix walk on an in-memory trie whose every node caches its top-k, served read-heavy and
+          rebuilt offline.</strong> It fires on <em>every keystroke</em>, so the enemy is request <strong>volume</strong> — which rules out a per-keystroke
+          database query no matter how well indexed. A <strong>trie</strong> makes finding the prefix O(length); <strong>precomputing the ranked top-k on each
+          node</strong> makes returning the best completions a single read, by moving the collect-and-sort off the request path and into an offline build. Keep
+          rankings fresh by <strong>decoupling</strong> — aggregate query logs, rebuild the trie, hot-swap it, and accept eventually-consistent suggestions —
+          and tame the firehose with <strong>debounce</strong>, <strong>edge caching</strong>, replication, and sharding by prefix. One read endpoint, one
+          reusable pattern — serve from a precomputed structure, rebuild it offline — that returns in the very next lesson. Next, <strong>Day 45 — Design a
+          Social Media Feed</strong>: from the best completions of a word to the best posts for a person.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-43.html">← Day 43: Design a Pastebin</a>
+        <a href="day-45.html" class="coming-soon-link">Day 45: Design a Social Media Feed →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 44 of 90 — Design a Type-Ahead Search</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ══════════════════════════════════════════════════════════════════════
+  //  INTERACTIVE DEMOS — a real in-memory trie with precomputed top-k, and a
+  //  genuine debounce + prefix-cache keystroke simulator.
+  // ══════════════════════════════════════════════════════════════════════
+
+  // ── mode toggle ──────────────────────────────────────────────────────
+  Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(btn){
+    btn.addEventListener('click', function(){
+      var mode = btn.getAttribute('data-mode');
+      Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      document.getElementById('panel-trie').classList.toggle('active', mode === 'trie');
+      document.getElementById('panel-keys').classList.toggle('active', mode === 'keys');
+    });
+  });
+
+  // ── shared dataset: search terms with popularity scores ──────────────
+  var TERMS = [
+    ['chocolate cake', 920], ['chocolate chip cookies', 740], ['chicken curry', 610],
+    ['chicken soup', 430], ['cheesecake', 560], ['chili recipe', 180],
+    ['carbonara', 390], ['caesar salad', 250], ['cauliflower rice', 150],
+    ['banana bread', 680], ['beef stew', 300], ['bagel recipe', 120],
+    ['apple pie', 510], ['avocado toast', 470], ['almond butter', 160],
+    ['pancakes', 650], ['pasta salad', 880], ['pasta bake', 420],
+    ['pizza dough', 720], ['pizza sauce', 360], ['pumpkin soup', 240]
+  ];
+  var K = 5;
+
+  // ── build the trie, precomputing top-k on every node ─────────────────
+  function buildTrie(terms, k){
+    var root = { children:{}, cand:[], top:[] };
+    terms.forEach(function(t){
+      var word = t[0], w = t[1];
+      var node = root;
+      node.cand.push({ word:word, weight:w });        // empty-prefix node sees every word
+      for (var i = 0; i < word.length; i++){
+        var c = word.charAt(i);
+        if (!node.children[c]) node.children[c] = { children:{}, cand:[], top:[] };
+        node = node.children[c];
+        node.cand.push({ word:word, weight:w });       // every node on the path sees this word
+      }
+    });
+    (function trim(node){                              // offline precompute: sort + keep top-k
+      node.cand.sort(function(a,b){ return b.weight - a.weight; });
+      node.top = node.cand.slice(0, k);
+      for (var c in node.children) trim(node.children[c]);
+    })(root);
+    return root;
+  }
+  var TRIE = buildTrie(TERMS, K);
+
+  function walk(prefix){                               // returns { node, steps } — O(len(prefix))
+    var node = TRIE;
+    for (var i = 0; i < prefix.length; i++){
+      var c = prefix.charAt(i);
+      if (!node.children[c]) return { node:null, steps:i+1 };
+      node = node.children[c];
+    }
+    return { node:node, steps:prefix.length };
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 1 — TRIE AUTOCOMPLETE (walk the prefix, read precomputed top-k)
+  // ══════════════════════════════════════════════════════════════════════
+  var tInput = document.getElementById('trie-input');
+
+  function renderPath(prefix){
+    var el = document.getElementById('trie-path');
+    var html = '<span class="path-chip root">•&nbsp;root</span>';
+    var node = TRIE, broke = false;
+    for (var i = 0; i < prefix.length; i++){
+      var c = prefix.charAt(i);
+      html += '<span class="path-arrow">→</span>';
+      if (!broke && node && node.children[c]){
+        node = node.children[c];
+        html += '<span class="path-chip">' + (c === ' ' ? '␣' : c) + '</span>';
+      } else {
+        broke = true;
+        html += '<span class="path-chip" style="background:#fb718518;color:#fca5a5;border-color:#fb718555;">' + (c === ' ' ? '␣' : c) + ' ✗</span>';
+      }
+    }
+    el.innerHTML = html;
+  }
+
+  function renderTrie(){
+    var prefix = tInput.value.toLowerCase();
+    renderPath(prefix);
+    var res = walk(prefix);
+    var list = document.getElementById('trie-suggest');
+    var sugg = res.node ? res.node.top : [];
+    var maxW = sugg.length ? sugg[0].weight : 1;
+
+    if (prefix.length === 0){
+      list.innerHTML = '<div class="suggest-empty">Type a letter to begin — the suggestions below are the global top-' + K + ' (the root node).</div>';
+      sugg = TRIE.top; maxW = sugg.length ? sugg[0].weight : 1;
+    }
+    if (sugg.length === 0){
+      list.innerHTML = '<div class="suggest-empty">No completions — nothing in the trie starts with "<b>' + prefix + '</b>". (A plain trie is unforgiving about typos!)</div>';
+    } else {
+      list.innerHTML = sugg.map(function(s, i){
+        var rest = s.word.slice(prefix.length);
+        var pct = Math.round(s.weight / maxW * 100);
+        return '<div class="suggest-row"><span class="rank">' + (i+1) + '</span>' +
+          '<span><span class="pfx">' + (prefix.length ? s.word.slice(0, prefix.length) : '') + '</span>' + rest + '</span>' +
+          '<span class="bar-wrap"><span class="bar" style="width:' + pct + '%"></span></span>' +
+          '<span class="wt">' + s.weight + '</span></div>';
+      }).join('');
+    }
+
+    var trieOps = (prefix.length || 0) + 1;            // walk + one read
+    var naiveOps = TERMS.length;                       // scan every term
+    document.getElementById('t-triops').textContent = trieOps + ' ops';
+    document.getElementById('t-naiveops').textContent = naiveOps + ' ops';
+    document.getElementById('t-terms').textContent = TERMS.length;
+
+    var s = document.getElementById('t-status');
+    if (prefix.length === 0){
+      s.className = 'q-status info';
+      s.innerHTML = 'Empty prefix → the root node holds the <b>global top-' + K + '</b>. Start typing to walk deeper.';
+    } else if (sugg.length === 0){
+      s.className = 'q-status warn';
+      s.innerHTML = 'The walk fell off the tree at a missing letter — <b>no node</b> for this prefix, so no suggestions. Real systems add fuzzy matching for exactly this.';
+    } else {
+      s.className = 'q-status ok';
+      s.innerHTML = '✅ Walked <b>' + prefix.length + ' letter' + (prefix.length === 1 ? '' : 's') + '</b> and read a precomputed list — <b>' +
+        trieOps + ' ops</b> vs a naïve scan of all <b>' + naiveOps + ' terms</b>. With a million terms the trie cost would be <i>exactly the same</i>.';
+    }
+  }
+  tInput.addEventListener('input', renderTrie);
+  renderTrie();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 2 — KEYSTROKE COST (real debounce + prefix cache)
+  // ══════════════════════════════════════════════════════════════════════
+  var WORD = 'chocolate', STRAT = 'debounce';
+  var typed = 0, keys = 0, sent = 0, hits = 0;
+  var seen = {}, trail = [], dTimer = null, autoTimer = null;
+  var DEBOUNCE_MS = 250;
+
+  function renderStream(){
+    var el = document.getElementById('key-stream');
+    var html = '';
+    for (var i = 0; i < WORD.length; i++){
+      var ch = WORD.charAt(i) === ' ' ? '␣' : WORD.charAt(i);
+      var on = i < typed;
+      html += '<span class="key-cap" style="' + (on ? 'border-color:#38bdf8;color:#7dd3fc;background:#38bdf812;' : 'opacity:.4;') + '">' + ch + '</span>';
+    }
+    el.innerHTML = html;
+  }
+  function renderStats(){
+    document.getElementById('k-keys').textContent = keys;
+    document.getElementById('k-sent').textContent = sent;
+    document.getElementById('k-saved').textContent = keys ? Math.round((keys - sent) / keys * 100) + '%' : '0%';
+    document.getElementById('k-hits').textContent = hits;
+    var tr = document.getElementById('k-trail');
+    tr.innerHTML = trail.slice(-16).map(function(t){
+      if (t.type === 'sent') return '<span class="req-flash sent">"' + t.pfx + '" → 🔵 backend</span>';
+      if (t.type === 'hit')  return '<span class="req-flash hit">"' + t.pfx + '" → ⚡ cache</span>';
+      return '<span class="req-flash skip">"' + t.pfx + '" ⏸ skipped</span>';
+    }).join('');
+  }
+  function fire(prefix){                               // a request actually leaves for the backend layer
+    if (STRAT === 'cache' && seen[prefix]){            // prefix-cache hit → no backend work
+      hits++;
+      trail.push({ type:'hit', pfx:prefix });
+    } else {
+      sent++;
+      seen[prefix] = true;
+      trail.push({ type:'sent', pfx:prefix });
+    }
+    renderStats();
+  }
+  function keystroke(){
+    if (typed >= WORD.length) return;
+    typed++; keys++;
+    var prefix = WORD.slice(0, typed);
+    renderStream();
+    if (STRAT === 'none'){
+      fire(prefix);                                    // fire on every keystroke
+    } else {
+      if (dTimer) {                                    // a pending request is superseded → it was skipped
+        clearTimeout(dTimer);
+        trail.push({ type:'skip', pfx:WORD.slice(0, typed-1) });
+      }
+      dTimer = setTimeout(function(){ dTimer = null; fire(WORD.slice(0, typed)); }, DEBOUNCE_MS);
+    }
+    renderStats();
+    updateKStatus();
+  }
+  function updateKStatus(){
+    var s = document.getElementById('k-status');
+    var saved = keys ? Math.round((keys - sent) / keys * 100) : 0;
+    if (STRAT === 'none'){
+      s.className = 'q-status bad';
+      s.innerHTML = '🚨 <b>Every keystroke fires</b> — ' + sent + ' backend requests for ' + keys + ' keystrokes. This is the firehose that melts a database.';
+    } else if (STRAT === 'debounce'){
+      s.className = sent <= 2 && keys > 2 ? 'q-status ok' : 'q-status info';
+      s.innerHTML = '⏲️ <b>Debounced</b> — only a typing pause fires a request. ' + sent + ' sent / ' + keys + ' keystrokes (<b>' + saved + '% saved</b>). Auto-type to burst past the 250&nbsp;ms window.';
+    } else {
+      s.className = sent + hits > 0 ? 'q-status ok' : 'q-status info';
+      s.innerHTML = '⏲️➕🗃️ <b>Debounce + cache</b> — pauses fire, and prefixes already seen are served free (' + hits + ' cache hit' + (hits===1?'':'s') + '). ' + sent + ' backend / ' + keys + ' keystrokes (<b>' + saved + '% saved</b>).';
+    }
+  }
+  function resetKeys(keepSeen){
+    if (dTimer){ clearTimeout(dTimer); dTimer = null; }
+    if (autoTimer){ clearTimeout(autoTimer); autoTimer = null; }
+    typed = 0; keys = 0; sent = 0; hits = 0; trail = [];
+    if (!keepSeen) seen = {};
+    renderStream(); renderStats();
+    var s = document.getElementById('k-status');
+    s.className = 'q-status info';
+    s.innerHTML = 'Type the word a letter at a time, or auto-type it fast. Watch how many of those keystrokes actually become backend requests.';
+  }
+  function autoType(){
+    resetKeys(true);                                   // keep the cache so repeats show hits
+    (function step(){
+      if (typed >= WORD.length) return;
+      keystroke();
+      autoTimer = setTimeout(step, 60);                // 60ms < 250ms debounce → bursts collapse
+    })();
+  }
+
+  document.getElementById('k-type').addEventListener('click', keystroke);
+  document.getElementById('k-auto').addEventListener('click', autoType);
+  document.getElementById('k-reset').addEventListener('click', function(){ resetKeys(false); });
+
+  function wireNrw(sel, attr, apply){
+    Array.prototype.forEach.call(document.querySelectorAll(sel + ' button'), function(btn){
+      btn.addEventListener('click', function(){
+        apply(btn.getAttribute(attr));
+        Array.prototype.forEach.call(document.querySelectorAll(sel + ' button'), function(b){ b.classList.toggle('active', b === btn); });
+      });
+    });
+  }
+  wireNrw('#word-btns', 'data-word', function(v){ WORD = v; resetKeys(false); });
+  wireNrw('#strat-btns', 'data-strat', function(v){ STRAT = v; resetKeys(false); });
+  resetKeys(false);
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  roughjs (Excalidraw-style) diagrams
+  // ══════════════════════════════════════════════════════════════════════
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+  }
+  function arrow(rs, svg, x1, y1, x2, y2, col, dashed) {
+    var opts = { stroke:col, strokeWidth:1.8, roughness:0.9 };
+    if (dashed) opts.strokeLineDash = [6,5];
+    svg.appendChild(rs.line(x1, y1, x2, y2, opts));
+    var ang = Math.atan2(y2-y1, x2-x1);
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang - 0.4), y2 - 10*Math.sin(ang - 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang + 0.4), y2 - 10*Math.sin(ang + 0.4), { stroke:col, strokeWidth:1.8, roughness:0.9 }));
+  }
+
+  // Anchor: a trie (tree of letters) with a leaderboard on every fork.
+  function drawAnchorDiagram() {
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+    function node(x,y,label,col,fill){
+      svg.appendChild(rs.circle(x, y, 40, {stroke:col, strokeWidth:1.8, roughness:1, fill:fill||'#1e293b', fillStyle:'solid'}));
+      T(x, y+4, label, col, '13', '800');
+    }
+
+    T(440, 24, '🌳 A trie = a tree of letters; a leaderboard is nailed to every fork', '#e2e8f0', '13', '800');
+
+    // you type
+    T(60, 70, '✍️ you type "ch"', '#94a3b8', '9.5', '700', false, 'start');
+
+    // trie nodes (left -> right), path root->c->h highlighted in cyan
+    node(70, 150, '•', '#64748b', '#0b1120');           // root
+    node(175, 150, 'c', '#38bdf8', '#38bdf818');         // c (on path)
+    arrow(rs, svg, 92, 150, 153, 150, '#38bdf8');
+    node(300, 100, 'h', '#38bdf8', '#38bdf818');         // ch (on path)
+    arrow(rs, svg, 193, 140, 280, 108, '#38bdf8');
+    node(300, 210, 'a', '#64748b', '#1e293b');           // ca (other branch)
+    arrow(rs, svg, 193, 162, 280, 202, '#475569');
+    T(70, 198, 'root', '#64748b', '8', '600');
+
+    // deeper letters sprouting from ch (faded, to suggest the sub-tree)
+    node(410, 70, 'o', '#475569', '#1e293b');
+    node(410, 130, 'i', '#475569', '#1e293b');
+    arrow(rs, svg, 320, 92, 392, 74, '#475569');
+    arrow(rs, svg, 320, 110, 392, 126, '#475569');
+    T(455, 72, 'c-h-o-c-o-l-a-t-e …', '#64748b', '8', '600', true, 'start');
+    T(455, 132, 'c-h-i-c-k-e-n …', '#64748b', '8', '600', true, 'start');
+
+    // leaderboard on the "ch" fork
+    svg.appendChild(rs.rectangle(560, 48, 288, 118, {stroke:'#fbbf24', strokeWidth:1.7, roughness:1, fill:'#fbbf2410', fillStyle:'solid'}));
+    T(704, 68, '🏆 LEADERBOARD at the "ch" fork', '#fcd34d', '9.6', '800');
+    T(576, 88, '1.  chocolate cake', '#e2e8f0', '9', '700', true, 'start');
+    T(576, 104, '2.  chocolate chip cookies', '#e2e8f0', '9', '700', true, 'start');
+    T(576, 120, '3.  chicken curry', '#e2e8f0', '9', '700', true, 'start');
+    T(576, 136, '4.  cheesecake', '#94a3b8', '9', '600', true, 'start');
+    T(576, 152, '5.  chicken soup', '#94a3b8', '9', '600', true, 'start');
+    arrow(rs, svg, 322, 96, 556, 90, '#fbbf24', true);
+    T(445, 158, 'walk 2 steps to the fork, then just READ the sign', '#fcd34d', '8.4', '700');
+
+    // a second little leaderboard on the "ca" fork to show every fork has one
+    svg.appendChild(rs.rectangle(380, 232, 220, 56, {stroke:'#a78bfa', strokeWidth:1.4, roughness:1, fill:'#a78bfa10', fillStyle:'solid'}));
+    T(490, 250, '🏆 "ca" fork', '#c4b5fd', '8.6', '800');
+    T(396, 266, 'carbonara · caesar salad', '#cbd5e1', '8', '600', true, 'start');
+    T(396, 280, 'cauliflower rice', '#cbd5e1', '8', '600', true, 'start');
+    arrow(rs, svg, 316, 214, 376, 250, '#a78bfa', true);
+
+    // bands
+    svg.appendChild(rs.rectangle(28, 312, 266, 72, { stroke:'#38bdf8', strokeWidth:1.5, roughness:1, fill:'#38bdf808', fillStyle:'solid' }));
+    T(161, 334, '🌳 TRIE = tree of letters', '#7dd3fc', '9', '800');
+    T(161, 351, 'a word is a path; a prefix is', '#cbd5e1', '7.8', '600');
+    T(161, 364, 'a partial path — just walk it', '#7dd3fc', '7.8', '700');
+    svg.appendChild(rs.rectangle(302, 312, 266, 72, { stroke:'#fbbf24', strokeWidth:1.5, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(435, 334, '🏆 LEADERBOARD per fork', '#fcd34d', '9', '800');
+    T(435, 351, 'top-k precomputed + ranked,', '#cbd5e1', '7.8', '600');
+    T(435, 364, 'so a query reads, never searches', '#fcd34d', '7.8', '700');
+    svg.appendChild(rs.rectangle(576, 312, 268, 72, { stroke:'#22c55e', strokeWidth:1.5, roughness:1, fill:'#22c55e08', fillStyle:'solid' }));
+    T(710, 334, '🌙 GROUNDSKEEPER repaints', '#86efac', '9', '800');
+    T(710, 351, 'an offline job retallies searches', '#cbd5e1', '7.8', '600');
+    T(710, 364, '+ rebuilds the signs each night', '#86efac', '7.8', '700');
+
+    // verdict
+    svg.appendChild(rs.rectangle(28, 398, 816, 56, { stroke:'#38bdf8', strokeWidth:1.6, roughness:1, fill:'#38bdf80a', fillStyle:'solid' }));
+    T(436, 420, 'A sideways tree of letters, a leaderboard nailed to every fork, a reader who walks a few steps and reads the sign, a groundskeeper', '#7dd3fc', '9.2', '800');
+    T(436, 438, 'repainting the signs each night. That picture IS a type-ahead search — the rest of today is making it work at keystroke-flood scale.', '#94a3b8', '8.4', '600');
+  }
+
+  // Architecture: two lanes — online serving (fast) + offline building (slow).
+  function drawArchDiagram() {
+    var svg = document.getElementById('arch-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.7,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+
+    T(440, 22, 'Two lanes: a fast ONLINE path serves from memory; a slow OFFLINE path builds what it serves', '#e2e8f0', '12', '700');
+
+    // ── ONLINE LANE ─────────────────────────────────────────
+    T(120, 52, '— ONLINE: serve (hot, all reads) —', '#7dd3fc', '9.5', '800');
+    // keystroke + debounce
+    box(36, 70, 128, 72, '#cbd5e1', '#1e293b');
+    T(100, 94, '⌨️ keystroke', '#e2e8f0', '10', '800');
+    T(100, 110, 'client DEBOUNCE', '#94a3b8', '8', '700');
+    T(100, 123, 'wait for a pause,', '#94a3b8', '7.4', '600');
+    T(100, 134, 'min 2–3 chars', '#94a3b8', '7.4', '600');
+    arrow(rs, svg, 164, 106, 224, 106, '#64748b');
+
+    // edge cache
+    box(226, 70, 150, 72, '#22c55e', '#22c55e10');
+    T(301, 94, '🌐 EDGE / CDN', '#86efac', '10', '800');
+    T(301, 110, 'same prefix → same', '#cbd5e1', '7.8', '600');
+    T(301, 122, 'list for everyone', '#cbd5e1', '7.8', '600');
+    T(301, 134, 'most reads stop here', '#86efac', '7.6', '700');
+    arrow(rs, svg, 376, 106, 438, 106, '#22c55e');
+    T(407, 98, 'miss', '#86efac', '7', '600');
+
+    // suggestion service (trie)
+    box(440, 64, 200, 92, '#38bdf8', '#38bdf810');
+    T(540, 86, '⚙️ SUGGESTION SERVICE', '#7dd3fc', '10', '800');
+    T(540, 102, 'in-memory TRIE', '#cbd5e1', '8.4', '700');
+    T(540, 116, 'walk(prefix) → node.top_k', '#cbd5e1', '7.8', '600', true);
+    T(540, 130, 'O(prefix length), no DB', '#7dd3fc', '7.8', '700');
+    T(540, 146, 'replicated × N · sharded by prefix', '#7dd3fc', '7.4', '700');
+    arrow(rs, svg, 640, 100, 700, 100, '#38bdf8');
+    box(702, 78, 140, 44, '#cbd5e1', '#1e293b');
+    T(772, 98, '🔽 top-k dropdown', '#e2e8f0', '8.6', '800');
+    T(772, 112, 'in < 100 ms', '#86efac', '7.6', '700');
+
+    // ── OFFLINE LANE ────────────────────────────────────────
+    T(130, 230, '— OFFLINE: build (cold, rare, in the background) —', '#fcd34d', '9.5', '800');
+    // real searches logged
+    box(36, 252, 150, 70, '#cbd5e1', '#1e293b');
+    T(111, 276, '📝 real searches', '#e2e8f0', '9.6', '800');
+    T(111, 292, 'every submitted query', '#94a3b8', '7.8', '600');
+    T(111, 304, 'logged to a stream', '#94a3b8', '7.8', '600');
+    arrow(rs, svg, 186, 287, 246, 287, '#64748b');
+
+    // kafka
+    box(248, 252, 130, 70, '#a78bfa', '#a78bfa10');
+    T(313, 276, '📨 KAFKA (Day 19)', '#c4b5fd', '9', '800');
+    T(313, 292, 'query-log stream', '#cbd5e1', '7.8', '600');
+    T(313, 304, 'into the pipeline', '#cbd5e1', '7.8', '600');
+    arrow(rs, svg, 378, 287, 438, 287, '#a78bfa');
+
+    // aggregation
+    box(440, 246, 190, 82, '#fbbf24', '#fbbf2410');
+    T(535, 268, '🏭 AGGREGATE popularity', '#fcd34d', '9.4', '800');
+    T(535, 284, 'count per prefix,', '#cbd5e1', '7.8', '600');
+    T(535, 296, 'TIME-DECAYED (trend > stale)', '#cbd5e1', '7.6', '600');
+    T(535, 312, 'build fresh trie + top-k', '#fcd34d', '7.8', '700');
+    // hot-swap up into the service
+    arrow(rs, svg, 600, 246, 580, 158, '#f59e0b', true);
+    T(648, 210, '🔁 HOT-SWAP the trie', '#fcd34d', '8.2', '800');
+    T(648, 224, 'every few min → hourly', '#fcd34d', '7.4', '700');
+
+    // bottom bands
+    svg.appendChild(rs.rectangle(40, 392, 800, 30, { stroke:'#38bdf8', strokeWidth:1.3, roughness:1, fill:'#38bdf808', fillStyle:'solid' }));
+    T(440, 411, 'SERVING is O(prefix length) from RAM — replicated for QPS, sharded by prefix, fronted by an edge cache; the database is never on the hot path.', '#7dd3fc', '8.6', '700');
+    svg.appendChild(rs.rectangle(40, 430, 800, 30, { stroke:'#fbbf24', strokeWidth:1.3, roughness:1, fill:'#fbbf2408', fillStyle:'solid' }));
+    T(440, 449, 'BUILDING is offline + periodic — logs → time-decayed popularity → rebuild → hot-swap. The expensive sort happens once, in the background.', '#fcd34d', '8.6', '700');
+    svg.appendChild(rs.rectangle(40, 468, 800, 30, { stroke:'#22c55e', strokeWidth:1.3, roughness:1, fill:'#22c55e08', fillStyle:'solid' }));
+    T(440, 487, 'EVENTUALLY CONSISTENT (Day 10): a brand-new trend takes minutes to appear on the leaderboards — and for a suggestion, nobody minds.', '#86efac', '8.6', '700');
+    svg.appendChild(rs.rectangle(40, 506, 800, 30, { stroke:'#a78bfa', strokeWidth:1.3, roughness:1, fill:'#a78bfa08', fillStyle:'solid' }));
+    T(440, 525, 'DEBOUNCE + EDGE CACHE kill most of the keystroke firehose before it ever reaches your service — the cheapest wins come first.', '#c4b5fd', '8.6', '700');
+  }
+
+  // Four approaches to answer a prefix query, side by side.
+  function drawApproachDiagram() {
+    var svg = document.getElementById('approach-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    var T = function(){ makeTxt.apply(null, [svg].concat([].slice.call(arguments))); };
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.6,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+
+    T(430, 22, 'Four ways to answer "prefix → completions" — same job, very different cost', '#e2e8f0', '12', '800');
+
+    // DB LIKE (bad)
+    box(24, 44, 196, 178, '#fb7185', '#fb71850a');
+    T(122, 66, '🗄️ DB LIKE \'p%\'', '#fca5a5', '9.6', '800');
+    T(122, 86, "LIKE 'cho%'", '#fca5a5', '9.5', '800', true);
+    svg.appendChild(rs.line(60, 98, 184, 98, {stroke:'#fb7185', strokeWidth:1.2, roughness:1}));
+    T(122, 118, 'a SQL range query', '#cbd5e1', '8', '600');
+    T(122, 131, 'per keystroke.', '#cbd5e1', '8', '600');
+    T(122, 154, '❌ MELTS —', '#fca5a5', '8.4', '800');
+    T(122, 168, 'keystroke-volume QPS', '#fca5a5', '7.8', '700');
+    T(122, 180, 'firehose at the DB.', '#fca5a5', '7.8', '700');
+    T(122, 202, "'%mid%' can't use the index", '#94a3b8', '7.2', '600');
+
+    // Plain trie
+    box(236, 44, 196, 178, '#fbbf24', '#fbbf240a');
+    T(334, 66, '🌳 PLAIN TRIE', '#fcd34d', '9.6', '800');
+    T(334, 86, 'walk + DFS + sort', '#fcd34d', '9', '800', true);
+    svg.appendChild(rs.line(272, 98, 396, 98, {stroke:'#fbbf24', strokeWidth:1.2, roughness:1}));
+    T(334, 118, 'walk prefix, then', '#cbd5e1', '8', '600');
+    T(334, 131, 'collect + sort subtree.', '#cbd5e1', '8', '600');
+    T(334, 154, '➖ FAST walk,', '#fcd34d', '8.4', '800');
+    T(334, 168, 'slow finish — a hot', '#fcd34d', '7.8', '700');
+    T(334, 180, 'prefix burns CPU', '#fcd34d', '7.8', '700');
+    T(334, 202, 'per keystroke', '#94a3b8', '7.2', '600');
+
+    // Trie + precomputed top-k (default)
+    box(448, 44, 196, 178, '#38bdf8', '#38bdf80a');
+    T(546, 66, '🏆 TRIE + top-k', '#7dd3fc', '9.6', '800');
+    T(546, 86, 'walk → read', '#7dd3fc', '9.5', '800', true);
+    svg.appendChild(rs.line(484, 98, 608, 98, {stroke:'#38bdf8', strokeWidth:1.2, roughness:1}));
+    T(546, 118, 'ranked top-k stored', '#cbd5e1', '8', '600');
+    T(546, 131, 'on every node.', '#cbd5e1', '8', '600');
+    T(546, 154, '✅ THE DEFAULT —', '#86efac', '8.4', '800');
+    T(546, 168, 'O(prefix): a walk +', '#86efac', '7.8', '700');
+    T(546, 180, 'one read. Sort done', '#86efac', '7.8', '700');
+    T(546, 202, 'once, offline. +memory', '#7dd3fc', '7.2', '700');
+
+    // FST suggester
+    box(660, 44, 176, 178, '#a78bfa', '#a78bfa0a');
+    T(748, 66, '🔎 FST SUGGESTER', '#c4b5fd', '9.4', '800');
+    T(748, 86, 'Elasticsearch', '#c4b5fd', '9', '800', true);
+    svg.appendChild(rs.line(684, 98, 812, 98, {stroke:'#a78bfa', strokeWidth:1.2, roughness:1}));
+    T(748, 118, 'finite-state transducer', '#cbd5e1', '7.6', '600');
+    T(748, 131, '(a compressed trie).', '#cbd5e1', '7.8', '600');
+    T(748, 154, '✅ AT SCALE —', '#86efac', '8.4', '800');
+    T(748, 168, 'compact, weighted,', '#c4b5fd', '7.8', '700');
+    T(748, 180, 'fuzzy typos built in.', '#c4b5fd', '7.8', '700');
+    T(748, 202, 'more machinery. Day 55', '#c4b5fd', '7.2', '700');
+
+    // verdict band
+    svg.appendChild(rs.rectangle(24, 242, 812, 54, { stroke:'#38bdf8', strokeWidth:1.6, roughness:1, fill:'#38bdf80a', fillStyle:'solid' }));
+    T(430, 264, 'For almost everyone a TRIE with precomputed top-k is right: the plain trie is why prefix lookup is cheap, but precomputing moves the', '#7dd3fc', '9', '800');
+    T(430, 282, 'collect-and-sort OFF the request path and INTO an offline build. Reach for an FST suggester when you need fuzzy, weights, and scale.', '#7dd3fc', '8.4', '700');
+
+    // volume note
+    svg.appendChild(rs.rectangle(24, 304, 812, 30, { stroke:'#fb7185', strokeWidth:1.3, roughness:1, fill:'#fb718508', fillStyle:'solid' }));
+    T(430, 323, 'The enemy is request VOLUME, not query latency: type-ahead fires per keystroke, so the system sees keystrokes/second — a DB query per key cannot survive it.', '#fca5a5', '8.4', '700');
+
+    // key idea note
+    svg.appendChild(rs.rectangle(24, 342, 812, 30, { stroke:'#86efac', strokeWidth:1.3, roughness:1, fill:'#22c55e08', fillStyle:'solid' }));
+    T(430, 361, 'A query is a WALK (O prefix length) + a READ of a precomputed list. The dataset can be a million words and the query cost does not change.', '#86efac', '8.6', '700');
+  }
+
+  function drawAll(){ drawAnchorDiagram(); drawArchDiagram(); drawApproachDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
