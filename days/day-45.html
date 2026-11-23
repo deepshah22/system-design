@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 45: Design a Social Media Feed | System Design Mastery</title>
+  <meta name="description" content="When you open Instagram, Twitter, or Facebook, a ranked feed of posts from everyone you follow appears in under a second — for a billion people at once. We design it from scratch and meet the one decision the whole system turns on: fan-out on write (push) vs fan-out on read (pull). Push copies each new post into every follower's precomputed feed so reads are a single list lookup — until a celebrity with 50 million followers posts and the write explodes into 50 million inserts (the fan-out storm). Pull stores each post once and gathers posts at read time so writes are trivial — until you follow 500 accounts and every feed-open becomes 500 queries plus a merge. The answer every real system lands on is the hybrid: push for normal accounts, pull for the handful of celebrities you follow, merged at read time. Taught with a mailroom memory anchor, a live push-vs-pull-vs-hybrid cost explorer that shows the write and read amplification for a normal user and a celebrity, a feed-assembly stepper that merges your push inbox with pulled celebrity posts and ranks them, three Excalidraw-style diagrams, the real tradeoffs (ranking, consistency, the celebrity problem), and how Twitter, Instagram, and Facebook actually do it." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; vertical-align:top; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; gap:1rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .flow-step > span.n { font-weight:800; color: var(--accent-light); min-width:1.6rem; font-family:'JetBrains Mono',monospace; }
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .sim-panel { display:none; } .sim-panel.active { display:block; }
+    .q-status { text-align:center; font-weight:700; font-size:.88rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.75rem 0 1rem; line-height:1.6; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+    .q-status.info { background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .sim-controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 1rem; }
+    .stat-row { display:flex; gap:.6rem; flex-wrap:wrap; margin:.9rem 0; }
+    .stat-chip { flex:1; min-width:120px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:.6rem .8rem; text-align:center; }
+    .stat-chip .sv { font-size:1.2rem; font-weight:800; color:var(--text-primary); font-family:'JetBrains Mono',monospace; }
+    .stat-chip .sv.good { color:#86efac; } .stat-chip .sv.warn { color:#fbbf24; } .stat-chip .sv.blue { color:#7dd3fc; } .stat-chip .sv.bad { color:#fca5a5; } .stat-chip .sv.violet { color:#c4b5fd; }
+    .stat-chip .sl { font-size:.65rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin-top:.2rem; }
+    .rule-box { background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius); padding:.9rem 1.1rem; margin:1rem 0; font-size:.84rem; }
+    .rule-box code { font-family:'JetBrains Mono',monospace; color:#7dd3fc; }
+    .nrw-btns { display:flex; gap:.4rem; flex-wrap:wrap; margin:.35rem 0; align-items:center; }
+    .nrw-btns button { border:1.5px solid var(--border); background:var(--bg-card); color:var(--text-secondary); font-weight:800; font-family:'JetBrains Mono',monospace; font-size:.86rem; min-width:40px; padding:.4rem .7rem; border-radius:8px; cursor:pointer; transition:all .12s; }
+    .nrw-btns button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .kv-field-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; margin-top:.6rem; }
+    .diagram-caption { font-size:.76rem; color:var(--text-muted); text-align:center; margin-top:.3rem; }
+    /* ── feed widgets ────────────────────────────────────────── */
+    /* path meter: write path vs read path */
+    .path-meter { background:#0b1120; border:1.5px solid var(--border); border-radius:12px; padding:.9rem 1.1rem; margin:.7rem 0; }
+    .path-meter h5 { margin:0 0 .5rem; font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; display:flex; align-items:center; gap:.4rem; }
+    .path-bar-wrap { height:26px; background:#111827; border-radius:7px; overflow:hidden; border:1px solid var(--border); position:relative; }
+    .path-bar { height:100%; border-radius:6px; transition:width .5s ease; min-width:2px; }
+    .path-bar.write { background:linear-gradient(90deg,#fb7185,#f59e0b); }
+    .path-bar.read  { background:linear-gradient(90deg,#38bdf8,#22c55e); }
+    .path-bar-label { position:absolute; top:50%; left:.6rem; transform:translateY(-50%); font-family:'JetBrains Mono',monospace; font-weight:800; font-size:.82rem; color:#0b1120; text-shadow:0 1px 1px rgba(255,255,255,.25); }
+    .path-note { font-size:.76rem; color:var(--text-muted); margin-top:.4rem; }
+    .amp-badge { display:inline-block; font-family:'JetBrains Mono',monospace; font-weight:800; font-size:.78rem; padding:.12rem .5rem; border-radius:6px; margin-left:.35rem; }
+    .amp-badge.hot { background:#fb718522; color:#fca5a5; border:1px solid #fb718566; }
+    .amp-badge.cool { background:#22c55e18; color:#86efac; border:1px solid #22c55e55; }
+    /* feed assembly */
+    .feed-stage { display:grid; grid-template-columns:1fr 1fr; gap:.8rem; margin:.7rem 0; }
+    @media (max-width:640px){ .feed-stage { grid-template-columns:1fr; } }
+    .src-col { background:var(--bg-card); border:1.5px solid var(--border); border-radius:12px; padding:.7rem .8rem; }
+    .src-col h5 { margin:0 0 .5rem; font-size:.74rem; text-transform:uppercase; letter-spacing:.04em; color:#94a3b8; }
+    .post-chip { display:flex; align-items:center; gap:.5rem; font-family:'JetBrains Mono',monospace; font-size:.78rem; padding:.35rem .5rem; margin:.25rem 0; border-radius:8px; border:1px solid var(--border); background:#0b1120; color:#cbd5e1; opacity:.35; transition:opacity .3s, border-color .3s, background .3s; }
+    .post-chip.show { opacity:1; }
+    .post-chip.push { border-color:#22c55e55; } .post-chip.push.show { background:#22c55e10; }
+    .post-chip.pull { border-color:#a78bfa55; } .post-chip.pull.show { background:#a78bfa12; }
+    .post-chip .who { font-weight:800; }
+    .post-chip .src-tag { font-size:.62rem; text-transform:uppercase; letter-spacing:.03em; padding:.05rem .35rem; border-radius:5px; }
+    .post-chip.push .src-tag { background:#22c55e22; color:#86efac; }
+    .post-chip.pull .src-tag { background:#a78bfa22; color:#c4b5fd; }
+    .post-chip .score { margin-left:auto; color:#fbbf24; font-weight:800; }
+    .feed-final { background:#0b1120; border:1.5px solid #38bdf855; border-radius:12px; padding:.8rem; margin:.6rem 0; }
+    .feed-final h5 { margin:0 0 .5rem; font-size:.74rem; text-transform:uppercase; letter-spacing:.04em; color:#7dd3fc; }
+    .feed-row { display:flex; align-items:center; gap:.6rem; padding:.5rem .55rem; margin:.3rem 0; border-radius:9px; border:1px solid var(--border); background:var(--bg-card); opacity:.25; transform:translateY(4px); transition:all .35s; }
+    .feed-row.show { opacity:1; transform:translateY(0); }
+    .feed-row .rk { font-family:'JetBrains Mono',monospace; font-weight:800; color:#64748b; min-width:1.3rem; }
+    .feed-row .av { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:.9rem; background:#1e293b; border:1px solid var(--border); flex-shrink:0; }
+    .feed-row .bd { flex:1; min-width:0; }
+    .feed-row .bd .nm { font-weight:700; font-size:.82rem; color:#e2e8f0; }
+    .feed-row .bd .tx { font-size:.74rem; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .feed-row .sc { font-family:'JetBrains Mono',monospace; font-weight:800; font-size:.78rem; color:#fbbf24; }
+    .feed-row .st { font-size:.6rem; text-transform:uppercase; padding:.08rem .35rem; border-radius:5px; }
+    .feed-row .st.push { background:#22c55e22; color:#86efac; }
+    .feed-row .st.pull { background:#a78bfa22; color:#c4b5fd; }
+    .step-track { display:flex; gap:.3rem; flex-wrap:wrap; margin:.5rem 0; }
+    .step-pill { font-size:.7rem; font-weight:700; padding:.25rem .55rem; border-radius:20px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-muted); }
+    .step-pill.done { background:#22c55e18; color:#86efac; border-color:#22c55e55; }
+    .step-pill.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phases">Phase 2: Intermediate Systems</a><span class="breadcrumb-sep">/</span>
+      <span>Day 45</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 45 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📗 Phase 2 — Intermediate Systems</span>
+      <span class="meta-pill">🗂 Week 7 — Classic System Designs</span>
+    </div>
+    <h1>Design a Social Media Feed<br><span style="color:var(--accent)">The Timeline That Builds Itself</span></h1>
+    <p class="lead">
+      You open the app and — instantly — a ranked stream of posts from the hundreds of people you follow is already there, scrolled and ready, for a
+      <strong>billion people at once</strong>. Yesterday type-ahead returned the best <em>completions</em> of a word; today we assemble, for every single
+      person, the best <em>posts</em>. The obvious design — when you open your feed, go ask everyone you follow for their latest posts and merge them —
+      collapses the instant you follow a few hundred accounts. The clever design — when you <em>post</em>, immediately copy it into every follower's ready-made
+      feed — collapses the instant a celebrity with 50&nbsp;million followers hits send. So the entire system turns on one decision: <strong>fan-out on write
+      (push)</strong> versus <strong>fan-out on read (pull)</strong> — and the answer every real feed lands on is the <strong>hybrid</strong>: push for normal
+      accounts, pull for the handful of celebrities. You'll run a live <strong>cost explorer</strong> and watch a celebrity's single post explode into millions
+      of writes under push, then watch a busy follower's feed-open explode into hundreds of reads under pull — then see the hybrid defuse both. Finally you'll
+      <strong>assemble a real feed</strong> step by step: read your push inbox, pull the celebrities, merge, rank, and render.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#why">Why This Problem Exists</a>
+        <a href="#design">The Design, Step by Step</a>
+        <a href="#core">The Heart: Push vs Pull vs Hybrid</a>
+        <a href="#scale">Ranking, Freshness & Scaling</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">📮 📥 🏃 ⭐</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Picture a <strong>giant mailroom</strong>. Along one wall is a <strong>row of mailboxes</strong>, one per person — and your mailbox is your
+            <strong>feed</strong>. When your friend posts a photo, a <strong>mailroom clerk</strong> grabs a stack of copies and walks the wall, dropping one
+            copy into the mailbox of <em>every single person who follows your friend</em>. By the time you walk up and open your box, the photo is already
+            sitting there, pre-sorted, waiting. Reading your feed is just <strong>opening one box</strong> — no running around, no asking anyone. That
+            pre-delivery is <strong>fan-out on write</strong>, the <strong>push</strong> model: do the work <em>when the post is made</em>, so reading is
+            instant.</p>
+            <p>Now a <strong>celebrity</strong> with <strong>fifty million followers</strong> posts a single selfie. The clerk picks up the stack… and has to
+            make <strong>fifty million trips down the wall</strong> for that one post. The mailroom seizes. That's the <strong>fan-out storm</strong> — the one
+            scenario that breaks pure push. So for the famous, the clerk gives up on pre-delivery and instead pins their posts to a <strong>public
+            noticeboard</strong> by the door. Nothing gets copied into anyone's box. Instead, <em>when you come to read your feed</em>, you open your own box
+            (the normal folks, already delivered) <em>and</em> take a two-second detour past the noticeboards of the handful of celebrities you follow, grabbing
+            their latest. Gathering posts <em>at read time</em> is <strong>fan-out on read</strong>, the <strong>pull</strong> model.</p>
+            <p>Hold the whole picture: a <strong>wall of mailboxes</strong> (each person's precomputed feed), a <strong>clerk pre-delivering normal posts</strong>
+            into every follower's box (push — cheap reads, expensive writes), a <strong>noticeboard for celebrities</strong> whose posts are grabbed only when
+            you show up (pull — cheap writes, expensive reads), and <strong>you, at read time, opening your box and detouring past a few noticeboards</strong>,
+            then merging the two piles into one ranked stack (the <strong>hybrid</strong>). That mailroom <em>is</em> a social media feed — and the rest of
+            today is deciding, post by post, which deliveries happen when.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="880" height="450" viewBox="0 0 880 450"></svg>
+          <div class="diagram-caption">The mailroom: normal posts are pre-delivered into every follower's box (push); celebrity posts wait on a noticeboard to be grabbed at read time (pull).</div>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Maya</span> was building the home feed for a new social app. The first version was the obvious one: when you open the
+            app, find everyone you follow, fetch their recent posts, merge them, sort by time, and show the result. With a few hundred beta users each following
+            a dozen friends, it was flawless — a feed appeared instantly. She shipped it, proud.
+          </p>
+          <p>
+            Then people started <em>following</em> things. A power user followed 800 accounts. Now every time she opened the app, the server ran a query against
+            <strong>800 different authors</strong>, pulled their latest posts, merged hundreds of candidates, and sorted them — on <em>every single pull-to-refresh</em>.
+            Multiply that by millions of opens an hour and Maya's database was doing <strong>fan-in</strong> work on a scale that dwarfed everything else. Reading
+            a feed had become the most expensive operation in the system. This was <strong>fan-out on read</strong> (pull), and it was melting under read volume.
+          </p>
+          <p>
+            A mentor flipped it around. "Stop doing the work when people <em>read</em>. Do it when they <em>post</em>." So Maya rebuilt it: when you publish a
+            post, a <strong>fan-out service</strong> looks up all your followers and <strong>writes the post's ID into each of their feeds</strong> — a
+            precomputed list (in Redis) she called an <em>inbox</em>. Now reading a feed was devastatingly simple: open <em>your own</em> inbox, read the top
+            IDs, hydrate the content, done. One list lookup, no matter how many people you follow. Reads went instant. This was <strong>fan-out on write</strong>
+            (push), and it felt like magic — until the day a musician with <strong>20 million followers</strong> posted.
+          </p>
+          <p>
+            That one post turned into <strong>20 million inserts</strong>. The fan-out service fell hours behind; some followers saw the post at noon, some at
+            dinner. Worse, most of those 20 million people wouldn't open the app that day — Maya had done millions of writes nobody would read. The
+            <strong>fan-out storm</strong> had arrived, and it's the thing pure push can never survive. The fix wasn't to pick push <em>or</em> pull — it was to
+            use <strong>both</strong>. For normal accounts, keep pushing: pre-deliver into follower inboxes, cheap reads. For the tiny set of
+            <strong>celebrity</strong> accounts, stop pushing entirely — store their posts once and <strong>pull them at read time</strong>, merging them into
+            each viewer's feed on the fly. Push the many, pull the few, merge at read. Without meaning to, Maya had rebuilt the exact architecture behind
+            Twitter's timeline and Instagram's feed: a <strong>hybrid fan-out</strong>, precomputed inboxes for the masses and read-time merges for the famous.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">A social feed answers one question, billions of times a day: <strong>for this specific person, what are the best recent
+          posts from the accounts they follow — assembled in under a second?</strong> The whole design turns on <em>when</em> you do the work of gathering
+          posts. <strong>Fan-out on write (push):</strong> when someone posts, copy its ID into every follower's precomputed feed (an "inbox", usually a Redis
+          list) — reads become a single list lookup, but a post by someone with <em>N</em> followers costs <em>N</em> writes, which explodes for celebrities
+          (the <strong>fan-out storm</strong>). <strong>Fan-out on read (pull):</strong> store each post once; at read time, query every account you follow,
+          merge and rank — writes are trivial, but a feed-open for someone following <em>M</em> accounts costs <em>M</em> reads plus a merge, which explodes for
+          active users. Neither pure model survives, so real systems use the <strong>hybrid</strong>: <em>push</em> for normal accounts (cheap reads for the
+          common case) and <em>pull</em> for the handful of celebrities each person follows (no write storms), <strong>merged at read time</strong>. On top of
+          that sit three more decisions: the <strong>feed is a list of IDs</strong>, hydrated with content separately (so you store IDs, not duplicated posts);
+          <strong>ranking</strong> turns "newest first" into "best first" (an ML relevance score); and the feed is <strong>eventually consistent</strong> — a
+          post taking seconds to appear everywhere is fine. One-line test: <em>a feed is a per-person precomputed inbox, filled by pushing normal posts and
+          pulling celebrity posts, merged and ranked at read time.</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Watch the Fan-out Explode, Then Assemble a Real Feed</h2>
+        <div class="sim-box">
+          <p>Two working demos. In <strong>Fan-out Cost Explorer</strong> you pick a strategy (push, pull, or hybrid) and an event, and watch the
+          <strong>write path</strong> (what one post costs) and the <strong>read path</strong> (what one feed-open costs) light up — see exactly where push melts
+          on a celebrity post and where pull melts on a busy reader, and how hybrid tames both. In <strong>Feed Assembly</strong> you step through building one
+          person's feed: read the push inbox, pull the celebrities, merge, rank, and render.</p>
+
+          <div class="mode-toggle" id="mode-toggle">
+            <button data-mode="cost" class="active">📊 Fan-out Cost Explorer</button>
+            <button data-mode="feed">📥 Feed Assembly (hybrid)</button>
+          </div>
+
+          <!-- COST PANEL -->
+          <div class="sim-panel active" id="panel-cost">
+            <p style="font-size:.85rem;">Pick a <strong>strategy</strong> and an <strong>event</strong>. The two meters show the cost of that one post
+            (<span style="color:#fca5a5;font-weight:700;">write path</span>) and the cost of a typical feed-open for a reader who follows
+            <strong>400 accounts, 3 of them celebrities</strong> (<span style="color:#7dd3fc;font-weight:700;">read path</span>). Watch for the
+            <span class="amp-badge hot">storm</span> badge — that's the amplification that takes a system down.</p>
+
+            <div class="kv-field-label">Strategy</div>
+            <div class="nrw-btns" id="strat-btns">
+              <button data-strat="push" class="active">📤 Push (fan-out on write)</button>
+              <button data-strat="pull">📥 Pull (fan-out on read)</button>
+              <button data-strat="hybrid">🔀 Hybrid (push + pull)</button>
+            </div>
+            <div class="kv-field-label">Who just posted?</div>
+            <div class="nrw-btns" id="poster-btns">
+              <button data-poster="normal" class="active">🙂 Normal user · 300 followers</button>
+              <button data-poster="celeb">⭐ Celebrity · 20,000,000 followers</button>
+            </div>
+
+            <div class="path-meter">
+              <h5>✍️ Write path — cost of this one post <span id="w-amp"></span></h5>
+              <div class="path-bar-wrap"><div class="path-bar write" id="w-bar" style="width:4%"></div><span class="path-bar-label" id="w-bar-label"></span></div>
+              <div class="path-note" id="w-note"></div>
+            </div>
+            <div class="path-meter">
+              <h5>👁️ Read path — cost of one feed-open <span id="r-amp"></span></h5>
+              <div class="path-bar-wrap"><div class="path-bar read" id="r-bar" style="width:4%"></div><span class="path-bar-label" id="r-bar-label"></span></div>
+              <div class="path-note" id="r-note"></div>
+            </div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv bad" id="c-write">—</div><div class="sl">writes per post</div></div>
+              <div class="stat-chip"><div class="sv blue" id="c-read">—</div><div class="sl">reads per feed-open</div></div>
+              <div class="stat-chip"><div class="sv violet" id="c-verdict-chip">—</div><div class="sl">bottleneck</div></div>
+            </div>
+            <div class="q-status info" id="c-status">Pick a strategy and an event to see where the work lands.</div>
+          </div>
+
+          <!-- FEED PANEL -->
+          <div class="sim-panel" id="panel-feed">
+            <p style="font-size:.85rem;">You follow 4 normal friends (their posts were <strong>pushed</strong> into your inbox already) and 2 celebrities
+            (their posts must be <strong>pulled</strong> at read time). Step through how the hybrid assembles your feed — or hit <strong>Run all</strong>.</p>
+
+            <div class="step-track" id="feed-steps">
+              <span class="step-pill" data-step="1">1 · Read inbox</span>
+              <span class="step-pill" data-step="2">2 · Pull celebrities</span>
+              <span class="step-pill" data-step="3">3 · Merge</span>
+              <span class="step-pill" data-step="4">4 · Rank</span>
+              <span class="step-pill" data-step="5">5 · Render</span>
+            </div>
+
+            <div class="feed-stage">
+              <div class="src-col">
+                <h5>📥 Your inbox (pushed) <span style="color:#86efac">— precomputed</span></h5>
+                <div id="col-push"></div>
+              </div>
+              <div class="src-col">
+                <h5>⭐ Celebrity boards (pulled) <span style="color:#c4b5fd">— at read time</span></h5>
+                <div id="col-pull"></div>
+              </div>
+            </div>
+
+            <div class="feed-final">
+              <h5>🏠 Your home feed — merged &amp; ranked</h5>
+              <div id="feed-rendered"></div>
+            </div>
+
+            <div class="sim-controls">
+              <button class="btn btn-primary btn-sm" id="f-step">▶ Next step</button>
+              <button class="btn btn-outline btn-sm" id="f-run">▶▶ Run all</button>
+              <button class="btn btn-outline btn-sm" id="f-reset">↺ Reset</button>
+            </div>
+            <div class="q-status info" id="f-status">Hit “Next step” to read your inbox first.</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="why">
+        <h2>Why This Problem Exists</h2>
+        <p>Every other feature on a social app is small compared to the feed. A profile page loads <em>one</em> person's posts. A notification is <em>one</em>
+        event. But the home feed is the opposite shape: it gathers posts from <strong>everyone you follow</strong>, ranks them, and does it on <strong>every app
+        open</strong>, for <strong>everyone</strong>, constantly. The read-to-write ratio is extreme — people scroll their feed <em>hundreds</em> of times for
+        every post they make — so the feed is the most <strong>read-heavy</strong> surface in the whole product.</p>
+        <p>That shape creates a brutal asymmetry you can't optimize your way out of with a single trick:</p>
+        <div class="pillar-grid">
+          <div class="pillar-card conf"><h4>📥 Reads are constant &amp; huge</h4><p>Hundreds of millions of people open the app dozens of times a day. If
+          building a feed is expensive <em>at read time</em>, you pay that cost billions of times a day.</p></div>
+          <div class="pillar-card amber"><h4>✍️ Writes are spiky &amp; uneven</h4><p>Most posts reach a few hundred people. A tiny number of posts — from
+          celebrities — reach tens of millions. The follower distribution is a brutal <strong>power law</strong>.</p></div>
+          <div class="pillar-card integ"><h4>⚖️ You must pick <em>when</em> to do the work</h4><p>Gather posts when someone <strong>posts</strong> (push) or
+          when someone <strong>reads</strong> (pull)? One makes reads cheap and writes explode; the other does the reverse. There's no free lunch.</p></div>
+          <div class="pillar-card avail"><h4>🕐 Perfect freshness isn't required</h4><p>Nobody notices if a post takes a few seconds — even a minute — to appear
+          in their feed. That slack is the budget you spend to make the hard parts tractable.</p></div>
+        </div>
+        <p>So "design a feed" is really the question <em>when do I pay the cost of assembling it, and for whom?</em> Push pays at write time, pull pays at read
+        time, and because the follower graph is a power law, the only answer that survives both the celebrity and the power-follower is to <strong>split the
+        decision per account</strong>. That split is the heart of the design.</p>
+      </section>
+
+      <section id="design">
+        <h2>The Design, Step by Step</h2>
+        <p>Let's build the hybrid feed from the outside in. Two paths matter: the <strong>write path</strong> (someone posts) and the <strong>read path</strong>
+        (someone opens their feed). The hybrid does cheap work on each, pushing the normal case and pulling the extreme case.</p>
+
+        <h3>The write path — when someone posts</h3>
+        <div class="flow-box">
+          <div class="flow-step"><span class="n">1</span><div><strong>Post service</strong> stores the post once in the <strong>post store</strong> (and ships
+          any media to <strong>object storage + CDN</strong>, Day&nbsp;4), returning a <code>post_id</code>. The post is now durable and addressable — exactly
+          once, never copied.</div></div>
+          <div class="flow-step"><span class="n">2</span><div>It emits a <strong>“new post” event</strong> onto <strong>Kafka</strong> (Day&nbsp;19). Posting
+          returns to the user immediately; fan-out happens <strong>asynchronously</strong> — the author doesn't wait for millions of deliveries.</div></div>
+          <div class="flow-step"><span class="n">3</span><div>The <strong>fan-out service</strong> consumes the event and checks the author. <strong>Normal
+          account?</strong> Look up its followers and <strong>push</strong> the <code>post_id</code> into each follower's <strong>feed inbox</strong> (a capped
+          Redis list). <strong>Celebrity?</strong> <em>Skip the fan-out entirely</em> — the post stays only in the post store, to be pulled later.</div></div>
+          <div class="flow-step"><span class="n">4</span><div>Each inbox is <strong>capped</strong> (say the latest ~800 IDs) so it never grows unbounded —
+          old entries fall off the end. The inbox stores <strong>IDs, not content</strong>, so it stays tiny.</div></div>
+        </div>
+
+        <h3>The read path — when someone opens their feed</h3>
+        <div class="flow-box">
+          <div class="flow-step"><span class="n">1</span><div>The <strong>timeline service</strong> reads the viewer's <strong>inbox</strong> from Redis — one
+          list lookup returns the pushed post IDs from all the normal accounts they follow. Cheap, O(1)-ish.</div></div>
+          <div class="flow-step"><span class="n">2</span><div>It then <strong>pulls</strong> recent posts from the few <strong>celebrity</strong> accounts the
+          viewer follows (their posts were never pushed) — a small, bounded fan-in because almost nobody follows thousands of celebrities.</div></div>
+          <div class="flow-step"><span class="n">3</span><div><strong>Merge</strong> the pushed IDs and the pulled celebrity IDs into one candidate set, then
+          <strong>rank</strong> — newest-first for a chronological feed, or an ML <strong>relevance score</strong> for a “For You” feed.</div></div>
+          <div class="flow-step"><span class="n">4</span><div><strong>Hydrate</strong> the top ~N IDs into full posts (author, text, media URLs, like counts)
+          from caches and the post store, and return them. Media loads from the <strong>CDN</strong>. Scroll down → fetch the next page.</div></div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="arch-diagram" width="880" height="540" viewBox="0 0 880 540"></svg>
+          <div class="diagram-caption">The hybrid feed: posts fan out via Kafka to follower inboxes (push) — except celebrity posts, which are pulled and merged at read time.</div>
+        </div>
+
+        <div class="rule-box">
+          <strong>The one invariant:</strong> the feed inbox stores <code>post_id</code>s, never post bodies. A post is written <strong>once</strong> to the
+          post store; the inbox is a cheap list of pointers into it. That's what lets you push an ID into a million inboxes without duplicating a million copies
+          of the photo — and it's why hydration (ID&nbsp;→&nbsp;content) is a separate, cacheable step.
+        </div>
+      </section>
+
+      <section id="core">
+        <h2>The Heart: Push vs Pull vs Hybrid</h2>
+        <p>Everything above is scaffolding around one decision. Here are the three models side by side — what each makes cheap, what each makes explode, and why
+        production systems land on the hybrid.</p>
+
+        <div class="diagram-box">
+          <svg id="approach-diagram" width="880" height="430" viewBox="0 0 880 430"></svg>
+          <div class="diagram-caption">Push does the work at write time (cheap reads, write storms). Pull does it at read time (cheap writes, read storms). Hybrid splits by account type.</div>
+        </div>
+
+        <h3>Push — fan-out on write</h3>
+        <p>When you post, write the ID into <strong>every follower's inbox</strong>. Reading a feed is then a single list lookup, no matter how many people you
+        follow — <strong>reads are O(1)</strong> and blazingly cheap, which is exactly what you want for the most-read surface in the app. The cost: a post by
+        someone with <em>N</em> followers is <em>N</em> writes. For normal accounts that's fine. For a celebrity it's a <strong>fan-out storm</strong> — millions
+        of writes for one post, most of them into inboxes nobody will read that day. Push optimizes the common case (reading) and punishes the rare case
+        (a famous person posting).</p>
+
+        <h3>Pull — fan-out on read</h3>
+        <p>Store each post <strong>once</strong>; when someone opens their feed, query <strong>all the accounts they follow</strong>, merge, and rank.
+        <strong>Writes are O(1)</strong> and trivial — posting a celebrity selfie is just one insert. The cost lands on the read: a feed-open for someone
+        following <em>M</em> accounts is <em>M</em> queries plus a merge, paid on <em>every</em> refresh. For the most-read surface in the product, that's
+        backwards — pull optimizes the rare case (posting) and punishes the common case (reading).</p>
+
+        <h3>Hybrid — push the many, pull the few</h3>
+        <p>Use <strong>push for normal accounts</strong> (so the common read stays a cheap inbox lookup) and <strong>pull for celebrity accounts</strong> (so one
+        post never triggers a write storm). At read time, merge the viewer's pushed inbox with a small pull of the celebrities they follow. The pull side is
+        bounded because almost nobody follows thousands of celebrities, and the push side is bounded because normal accounts have manageable follower counts. The
+        hybrid keeps <strong>both</strong> the write path and the read path cheap by refusing to treat a 20-million-follower account and a 300-follower account
+        the same way.</p>
+
+        <table class="algo-table">
+          <tr><th>Model</th><th>Write cost (per post)</th><th>Read cost (per feed-open)</th><th>Breaks when…</th></tr>
+          <tr><td><strong>Push</strong> (fan-out on write)</td><td><code>O(followers)</code> — huge for celebrities</td><td><code>O(1)</code> inbox read —
+          great</td><td>a celebrity posts → <strong>fan-out storm</strong></td></tr>
+          <tr><td><strong>Pull</strong> (fan-out on read)</td><td><code>O(1)</code> — one insert</td><td><code>O(followees)</code> merge — expensive</td><td>an
+          active user refreshes → <strong>read storm</strong></td></tr>
+          <tr><td><strong>Hybrid</strong></td><td><code>O(normal followers)</code> — no celeb storms</td><td><code>O(1 + celebs followed)</code> — small
+          merge</td><td>the sweet spot nearly everyone uses</td></tr>
+        </table>
+      </section>
+
+      <section id="scale">
+        <h2>Ranking, Freshness &amp; Scaling</h2>
+        <p>The push/pull/hybrid decision gets a feed <em>built</em>. Three more concerns make it <em>good</em> and make it <em>scale</em>.</p>
+
+        <h3>Chronological vs ranked ("For You")</h3>
+        <p>The simplest feed is <strong>reverse-chronological</strong>: merge candidates, sort by time, done. Modern feeds are <strong>ranked</strong>: a
+        relevance model scores each candidate (predicted engagement, recency, affinity to the author, media type, how often you've interacted) and sorts by
+        score. Ranking turns "newest first" into "best first" — but it adds a scoring step on the read path and makes the feed <em>non-deterministic</em> (two
+        people following identical accounts see different orders). It's the single biggest lever on engagement, and the single biggest source of complexity.</p>
+
+        <h3>Freshness is eventual, and that's the budget</h3>
+        <p>Because fan-out is <strong>asynchronous</strong> (through Kafka), a post doesn't appear in every follower's feed at the same instant — it ripples out
+        over seconds. That's <strong>eventual consistency</strong> (Day&nbsp;10), and it's not a bug; it's the slack that makes async fan-out possible. Nobody
+        refreshing their feed can tell whether a post arrived 200&nbsp;ms or 3&nbsp;seconds after it was published. You <em>spend</em> that tolerance to avoid
+        doing fan-out synchronously on the posting user's request.</p>
+
+        <h3>Scaling the pieces</h3>
+        <div class="pillar-grid">
+          <div class="pillar-card conf"><h4>🧱 Inboxes in Redis, sharded</h4><p>Each user's feed inbox is a capped list in <strong>Redis</strong>
+          (Day&nbsp;40), <strong>sharded</strong> by user ID (Day&nbsp;13). Capping to the latest ~hundreds of IDs keeps memory bounded — the feed is a sliding
+          window, not an archive.</p></div>
+          <div class="pillar-card amber"><h4>🌀 Fan-out workers off Kafka</h4><p>Fan-out is a fleet of consumers reading the “new post” topic. They parallelize
+          the writes and absorb spikes; a slow celebrity fan-out never blocks normal posts because celebrities are pulled, not pushed.</p></div>
+          <div class="pillar-card integ"><h4>🗄️ Hydration cache</h4><p>Turning IDs into full posts hits a <strong>cache</strong> first (hot posts live in
+          memory); only misses touch the post store. Media is served from the <strong>CDN</strong> (Day&nbsp;4), never the app servers.</p></div>
+          <div class="pillar-card avail"><h4>📈 Estimate before you build</h4><p>Back-of-envelope (Day&nbsp;30): 500M daily users × ~20 opens = 10B feed
+          reads/day ≈ 115k reads/sec average, multiples higher at peak. That read volume is <em>why</em> push exists.</p></div>
+        </div>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>Push-the-many-pull-the-few is the easy 80%. These edges are what separate a clever diagram from a feed that survives real users, real celebrities,
+        and real scale.</p>
+
+        <h3>Where exactly is the celebrity line?</h3>
+        <p>The hybrid needs a threshold: above <em>X</em> followers, pull instead of push. Too low and you pull too many accounts (read path bloats); too high
+        and a near-celebrity's post still causes a mini-storm. Real systems tune this (often tens of thousands to low millions of followers) and sometimes decide
+        <strong>per follower-activity</strong>, not just per follower-count — push to your <em>active</em> followers, skip the dormant ones, so you don't write
+        into millions of inboxes nobody will open.</p>
+
+        <h3>Fan-out to inactive users is wasted work</h3>
+        <p>Most followers won't open the app today. Pushing a post into tens of millions of inboxes when only a fraction get read is enormous wasted write
+        amplification. A common refinement: <strong>don't fan-out to dormant users at all</strong> — mark accounts inactive after N days and pull their feed on
+        the rare occasion they return, reserving push for people who actually show up.</p>
+
+        <h3>Ranking makes the feed non-deterministic and hard to cache</h3>
+        <p>A chronological feed can be heavily cached — the same inbox gives the same order. A <strong>ranked</strong> feed is personalized and
+        time-sensitive, so the final order can't be cached as aggressively, and the scoring model becomes a service of its own on the read path. Better results,
+        more moving parts — the recurring tension between a smarter feed and a cheaper one.</p>
+
+        <h3>Deletes, edits, blocks, and privacy</h3>
+        <p>Once you've pushed an ID into a million inboxes, what happens when the author <strong>deletes</strong> the post, gets <strong>blocked</strong> by a
+        viewer, or the viewer <strong>unfollows</strong>? You generally don't chase down a million inboxes — you <strong>filter at hydration/read time</strong>:
+        the inbox holds candidate IDs, and the read path drops anything deleted, blocked, or no-longer-visible before rendering. The inbox is a hint, not a
+        promise.</p>
+
+        <p style="margin-top:1rem;">The through-line: <code>push many → pull few → merge → rank</code> is the skeleton; doing it with a <em>well-placed celebrity
+        threshold</em>, <em>no wasted fan-out to dormant users</em>, a <em>ranking model</em>, and <em>read-time filtering</em> for deletes and privacy is the
+        craft. Get those right and one feed endpoint quietly shapes what billions of people see every day.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">📮</span><div><strong>From the Tree of Letters to the Mailroom</strong>
+          — <span>You leave type-ahead's <strong>sideways tree of letters</strong> and step into a vast <strong>mailroom</strong> with a wall of
+          <strong>mailboxes</strong> — one per person, and each box is that person's <strong>feed</strong>. The same instinct carries over: <em>precompute the
+          answer</em> so reading is a glance, not a search. A feed inbox is the type-ahead leaderboard, re-cast as your personal mailbox.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🏃</span><div><strong>The Clerk and the Noticeboard</strong> —
+          <span>A <strong>clerk</strong> pre-delivers every normal post into each follower's box (<strong>push</strong> — cheap reads). But a
+          <strong>celebrity</strong> with millions of followers would make the clerk run millions of errands for one post (the <strong>fan-out storm</strong>), so
+          their posts go on a <strong>public noticeboard</strong> you grab from only when you show up (<strong>pull</strong>). You open your box and detour past a
+          few noticeboards, then <strong>merge and rank</strong> the pile — the <strong>hybrid</strong>.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Door Ahead</strong> — <span>A signpost reads
+          <strong>Day 46: Design a Twitter-like System</strong>. Today you built the feed in isolation; next you'll wire it into a whole product — tweets,
+          follows, timelines, search, and the trending engine — and watch this same hybrid fan-out sit at the center of it.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Design: Type-Ahead Search (Day 44)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Design: Social Media Feed (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Design: Twitter-like System (Day 46)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Today builds on…</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Caching / Redis (Day 6 &amp; 40)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Kafka (Day 19)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Sharding (Day 13)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">CDN (Day 4)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Eventual Consistency (Day 10)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Message Queues (Day 18)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Estimation (Day 30)</span>
+        </div>
+        <p>Today is the first <strong>Classic System Design</strong> of Week 7, and it's the deliberate sequel to yesterday's type-ahead: both <em>precompute an
+        answer</em> so the read is a glance, not a scan — type-ahead caches the top-k per prefix, a feed caches the top posts per person. It leans on
+        <strong>Redis (Day 40)</strong> to hold each person's inbox, on <strong>Kafka (Day 19)</strong> and <strong>message queues (Day 18)</strong> to fan out
+        posts asynchronously, on <strong>sharding (Day 13)</strong> to split inboxes across machines, on <strong>CDNs (Day 4)</strong> to serve media, and on
+        <strong>eventual consistency (Day 10)</strong> to justify async delivery. The "push vs pull" tension and the <strong>hybrid fan-out</strong> you learned
+        here are the beating heart of the <strong>Twitter-like system (Day 46)</strong> and reappear in the <strong>chat system (Day 47)</strong>, where the same
+        "deliver into a per-user inbox" idea routes messages instead of posts.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"On feed-open, just query everyone I follow and merge."</td><td>That's <strong>pull</strong>, and it melts the most-read surface in the app —
+          an active user following hundreds of accounts pays a huge fan-in on <em>every</em> refresh. Precompute an <strong>inbox</strong> instead.</td></tr>
+          <tr><td>"Push is clearly best — reads are O(1)!"</td><td>Until a celebrity posts and one write becomes <strong>millions of inserts</strong> (the
+          fan-out storm), most into inboxes nobody reads. Pure push can't survive the power-law follower graph.</td></tr>
+          <tr><td>"Store the full post in every follower's feed."</td><td>Never duplicate content. The inbox stores <strong>post IDs</strong>; the post is
+          written <strong>once</strong> and <strong>hydrated</strong> separately. IDs are cheap to copy a million times; photos are not.</td></tr>
+          <tr><td>"Fan-out should finish before the post is confirmed."</td><td>No — fan-out is <strong>asynchronous</strong> (via Kafka). Posting returns
+          immediately; delivery ripples out over seconds. The feed is <strong>eventually consistent</strong>.</td></tr>
+          <tr><td>"When a post is deleted, remove it from every inbox."</td><td>You don't chase a million inboxes. <strong>Filter at read time</strong> —
+          drop deleted/blocked/unfollowed items during hydration. The inbox is a candidate list, not ground truth.</td></tr>
+          <tr><td>"Hybrid is premature optimization; pick one model."</td><td>At real scale the follower graph <em>forces</em> the split: no single model handles
+          both a 20M-follower celebrity and a 500-follow power user. <strong>Hybrid is the baseline</strong>, not a flourish.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ You're designing a social media feed. (1) Your v1 builds the feed at read time by querying everyone the viewer
+          follows — it melts in production. What's the real problem, and what do you precompute instead? (2) You switch to pushing each post into every
+          follower's inbox and reads go instant — until a 20M-follower celebrity posts. What breaks, and what's the fix? (3) In the hybrid, what gets pushed, what
+          gets pulled, and where do the two meet? (click to reveal)</div>
+          <div class="recall-answer"><strong>(1) It's read-side fan-in on the most-read surface.</strong> Pull (fan-out on read) makes every feed-open cost one
+          query per followed account plus a merge — paid billions of times a day. Precompute a per-person <strong>inbox</strong> (a capped Redis list of post
+          IDs) so reading a feed is a single list lookup. <br><br><strong>(2) The fan-out storm.</strong> Pushing a celebrity's post means writing its ID into
+          <em>millions</em> of inboxes — a write explosion, most of it into inboxes nobody opens that day, and the fan-out falls hours behind. Fix: stop pushing
+          celebrity posts. Store them once and <strong>pull</strong> them at read time. <br><br><strong>(3) Push the many, pull the few, merge at read.</strong>
+          <strong>Normal accounts are pushed</strong> into follower inboxes (cheap reads). <strong>Celebrity accounts are pulled</strong> — their recent posts
+          fetched when a viewer opens their feed (no write storm). The two meet at the <strong>read path</strong>: the timeline service reads your inbox, pulls
+          the handful of celebrities you follow, <strong>merges</strong> both into one candidate set, <strong>ranks</strong>, and hydrates the top N.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">🐦 Twitter / X Timelines</div><p>The canonical hybrid. Twitter precomputes each user's home
+          timeline by <strong>fanning out tweets on write</strong> into per-user Redis-backed timelines, but treats <strong>high-follower accounts</strong>
+          specially — their tweets are <strong>merged in at read time</strong> rather than fanned out, precisely to avoid the fan-out storm. Their internal
+          caching layer for this was famously built on Redis.</p></div>
+          <div class="realworld-card"><div class="rw-company">📸 Instagram Feed</div><p>Instagram's feed and “stories” rely on precomputed, cached timelines with
+          a heavy <strong>ranking</strong> model layered on top — the order you see isn't chronological but scored by predicted engagement and affinity. Media is
+          served from <strong>CDNs</strong>; the feed service deals in IDs and hydrates content separately.</p></div>
+          <div class="realworld-card"><div class="rw-company">👍 Facebook News Feed</div><p>Facebook leans toward <strong>pull + aggressive ranking</strong>:
+          candidates are gathered and then scored by one of the most complex relevance models in the industry (thousands of signals), with multi-layer
+          <strong>caching</strong> to keep the read path fast despite the ranking cost. The feed is a ranking problem as much as a fan-out problem.</p></div>
+          <div class="realworld-card"><div class="rw-company">🌀 The async fan-out backbone</div><p>Behind all of them sits the unglamorous half: a
+          <strong>Kafka</strong>-style event log (Day&nbsp;19) carrying “new post” events to a fleet of <strong>fan-out workers</strong>, writing capped
+          <strong>Redis</strong> inboxes sharded by user, with <strong>eventual consistency</strong> as the accepted trade. The feed is only as good as the
+          pipeline that fills the inboxes.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: In one sentence, how does a social media feed work at scale?</div>
+          <div class="fc-a">A: It's a per-person <strong>precomputed inbox</strong> of post IDs, filled by <strong>pushing</strong> normal accounts' posts to
+          every follower and <strong>pulling</strong> celebrity posts at read time, then <strong>merged and ranked</strong> when you open the app and hydrated
+          from a content cache/CDN.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is fan-out on write (push), and what's its failure mode?</div>
+          <div class="fc-a">A: When someone posts, copy the post ID into <strong>every follower's inbox</strong>, so reads are an O(1) list lookup. Failure mode:
+          a post by an account with <em>N</em> followers costs <em>N</em> writes — for a celebrity that's a <strong>fan-out storm</strong> of millions of inserts,
+          most into inboxes nobody reads.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is fan-out on read (pull), and what's its failure mode?</div>
+          <div class="fc-a">A: Store each post <strong>once</strong>; at read time, query <strong>every account the viewer follows</strong>, merge, and rank.
+          Writes are O(1). Failure mode: a feed-open for someone following <em>M</em> accounts costs <em>M</em> reads + a merge, paid on every refresh — a
+          <strong>read storm</strong> on the most-read surface.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why does the hybrid use push for most accounts but pull for celebrities?</div>
+          <div class="fc-a">A: The follower graph is a <strong>power law</strong>. Push keeps the common read cheap but explodes on high-follower posts; pull
+          avoids write storms but is expensive per read. Hybrid <strong>pushes normal accounts</strong> (cheap reads) and <strong>pulls the few celebrities</strong>
+          each viewer follows (no storms), merging both at read time — keeping both paths cheap.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why does the feed inbox store IDs instead of full posts, and when is content fetched?</div>
+          <div class="fc-a">A: Copying an <strong>ID</strong> into a million inboxes is cheap; duplicating a photo a million times is not. The post is written
+          <strong>once</strong> to the post store; the read path <strong>hydrates</strong> the top-N IDs into full posts from a cache/CDN — which also lets you
+          <strong>filter deleted/blocked items at read time</strong>.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>In one sentence, what does a social media feed do, and why is it the most read-heavy surface in the product?</li>
+          <li>Explain fan-out on write (push): what does it make cheap, what does it make expensive, and what's the fan-out storm?</li>
+          <li>Explain fan-out on read (pull): what does it make cheap, what does it make expensive, and who does it break for?</li>
+          <li>Describe the hybrid precisely: what is pushed, what is pulled, and where do the two piles get combined?</li>
+          <li>Walk the write path and the read path of the hybrid, naming the components (post store, Kafka, fan-out service, inbox, timeline service, CDN).</li>
+          <li>Why does the inbox store IDs, not posts — and how does hydration let you handle deletes, blocks, and unfollows at read time?</li>
+          <li>Name three hard parts (celebrity threshold, dormant-user fan-out, ranking vs cacheability) and how each is handled.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>a feed is a per-person precomputed inbox, filled by pushing normal posts and pulling celebrity posts, merged
+          and ranked at read time.</strong> The feed is the most <em>read-heavy</em> surface in the app, so you want reads cheap — which is why you
+          <strong>push</strong> (fan-out on write) a post's ID into every follower's inbox and make reading a single list lookup. But the follower graph is a
+          <strong>power law</strong>, so a celebrity's single post would explode into millions of writes — the <strong>fan-out storm</strong> — which is why you
+          <strong>pull</strong> (fan-out on read) celebrity posts at read time instead. The <strong>hybrid</strong> keeps both paths cheap by refusing to treat a
+          20-million-follower account like a 300-follower one. Store <strong>IDs, not posts</strong>; fan out <strong>asynchronously</strong> through Kafka and
+          accept <strong>eventual consistency</strong>; <strong>rank</strong> candidates for a “For You” feed; and <strong>filter deletes and blocks at read
+          time</strong>. One inbox per person, one reusable pattern — precompute for the many, gather for the few — that powers the next lesson too. Next,
+          <strong>Day 46 — Design a Twitter-like System</strong>: we take this feed and build the whole product around it.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-44.html">← Day 44: Design a Type-Ahead Search</a>
+        <a href="day-46.html" class="coming-soon-link">Day 46: Design a Twitter-like System →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 45 of 90 — Design a Social Media Feed</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ══════════════════════════════════════════════════════════════════════
+  //  INTERACTIVE DEMOS — a push/pull/hybrid cost explorer with real
+  //  arithmetic, and a step-through hybrid feed-assembly simulator.
+  // ══════════════════════════════════════════════════════════════════════
+
+  // ── mode toggle ──────────────────────────────────────────────────────
+  Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(btn){
+    btn.addEventListener('click', function(){
+      var mode = btn.getAttribute('data-mode');
+      Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      document.getElementById('panel-cost').classList.toggle('active', mode === 'cost');
+      document.getElementById('panel-feed').classList.toggle('active', mode === 'feed');
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 1 — FAN-OUT COST EXPLORER
+  //  Reader profile: follows 400 accounts, 3 of them celebrities.
+  // ══════════════════════════════════════════════════════════════════════
+  var STRAT = 'push', POSTER = 'normal';
+  var READER_FOLLOWS = 400, READER_CELEBS = 3;
+  var NORMAL_FOLLOWERS = 300, CELEB_FOLLOWERS = 20000000;
+
+  function fmt(n){
+    if (n >= 1000000) return (n/1000000).toFixed(n % 1000000 === 0 ? 0 : 1) + 'M';
+    if (n >= 1000)    return (n/1000).toFixed(n % 1000 === 0 ? 0 : 1) + 'k';
+    return '' + n;
+  }
+  // log-ish bar width so a 1 and a 20,000,000 both read on the same meter
+  function barPct(n){
+    if (n <= 1) return 4;
+    var p = Math.log10(n) / Math.log10(CELEB_FOLLOWERS); // 0..1 across the realistic range
+    return Math.max(4, Math.min(100, Math.round(p * 100)));
+  }
+
+  function renderCost(){
+    var followers = (POSTER === 'celeb') ? CELEB_FOLLOWERS : NORMAL_FOLLOWERS;
+    var writes, reads, wNote, rNote, wStorm = false, rStorm = false, bottleneck, verdict, vClass;
+
+    if (STRAT === 'push'){
+      writes = followers;                 // push the ID into every follower's inbox
+      reads  = 1;                          // read your own inbox
+      wStorm = (POSTER === 'celeb');
+      wNote  = 'Push copies the post ID into <b>every follower\'s inbox</b> — ' + fmt(writes) + ' writes for this one post.';
+      rNote  = 'Reading is a single <b>inbox lookup</b>, regardless of how many accounts you follow. This is push\'s whole payoff.';
+    } else if (STRAT === 'pull'){
+      writes = 1;                          // store the post once
+      reads  = READER_FOLLOWS;             // query everyone you follow at read time
+      rStorm = true;
+      wNote  = 'Pull stores the post <b>once</b> — a single insert, no matter who posted. Writes are trivial.';
+      rNote  = 'But every feed-open queries <b>all ' + READER_FOLLOWS + ' accounts you follow</b> and merges them — paid on every refresh.';
+    } else { // hybrid
+      writes = (POSTER === 'celeb') ? 1 : followers;        // push normal, pull celeb
+      reads  = 1 + READER_CELEBS;                            // inbox + pull the few celebrities
+      wNote  = (POSTER === 'celeb')
+        ? 'Celebrity → <b>not pushed</b>. The post is stored once (1 write) and pulled at read time. No storm.'
+        : 'Normal account → <b>pushed</b> into ' + fmt(writes) + ' follower inboxes. Manageable fan-out.';
+      rNote  = 'Reading is your <b>inbox</b> (1) plus a small <b>pull of the ' + READER_CELEBS + ' celebrities</b> you follow — then merge. Small and bounded.';
+    }
+
+    // bars + labels
+    document.getElementById('w-bar').style.width = barPct(writes) + '%';
+    document.getElementById('r-bar').style.width = barPct(reads) + '%';
+    document.getElementById('w-bar-label').textContent = fmt(writes) + (writes === 1 ? ' write' : ' writes');
+    document.getElementById('r-bar-label').textContent = fmt(reads) + (reads === 1 ? ' read' : ' reads');
+    document.getElementById('w-note').innerHTML = wNote;
+    document.getElementById('r-note').innerHTML = rNote;
+
+    document.getElementById('w-amp').innerHTML = wStorm
+      ? '<span class="amp-badge hot">⚠ fan-out storm</span>'
+      : '<span class="amp-badge cool">bounded</span>';
+    document.getElementById('r-amp').innerHTML = rStorm
+      ? '<span class="amp-badge hot">⚠ read storm</span>'
+      : '<span class="amp-badge cool">bounded</span>';
+
+    document.getElementById('c-write').textContent = fmt(writes);
+    document.getElementById('c-read').textContent  = fmt(reads);
+
+    // verdict
+    var s = document.getElementById('c-status');
+    if (STRAT === 'push' && POSTER === 'celeb'){
+      bottleneck = 'WRITE'; vClass = 'bad';
+      verdict = '🚨 <b>Fan-out storm.</b> One celebrity post = <b>' + fmt(writes) + ' writes</b>, most into inboxes nobody reads today. Pure push cannot survive celebrities — this is exactly why the hybrid pulls them instead.';
+    } else if (STRAT === 'push'){
+      bottleneck = 'write'; vClass = 'ok';
+      verdict = '✅ For a normal account, push is ideal: <b>' + fmt(writes) + ' writes</b> now buys <b>O(1) reads</b> forever. The danger only appears when a high-follower account posts.';
+    } else if (STRAT === 'pull'){
+      bottleneck = 'READ'; vClass = 'bad';
+      verdict = '🚨 <b>Read storm.</b> Writes are free (1), but every feed-open costs <b>' + fmt(reads) + ' reads + a merge</b> — on the most-read surface in the app. Pull optimizes the rare case and punishes the common one.';
+    } else {
+      bottleneck = 'balanced'; vClass = 'ok';
+      verdict = (POSTER === 'celeb')
+        ? '✅ <b>Hybrid defuses the storm:</b> the celebrity post is <b>1 write</b> (pulled later), and your read is just inbox + <b>' + READER_CELEBS + ' celebrity pulls</b>. Both paths stay cheap.'
+        : '✅ <b>Hybrid, common case:</b> a normal post is pushed to <b>' + fmt(writes) + ' inboxes</b>, and your read is inbox + a tiny celebrity pull. Both paths cheap — this is the sweet spot.';
+    }
+    document.getElementById('c-verdict-chip').textContent = bottleneck;
+    s.className = 'q-status ' + vClass;
+    s.innerHTML = verdict;
+  }
+
+  function wireNrw(sel, attr, apply){
+    Array.prototype.forEach.call(document.querySelectorAll(sel + ' button'), function(btn){
+      btn.addEventListener('click', function(){
+        apply(btn.getAttribute(attr));
+        Array.prototype.forEach.call(document.querySelectorAll(sel + ' button'), function(b){ b.classList.toggle('active', b === btn); });
+      });
+    });
+  }
+  wireNrw('#strat-btns', 'data-strat', function(v){ STRAT = v; renderCost(); });
+  wireNrw('#poster-btns', 'data-poster', function(v){ POSTER = v; renderCost(); });
+  renderCost();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 2 — FEED ASSEMBLY (hybrid, step by step)
+  // ══════════════════════════════════════════════════════════════════════
+  // Pushed posts already sit in your inbox; pulled posts come from celebs.
+  var PUSH_POSTS = [
+    { who:'@maya',   emoji:'🙂', text:'shipped the new build 🚀', score:72, src:'push' },
+    { who:'@leo',    emoji:'🧑', text:'coffee #237 of the week',  score:41, src:'push' },
+    { who:'@priya',  emoji:'👩', text:'weekend hike photos',      score:88, src:'push' },
+    { who:'@sam',    emoji:'🧔', text:'hot take about tabs',      score:30, src:'push' }
+  ];
+  var PULL_POSTS = [
+    { who:'@popstar', emoji:'⭐', text:'new single drops friday', score:95, src:'pull' },
+    { who:'@baller',  emoji:'🏀', text:'game-winning buzzer beat', score:81, src:'pull' }
+  ];
+  var fStep = 0, merged = [];
+
+  function markSteps(n){
+    Array.prototype.forEach.call(document.querySelectorAll('#feed-steps .step-pill'), function(p){
+      var s = +p.getAttribute('data-step');
+      p.classList.toggle('done', s < n);
+      p.classList.toggle('active', s === n);
+    });
+  }
+  function postChipHTML(p){
+    return '<div class="post-chip ' + p.src + '" data-id="' + p.who + '">' +
+      '<span class="who">' + p.emoji + ' ' + p.who + '</span>' +
+      '<span class="src-tag">' + p.src + '</span>' +
+      '<span class="score">' + p.score + '</span></div>';
+  }
+  function renderCols(){
+    document.getElementById('col-push').innerHTML = PUSH_POSTS.map(postChipHTML).join('');
+    document.getElementById('col-pull').innerHTML = PULL_POSTS.map(postChipHTML).join('');
+  }
+  function renderFeed(show){
+    var html = merged.map(function(p, i){
+      return '<div class="feed-row' + (i < show ? ' show' : '') + '">' +
+        '<span class="rk">' + (i+1) + '</span>' +
+        '<span class="av">' + p.emoji + '</span>' +
+        '<span class="bd"><span class="nm">' + p.who + ' <span class="st ' + p.src + '">' + p.src + '</span></span>' +
+        '<span class="tx">' + p.text + '</span></span>' +
+        '<span class="sc">' + p.score + '</span></div>';
+    }).join('');
+    document.getElementById('feed-rendered').innerHTML = html;
+  }
+
+  function resetFeed(){
+    fStep = 0; merged = [];
+    renderCols();
+    document.getElementById('feed-rendered').innerHTML = '';
+    markSteps(0);
+    var s = document.getElementById('f-status');
+    s.className = 'q-status info';
+    s.innerHTML = 'Hit “Next step” to read your inbox first.';
+  }
+
+  function doStep(){
+    if (fStep >= 5) return;
+    fStep++;
+    markSteps(fStep);
+    var s = document.getElementById('f-status');
+
+    if (fStep === 1){                       // read inbox (push)
+      Array.prototype.forEach.call(document.querySelectorAll('#col-push .post-chip'), function(c){ c.classList.add('show'); });
+      s.className = 'q-status ok';
+      s.innerHTML = '📥 <b>Step 1 — Read inbox.</b> Your 4 pushed posts were <b>already in Redis</b> — one list lookup, no fan-in. This is the cheap common case.';
+    } else if (fStep === 2){                // pull celebrities
+      Array.prototype.forEach.call(document.querySelectorAll('#col-pull .post-chip'), function(c){ c.classList.add('show'); });
+      s.className = 'q-status ok';
+      s.innerHTML = '⭐ <b>Step 2 — Pull celebrities.</b> The 2 celebrities you follow were <b>never pushed</b>, so you fetch their latest now — a tiny, bounded pull.';
+    } else if (fStep === 3){                // merge
+      merged = PUSH_POSTS.concat(PULL_POSTS).slice();
+      renderFeed(0);
+      s.className = 'q-status info';
+      s.innerHTML = '🔀 <b>Step 3 — Merge.</b> Pushed + pulled = <b>' + merged.length + ' candidates</b> in one pile. Not yet ordered — just combined.';
+    } else if (fStep === 4){                // rank
+      merged.sort(function(a,b){ return b.score - a.score; });
+      renderFeed(0);
+      s.className = 'q-status info';
+      s.innerHTML = '🏆 <b>Step 4 — Rank.</b> Sort candidates by <b>relevance score</b> (not time) — a “For You” feed. Highest score goes to the top.';
+    } else if (fStep === 5){                // render
+      merged.sort(function(a,b){ return b.score - a.score; });
+      renderFeed(merged.length);
+      s.className = 'q-status ok';
+      s.innerHTML = '🏠 <b>Step 5 — Render.</b> Hydrate the top IDs into full posts (text + media from the CDN) and show the feed. Push the many, pull the few, merge &amp; rank — done.';
+    }
+  }
+
+  document.getElementById('f-step').addEventListener('click', doStep);
+  document.getElementById('f-reset').addEventListener('click', resetFeed);
+  document.getElementById('f-run').addEventListener('click', function(){
+    resetFeed();
+    var t = setInterval(function(){ if (fStep >= 5){ clearInterval(t); return; } doStep(); }, 650);
+  });
+  resetFeed();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  roughjs (Excalidraw-style) diagrams
+  // ══════════════════════════════════════════════════════════════════════
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+    return t;
+  }
+  function arrow(svg, rs, x1, y1, x2, y2, col){
+    col = col || '#64748b';
+    svg.appendChild(rs.line(x1, y1, x2, y2, { stroke:col, strokeWidth:1.6, roughness:0.9 }));
+    var ang = Math.atan2(y2 - y1, x2 - x1);
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang - 0.4), y2 - 10*Math.sin(ang - 0.4), { stroke:col, strokeWidth:1.6, roughness:0.9 }));
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang + 0.4), y2 - 10*Math.sin(ang + 0.4), { stroke:col, strokeWidth:1.6, roughness:0.9 }));
+  }
+
+  // ── Anchor: the mailroom ──────────────────────────────────────────────
+  function drawAnchorDiagram(){
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+
+    makeTxt(svg, 440, 26, 'THE MAILROOM', '#e2e8f0', 15, 800);
+
+    // normal poster → clerk → wall of mailboxes
+    svg.appendChild(rs.circle(70, 110, 46, {stroke:'#38bdf8', strokeWidth:1.8, roughness:1, fill:'#38bdf810', fillStyle:'solid'}));
+    makeTxt(svg, 70, 108, '🙂', '#e2e8f0', 20); makeTxt(svg, 70, 150, 'normal', '#7dd3fc', 10, 700); makeTxt(svg, 70, 163, 'posts', '#7dd3fc', 10, 700);
+
+    svg.appendChild(rs.rectangle(170, 82, 108, 56, {stroke:'#fbbf24', strokeWidth:1.7, roughness:1, fill:'#fbbf2410', fillStyle:'solid'}));
+    makeTxt(svg, 224, 104, '🏃 clerk', '#fcd34d', 12, 800); makeTxt(svg, 224, 122, 'fan-out', '#fcd34d', 10, 600);
+    arrow(svg, rs, 96, 110, 168, 110, '#38bdf8');
+
+    // wall of mailboxes
+    var bx = 330, by = 56;
+    for (var i = 0; i < 5; i++){
+      var y = by + i*42;
+      svg.appendChild(rs.rectangle(bx, y, 120, 34, {stroke:'#22c55e', strokeWidth:1.5, roughness:1, fill:'#22c55e0c', fillStyle:'solid'}));
+      makeTxt(svg, bx + 16, y + 22, '📥', '#e2e8f0', 13);
+      makeTxt(svg, bx + 74, y + 21, 'inbox', '#86efac', 10, 700);
+      arrow(svg, rs, 280, 110, bx - 4, y + 17, '#22c55e');
+    }
+    makeTxt(svg, bx + 60, by + 5*42 + 16, 'a mailbox per follower (push)', '#86efac', 10, 700);
+
+    // reader opening own box
+    svg.appendChild(rs.circle(560, 130, 44, {stroke:'#38bdf8', strokeWidth:1.8, roughness:1, fill:'#38bdf810', fillStyle:'solid'}));
+    makeTxt(svg, 560, 128, '👁️', '#e2e8f0', 18); makeTxt(svg, 560, 168, 'you, reading', '#7dd3fc', 10, 700);
+    arrow(svg, rs, 452, 120, 536, 128, '#22c55e');
+    makeTxt(svg, 495, 110, 'open box', '#86efac', 9, 600);
+
+    // celebrity → noticeboard
+    svg.appendChild(rs.circle(70, 300, 46, {stroke:'#a78bfa', strokeWidth:1.8, roughness:1, fill:'#a78bfa10', fillStyle:'solid'}));
+    makeTxt(svg, 70, 298, '⭐', '#e2e8f0', 20); makeTxt(svg, 70, 340, 'celebrity', '#c4b5fd', 10, 700); makeTxt(svg, 70, 353, '20M followers', '#c4b5fd', 9, 600);
+
+    svg.appendChild(rs.rectangle(210, 268, 150, 72, {stroke:'#a78bfa', strokeWidth:1.7, roughness:1, fill:'#a78bfa10', fillStyle:'solid'}));
+    makeTxt(svg, 285, 294, '📌 NOTICEBOARD', '#c4b5fd', 11, 800); makeTxt(svg, 285, 312, 'posts wait here', '#c4b5fd', 9, 600); makeTxt(svg, 285, 328, '(not copied anywhere)', '#94a3b8', 9, 400);
+    arrow(svg, rs, 96, 300, 208, 300, '#a78bfa');
+    makeTxt(svg, 150, 288, '1 write', '#c4b5fd', 9, 700);
+
+    // reader detours to noticeboard at read time (pull)
+    arrow(svg, rs, 362, 300, 540, 150, '#a78bfa');
+    makeTxt(svg, 470, 250, 'grab at read time (pull)', '#c4b5fd', 10, 700);
+
+    // merge box
+    svg.appendChild(rs.rectangle(660, 92, 188, 150, {stroke:'#38bdf8', strokeWidth:1.8, roughness:1, fill:'#0b1120', fillStyle:'solid'}));
+    makeTxt(svg, 754, 116, '🏠 YOUR FEED', '#7dd3fc', 12, 800);
+    makeTxt(svg, 754, 140, 'inbox (push)', '#86efac', 10, 700);
+    makeTxt(svg, 754, 158, '+ celebs (pull)', '#c4b5fd', 10, 700);
+    makeTxt(svg, 754, 180, '= merge & rank', '#e2e8f0', 11, 800);
+    makeTxt(svg, 754, 204, 'one ranked', '#94a3b8', 9, 400);
+    makeTxt(svg, 754, 218, 'stack', '#94a3b8', 9, 400);
+    arrow(svg, rs, 604, 135, 656, 140, '#22c55e');
+
+    makeTxt(svg, 440, 420, 'Push the many into mailboxes · pull the few from noticeboards · merge at read time = the hybrid feed', '#94a3b8', 11, 600);
+  }
+
+  // ── Architecture: write path + read path ──────────────────────────────
+  function drawArchDiagram(){
+    var svg = document.getElementById('arch-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.7,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+
+    makeTxt(svg, 220, 24, '✍️  WRITE PATH — someone posts', '#fca5a5', 13, 800);
+    makeTxt(svg, 660, 24, '👁️  READ PATH — someone opens their feed', '#7dd3fc', 13, 800);
+    svg.appendChild(rs.line(440, 40, 440, 520, { stroke:'#334155', strokeWidth:1.2, roughness:0.8 }));
+
+    // WRITE PATH (left column)
+    box(60, 50, 150, 46, '#38bdf8', '#38bdf810'); makeTxt(svg, 135, 70, 'Author posts', '#7dd3fc', 11, 800); makeTxt(svg, 135, 86, 'POST /post', '#94a3b8', 9, 400, true);
+    box(60, 124, 150, 46, '#38bdf8', '#38bdf810'); makeTxt(svg, 135, 144, 'Post service', '#7dd3fc', 11, 800); makeTxt(svg, 135, 160, 'store once → id', '#94a3b8', 9, 400);
+    box(60, 198, 150, 46, '#64748b', '#1e293b'); makeTxt(svg, 135, 218, 'Post store + CDN', '#cbd5e1', 11, 800); makeTxt(svg, 135, 234, 'media → object store', '#94a3b8', 9, 400);
+    box(60, 272, 150, 46, '#fbbf24', '#fbbf2410'); makeTxt(svg, 135, 292, 'Kafka', '#fcd34d', 11, 800); makeTxt(svg, 135, 308, '“new post” event', '#94a3b8', 9, 400);
+    box(60, 346, 150, 64, '#fbbf24', '#fbbf2410'); makeTxt(svg, 135, 366, 'Fan-out service', '#fcd34d', 11, 800); makeTxt(svg, 135, 383, 'normal → push', '#86efac', 9, 700); makeTxt(svg, 135, 398, 'celeb → skip (pull)', '#c4b5fd', 9, 700);
+    arrow(svg, rs, 135, 96, 135, 122, '#38bdf8');
+    arrow(svg, rs, 135, 170, 135, 196, '#38bdf8');
+    arrow(svg, rs, 210, 147, 300, 147, '#64748b'); // post service → also returns id
+    arrow(svg, rs, 135, 244, 135, 270, '#64748b');
+    arrow(svg, rs, 135, 318, 135, 344, '#fbbf24');
+
+    // follower inboxes (middle, written by fan-out)
+    box(250, 300, 150, 110, '#22c55e', '#22c55e0c');
+    makeTxt(svg, 325, 322, '📥 Feed inboxes', '#86efac', 11, 800);
+    makeTxt(svg, 325, 342, 'Redis, sharded', '#94a3b8', 9, 400);
+    makeTxt(svg, 325, 360, 'capped list of IDs', '#94a3b8', 9, 400);
+    makeTxt(svg, 325, 384, 'one per user', '#86efac', 9, 600);
+    arrow(svg, rs, 210, 378, 248, 360, '#22c55e');
+    makeTxt(svg, 230, 345, 'push', '#86efac', 9, 700);
+
+    // READ PATH (right column)
+    box(620, 50, 170, 46, '#38bdf8', '#38bdf810'); makeTxt(svg, 705, 70, 'You open the app', '#7dd3fc', 11, 800); makeTxt(svg, 705, 86, 'GET /feed', '#94a3b8', 9, 400, true);
+    box(620, 124, 170, 46, '#38bdf8', '#38bdf810'); makeTxt(svg, 705, 144, 'Timeline service', '#7dd3fc', 11, 800);
+    box(620, 198, 170, 40, '#22c55e', '#22c55e0c'); makeTxt(svg, 705, 222, 'read inbox (push)', '#86efac', 10, 800);
+    box(620, 250, 170, 40, '#a78bfa', '#a78bfa10'); makeTxt(svg, 705, 274, 'pull celebrities', '#c4b5fd', 10, 800);
+    box(620, 302, 170, 40, '#38bdf8', '#38bdf810'); makeTxt(svg, 705, 326, 'merge + rank', '#7dd3fc', 10, 800);
+    box(620, 354, 170, 40, '#64748b', '#1e293b'); makeTxt(svg, 705, 378, 'hydrate top N → render', '#cbd5e1', 10, 800);
+    arrow(svg, rs, 705, 96, 705, 122, '#38bdf8');
+    arrow(svg, rs, 705, 170, 705, 196, '#38bdf8');
+    arrow(svg, rs, 705, 238, 705, 248, '#38bdf8');
+    arrow(svg, rs, 705, 290, 705, 300, '#38bdf8');
+    arrow(svg, rs, 705, 342, 705, 352, '#38bdf8');
+
+    // inbox feeds the read path
+    arrow(svg, rs, 400, 340, 618, 218, '#22c55e');
+    makeTxt(svg, 510, 300, 'inbox read', '#86efac', 9, 700);
+    // post store feeds pull + hydrate
+    arrow(svg, rs, 210, 220, 618, 270, '#a78bfa');
+    makeTxt(svg, 430, 232, 'celeb posts pulled from store', '#c4b5fd', 9, 600);
+
+    makeTxt(svg, 440, 508, 'Write once, fan out async (push normal / skip celeb) · read = inbox + celeb pull → merge → rank → hydrate', '#94a3b8', 10, 600);
+  }
+
+  // ── Approaches: push vs pull vs hybrid ────────────────────────────────
+  function drawApproachDiagram(){
+    var svg = document.getElementById('approach-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.6,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+
+    // PUSH
+    makeTxt(svg, 145, 28, '📤 PUSH (fan-out on write)', '#fca5a5', 12, 800);
+    box(70, 44, 150, 40, '#38bdf8', '#38bdf810'); makeTxt(svg, 145, 68, 'post', '#7dd3fc', 11, 800);
+    for (var i=0;i<4;i++){ box(40 + i*60, 120, 48, 30, '#fb7185', '#fb718510'); makeTxt(svg, 64 + i*60, 139, '📥', '#e2e8f0', 12); arrow(svg, rs, 145, 86, 64 + i*60, 118, '#fb7185'); }
+    makeTxt(svg, 145, 172, 'write → every inbox', '#fca5a5', 10, 700);
+    makeTxt(svg, 145, 190, 'reads: O(1) 👍', '#86efac', 10, 700);
+    makeTxt(svg, 145, 207, 'celeb: STORM 💥', '#fca5a5', 10, 800);
+
+    // PULL
+    makeTxt(svg, 440, 28, '📥 PULL (fan-out on read)', '#fcd34d', 12, 800);
+    box(366, 44, 150, 30, '#fbbf24', '#fbbf2410'); makeTxt(svg, 441, 64, 'post → stored once', '#fcd34d', 10, 800);
+    box(416, 120, 50, 30, '#38bdf8', '#38bdf810'); makeTxt(svg, 441, 139, '👁️', '#e2e8f0', 13);
+    for (var j=0;j<4;j++){ box(340 + j*44, 185, 36, 26, '#64748b', '#1e293b'); makeTxt(svg, 358 + j*44, 203, '📝', '#cbd5e1', 11); arrow(svg, rs, 441, 150, 358 + j*44, 183, '#fbbf24'); }
+    makeTxt(svg, 441, 100, 'at read: query all you follow', '#fcd34d', 9, 600);
+    makeTxt(svg, 441, 236, 'writes: O(1) 👍 · reads: STORM 💥', '#fca5a5', 10, 700);
+
+    // HYBRID
+    makeTxt(svg, 735, 28, '🔀 HYBRID', '#86efac', 12, 800);
+    box(690, 44, 92, 30, '#22c55e', '#22c55e10'); makeTxt(svg, 736, 64, 'normal → push', '#86efac', 9, 800);
+    box(690, 84, 92, 30, '#a78bfa', '#a78bfa10'); makeTxt(svg, 736, 104, 'celeb → pull', '#c4b5fd', 9, 800);
+    box(672, 140, 128, 44, '#38bdf8', '#0b1120'); makeTxt(svg, 736, 160, 'merge at read', '#7dd3fc', 10, 800); makeTxt(svg, 736, 176, 'inbox + celeb pull', '#94a3b8', 8, 400);
+    arrow(svg, rs, 736, 74, 722, 138, '#22c55e');
+    arrow(svg, rs, 736, 114, 750, 138, '#a78bfa');
+    makeTxt(svg, 736, 206, 'both paths cheap ✅', '#86efac', 10, 800);
+
+    // dividers
+    svg.appendChild(rs.line(290, 40, 290, 250, { stroke:'#334155', strokeWidth:1, roughness:0.8 }));
+    svg.appendChild(rs.line(590, 40, 590, 250, { stroke:'#334155', strokeWidth:1, roughness:0.8 }));
+
+    // bottom summary bar
+    svg.appendChild(rs.rectangle(40, 286, 800, 30, { stroke:'#fb7185', strokeWidth:1.3, roughness:1, fill:'#fb718508', fillStyle:'solid' }));
+    makeTxt(svg, 440, 305, 'Push: cheap reads, celebrity write storms   ·   Pull: cheap writes, active-user read storms', '#fca5a5', 11, 600);
+    svg.appendChild(rs.rectangle(40, 324, 800, 30, { stroke:'#86efac', strokeWidth:1.3, roughness:1, fill:'#22c55e08', fillStyle:'solid' }));
+    makeTxt(svg, 440, 343, 'Hybrid: push the many, pull the few, merge at read — the only model that survives the power-law follower graph', '#86efac', 11, 700);
+    svg.appendChild(rs.rectangle(40, 372, 800, 42, { stroke:'#38bdf8', strokeWidth:1.4, roughness:1, fill:'#38bdf80a', fillStyle:'solid' }));
+    makeTxt(svg, 440, 390, 'Write cost:  Push O(followers) · Pull O(1) · Hybrid O(normal followers)', '#cbd5e1', 11, 700);
+    makeTxt(svg, 440, 406, 'Read cost:   Push O(1) · Pull O(followees) · Hybrid O(1 + celebs followed)', '#cbd5e1', 11, 700);
+  }
+
+  function drawAll(){ drawAnchorDiagram(); drawArchDiagram(); drawApproachDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
