@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 46: Design a Twitter-like System | System Design Mastery</title>
+  <meta name="description" content="Twitter isn't one system — it's five systems wearing a trench coat, and the trick that holds them together is one idea: write the tweet ONCE, then build many read-optimized views from that single event. We design the whole product from scratch — the tweet write path, the home timeline (the hybrid fan-out from Day 45), search, trending, and engagement counts — and meet the two pieces that make Twitter uniquely Twitter. First, the Snowflake ID: how do you stamp billions of tweets a day with IDs that are globally unique AND roughly time-ordered, on thousands of machines, with zero coordination? The answer is a 64-bit number cut into three fields — a timestamp, a machine id, and a per-millisecond sequence — and you'll build one bit by bit in a live widget and watch the IDs sort themselves by time. Second, trending: how do you compute the top hashtags in real time from a firehose of hundreds of thousands of tweets a second? The answer is a windowed, approximate top-k over a stream — and you'll run a live trending board, inject a surge, and watch a hashtag rocket up and then decay out of the window. Taught with a broadcast control-room memory anchor, three Excalidraw-style diagrams, the real tradeoffs, and how Twitter actually does it." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; vertical-align:top; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; gap:1rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .flow-step > span.n { font-weight:800; color: var(--accent-light); min-width:1.6rem; font-family:'JetBrains Mono',monospace; }
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .sim-panel { display:none; } .sim-panel.active { display:block; }
+    .q-status { text-align:center; font-weight:700; font-size:.88rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.75rem 0 1rem; line-height:1.6; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+    .q-status.info { background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .sim-controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 1rem; }
+    .stat-row { display:flex; gap:.6rem; flex-wrap:wrap; margin:.9rem 0; }
+    .stat-chip { flex:1; min-width:120px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:.6rem .8rem; text-align:center; }
+    .stat-chip .sv { font-size:1.2rem; font-weight:800; color:var(--text-primary); font-family:'JetBrains Mono',monospace; }
+    .stat-chip .sv.good { color:#86efac; } .stat-chip .sv.warn { color:#fbbf24; } .stat-chip .sv.blue { color:#7dd3fc; } .stat-chip .sv.bad { color:#fca5a5; } .stat-chip .sv.violet { color:#c4b5fd; }
+    .stat-chip .sl { font-size:.65rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin-top:.2rem; }
+    .rule-box { background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius); padding:.9rem 1.1rem; margin:1rem 0; font-size:.84rem; }
+    .rule-box code { font-family:'JetBrains Mono',monospace; color:#7dd3fc; }
+    .nrw-btns { display:flex; gap:.4rem; flex-wrap:wrap; margin:.35rem 0; align-items:center; }
+    .nrw-btns button { border:1.5px solid var(--border); background:var(--bg-card); color:var(--text-secondary); font-weight:800; font-family:'JetBrains Mono',monospace; font-size:.86rem; min-width:40px; padding:.4rem .7rem; border-radius:8px; cursor:pointer; transition:all .12s; }
+    .nrw-btns button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .kv-field-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; margin-top:.6rem; }
+    .diagram-caption { font-size:.76rem; color:var(--text-muted); text-align:center; margin-top:.3rem; }
+    /* ── snowflake widget ──────────────────────────────────────── */
+    .snow-compose { background:#0b1120; border:1.5px solid var(--border); border-radius:12px; padding:.9rem 1rem; margin:.7rem 0; }
+    .snow-compose h5 { margin:0 0 .55rem; font-size:.76rem; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; }
+    .bitbar { display:flex; width:100%; border-radius:8px; overflow:hidden; border:1px solid var(--border); font-family:'JetBrains Mono',monospace; }
+    .bit-seg { padding:.5rem .3rem; text-align:center; font-size:.7rem; font-weight:800; color:#0b1120; line-height:1.3; }
+    .bit-seg small { display:block; font-size:.58rem; font-weight:700; opacity:.8; letter-spacing:.02em; }
+    .bit-seg.sign { background:#475569; color:#cbd5e1; flex:0 0 5%; }
+    .bit-seg.ts   { background:linear-gradient(90deg,#f59e0b,#fbbf24); flex:1 1 55%; }
+    .bit-seg.mac  { background:linear-gradient(90deg,#8b5cf6,#a78bfa); flex:0 0 18%; }
+    .bit-seg.seq  { background:linear-gradient(90deg,#16a34a,#22c55e); flex:0 0 22%; }
+    .snow-bits { font-family:'JetBrains Mono',monospace; font-size:.74rem; letter-spacing:1px; word-break:break-all; margin:.55rem 0 .2rem; line-height:1.9; }
+    .snow-bits .b-ts { color:#fcd34d; } .snow-bits .b-mac { color:#c4b5fd; } .snow-bits .b-seq { color:#86efac; } .snow-bits .b-sign { color:#64748b; }
+    .id-display { font-family:'JetBrains Mono',monospace; font-weight:800; font-size:1.15rem; color:#e2e8f0; word-break:break-all; margin-top:.35rem; }
+    .id-display .lbl { font-size:.65rem; color:#64748b; display:block; text-transform:uppercase; letter-spacing:.05em; font-weight:700; margin-bottom:.1rem; }
+    .snow-log { margin:.6rem 0 0; max-height:260px; overflow-y:auto; }
+    .snow-row { display:flex; align-items:center; gap:.5rem; font-family:'JetBrains Mono',monospace; font-size:.74rem; padding:.4rem .55rem; margin:.3rem 0; border-radius:8px; border:1px solid var(--border); background:var(--bg-card); }
+    .snow-row.rise { animation: snowpop .5s ease; }
+    @keyframes snowpop { 0%{ background:#22c55e22; transform:translateX(-6px);} 100%{ background:var(--bg-card); transform:none; } }
+    .snow-row .sid { color:#e2e8f0; font-weight:800; flex:1; min-width:0; word-break:break-all; }
+    .snow-row .pill { font-size:.6rem; padding:.1rem .4rem; border-radius:5px; font-weight:800; white-space:nowrap; }
+    .snow-row .pill.m { background:#a78bfa22; color:#c4b5fd; } .snow-row .pill.s { background:#22c55e22; color:#86efac; } .snow-row .pill.t { background:#fbbf2422; color:#fcd34d; }
+    .snow-cmp { font-size:.68rem; color:#64748b; text-align:center; margin:.2rem 0; }
+    .snow-cmp b { color:#86efac; }
+    /* ── trending widget ───────────────────────────────────────── */
+    .trend-board { background:#0b1120; border:1.5px solid var(--border); border-radius:12px; padding:.8rem 1rem; margin:.7rem 0; }
+    .trend-board h5 { margin:0 0 .5rem; font-size:.76rem; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; display:flex; justify-content:space-between; }
+    .trend-row { display:flex; align-items:center; gap:.6rem; padding:.4rem .2rem; border-bottom:1px dashed var(--border); }
+    .trend-row:last-child { border-bottom:none; }
+    .trend-rank { font-family:'JetBrains Mono',monospace; font-weight:800; color:#64748b; min-width:1.5rem; }
+    .trend-rank.top { color:#fbbf24; }
+    .trend-tag { font-weight:800; font-size:.86rem; color:#e2e8f0; min-width:120px; }
+    .trend-barwrap { flex:1; height:16px; background:#111827; border-radius:6px; overflow:hidden; border:1px solid var(--border); }
+    .trend-bar { height:100%; border-radius:5px; background:linear-gradient(90deg,#38bdf8,#22c55e); width:0; transition:width .45s ease; }
+    .trend-bar.surge { background:linear-gradient(90deg,#fb7185,#f59e0b); }
+    .trend-count { font-family:'JetBrains Mono',monospace; font-weight:800; font-size:.8rem; color:#7dd3fc; min-width:2.6rem; text-align:right; }
+    .trend-delta { font-size:.62rem; font-weight:800; min-width:1.6rem; }
+    .trend-delta.up { color:#86efac; } .trend-delta.dn { color:#fca5a5; } .trend-delta.flat { color:#475569; }
+    .win-track { display:flex; gap:3px; margin:.5rem 0; align-items:flex-end; height:34px; }
+    .win-bucket { flex:1; background:#1e293b; border:1px solid var(--border); border-radius:3px 3px 0 0; min-height:4px; transition:height .3s, background .3s; }
+    .win-bucket.new { background:#38bdf8; }
+    .win-bucket.old { background:#334155; opacity:.5; }
+    .step-track { display:flex; gap:.3rem; flex-wrap:wrap; margin:.5rem 0; }
+    .step-pill { font-size:.7rem; font-weight:700; padding:.25rem .55rem; border-radius:20px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-muted); }
+    .step-pill.done { background:#22c55e18; color:#86efac; border-color:#22c55e55; }
+    .step-pill.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    /* one-write-many-reads mini legend */
+    .view-legend { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.5rem; margin:.8rem 0; }
+    .view-chip { background:var(--bg-card); border:1px solid var(--border); border-left-width:3px; border-radius:8px; padding:.5rem .7rem; font-size:.78rem; }
+    .view-chip b { display:block; color:#e2e8f0; font-size:.82rem; margin-bottom:.1rem; }
+    .view-chip.vt { border-left-color:#38bdf8; } .view-chip.vs { border-left-color:#a78bfa; } .view-chip.vr { border-left-color:#fbbf24; } .view-chip.vc { border-left-color:#22c55e; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phases">Phase 2: Intermediate Systems</a><span class="breadcrumb-sep">/</span>
+      <span>Day 46</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 46 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📗 Phase 2 — Intermediate Systems</span>
+      <span class="meta-pill">🗂 Week 7 — Classic System Designs</span>
+    </div>
+    <h1>Design a Twitter-like System<br><span style="color:var(--accent)">One Write, Many Reads</span></h1>
+    <p class="lead">
+      Yesterday you built a feed in isolation. Today you build the whole product around it — and discover that “design Twitter” is a trick question, because
+      Twitter isn't <em>one</em> system. It's five systems wearing a trench coat: a <strong>tweet</strong> write path, a <strong>follow graph</strong>, a
+      <strong>home timeline</strong> (the hybrid fan-out from Day&nbsp;45), <strong>search</strong>, and <strong>trending</strong> — each with a wildly different
+      read pattern. The idea that holds them together is deceptively simple: <strong>write the tweet exactly once, then build many read-optimized views from that
+      single event.</strong> The timeline, the search index, the trending board, the like counts — none of them is “the” database; each is a
+      <strong>materialized view</strong> fed from the same stream of tweets. Along the way you'll meet the two pieces that make Twitter uniquely Twitter: the
+      <strong>Snowflake ID</strong> — a 64-bit number that is globally unique <em>and</em> sorts by time with zero coordination, which you'll build bit by bit —
+      and <strong>trending</strong> — a real-time, approximate, windowed top-k over a firehose, which you'll run live: inject a surge and watch a hashtag rocket
+      up the board, then decay out of the window.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#why">Why This Problem Exists</a>
+        <a href="#design">The Design, Step by Step</a>
+        <a href="#core">The Heart: One Write, Many Reads</a>
+        <a href="#snowflake">The Snowflake ID</a>
+        <a href="#scale">Trending, Search & the Graph</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">📺 🎛️ 📈 🔎</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Picture a <strong>live broadcast control room</strong>. A reporter files a single story — a short line of text — and hands it to the desk. The very
+            first thing the desk does is slap a <strong>timecode</strong> on it: a stamp that is unique and that says, precisely, <em>when</em> this story arrived,
+            so every board downstream can sort by it. That stamp is the <strong>tweet's ID</strong>. The story is written down <strong>once</strong>, in the
+            master log, and never copied again.</p>
+            <p>Then the magic: from that one desk, the same stamped story is <strong>routed to four different boards at once</strong>. It's pushed onto the
+            <strong>personalized channels</strong> of everyone who follows the reporter (📺 the <strong>home timelines</strong>). It's filed into the station's
+            giant <strong>archive</strong> so anyone can later search for its words (🔎 the <strong>search index</strong>). Its hashtag is tallied on the
+            <strong>“trending now” ticker</strong> crawling along the bottom of the screen (📈 <strong>trending</strong>). And every time a viewer claps, a
+            running <strong>applause meter</strong> ticks up (❤️ the <strong>like/retweet counts</strong>). One story in; four synchronized boards out — each board
+            shaped completely differently, each kept up to date from the same incoming feed.</p>
+            <p>Hold the whole picture: <strong>one reporter files one stamped story</strong> (a tweet, written once, with a Snowflake ID), and a
+            <strong>control desk routes it to four read-optimized boards</strong> — timelines, archive, trending ticker, applause meter. Nobody tries to make one
+            board do all four jobs. That control room <em>is</em> a Twitter-like system: a single stream of tweet events, fanned out into many
+            <strong>materialized views</strong>, each built for its own kind of reader.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="880" height="450" viewBox="0 0 880 450"></svg>
+          <div class="diagram-caption">One stamped story in; four read-optimized boards out — timelines, search archive, trending ticker, applause meter — all fed from the same stream.</div>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Dev</span> was asked the question every senior engineer eventually gets in an interview: <em>“Design Twitter.”</em> He
+            started where everyone starts — a <code>tweets</code> table, a <code>follows</code> table, and a query that joins them to build a timeline. It worked
+            on a laptop. Then the interviewer started adding reality: 500 million tweets a day, search across every tweet ever written, a trending list that
+            updates every few seconds, like counts on posts that get a million likes an hour. Dev's single table buckled under the weight of trying to be
+            <em>everything</em> at once — fast timelines, full-text search, real-time aggregation, and hot-counter writes, all from one place.
+          </p>
+          <p>
+            The breakthrough wasn't a bigger database. It was a <strong>change of shape</strong>. “Stop asking one store to serve every read,” his mentor said.
+            “A tweet is just an <em>event</em>. Write it once to a log. Then build a <em>separate, purpose-built view</em> for each way people read.” Suddenly the
+            design unlocked. The tweet gets written once and stamped with an ID. From there it flows onto an <strong>event stream</strong>, and a handful of
+            independent consumers each build the <em>one</em> thing they're good at: the <strong>timeline service</strong> fans it out into follower inboxes
+            (exactly the hybrid push/pull from yesterday); the <strong>search indexer</strong> tokenizes its words into an inverted index; the <strong>trending
+            aggregator</strong> bumps a windowed counter for its hashtag; the <strong>counter service</strong> owns likes and retweets.
+          </p>
+          <p>
+            Two sub-problems still nagged. First, <strong>the ID</strong>: with tweets being created on thousands of machines at once, a central
+            “give me the next number” counter would be a bottleneck and a single point of failure — yet the IDs needed to be unique <em>and</em> roughly sorted by
+            time so a timeline could order them. Dev reached for <strong>Snowflake</strong>: pack a timestamp, a machine number, and a per-millisecond sequence
+            into one 64-bit integer. No coordination, no collisions, and because the timestamp sits in the high bits, the numbers naturally sort by time.
+          </p>
+          <p>
+            Second, <strong>trending</strong>: you can't <code>GROUP BY hashtag</code> across a firehose of hundreds of thousands of tweets a second and re-sort
+            the whole thing every few seconds. So Dev made it a <strong>stream</strong> problem — count hashtags in a <strong>sliding time window</strong>, keep
+            only an approximate top-k, and let old counts fall off the back as the window slides. By the end, Dev hadn't built one clever database. He'd built a
+            <strong>pipeline</strong>: one write, many reads. Which, it turns out, is exactly how the real Twitter is built.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">A Twitter-like system is not one database doing five jobs; it's <strong>one event (a tweet) written once, fanned into
+          many read-optimized materialized views</strong>, each built for a different read pattern. The <strong>write path</strong> is tiny: store the tweet once,
+          stamp it with a <strong>Snowflake ID</strong> (a 64-bit integer = timestamp + machine id + per-ms sequence, so IDs are globally unique with zero
+          coordination <em>and</em> sort by time), and emit a “new tweet” event onto a log (Kafka). From that stream, independent consumers build the
+          <strong>views</strong>: the <strong>home timeline</strong> (hybrid fan-out — push for normal accounts, pull for celebrities — exactly Day&nbsp;45); a
+          <strong>search index</strong> (an inverted index / Elasticsearch over tweet text); <strong>trending</strong> (a windowed, approximate top-k of hashtags
+          over a stream); and <strong>engagement counts</strong> (likes/retweets as high-throughput, often approximate, async counters). Reads never touch each
+          other — opening your timeline, searching a word, and checking trending hit three completely different stores. The price you pay is
+          <strong>eventual consistency</strong> between views (a tweet appears in search or trending a second or two after it's posted) and the operational cost of
+          running many systems. One-line test: <em>write the tweet once, stamp it with a sortable ID, and build a separate purpose-built view for every way people
+          read.</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Build a Snowflake ID, Then Run the Trending Board</h2>
+        <div class="sim-box">
+          <p>Two working demos for the two pieces that make Twitter <em>Twitter</em>. In <strong>Snowflake ID Builder</strong> you stamp tweets and watch a 64-bit
+          ID assemble from three fields — a timestamp, a machine id, and a per-millisecond sequence — and see the IDs sort themselves by time. In <strong>Trending
+          Board</strong> you run a live firehose of hashtags through a sliding window and watch the top-k update in real time — inject a surge and watch a tag
+          climb, then fall off as the window slides.</p>
+
+          <div class="mode-toggle" id="mode-toggle">
+            <button data-mode="snow" class="active">❄️ Snowflake ID Builder</button>
+            <button data-mode="trend">📈 Trending Board</button>
+          </div>
+
+          <!-- SNOWFLAKE PANEL -->
+          <div class="sim-panel active" id="panel-snow">
+            <p style="font-size:.85rem;">Pick the <strong>machine</strong> generating the tweet, then stamp some tweets. Each ID is
+            <code>timestamp&nbsp;(41 bits) · machine&nbsp;(10 bits) · sequence&nbsp;(12 bits)</code> packed into one 64-bit integer. Try <strong>Burst</strong>
+            (5 tweets in the <em>same</em> millisecond → the sequence field saves you) and <strong>+1 second</strong> (watch the number jump because the timestamp
+            is in the high bits).</p>
+
+            <div class="kv-field-label">Which machine is generating the ID?</div>
+            <div class="nrw-btns" id="machine-btns">
+              <button data-machine="1" class="active">🖥️ Machine 1</button>
+              <button data-machine="5">🖥️ Machine 5</button>
+              <button data-machine="42">🖥️ Machine 42</button>
+            </div>
+
+            <div class="snow-compose">
+              <h5>Most recent ID — anatomy of 64 bits</h5>
+              <div class="bitbar">
+                <div class="bit-seg sign">0<small>sign</small></div>
+                <div class="bit-seg ts">timestamp<small>41 bits · ms since epoch</small></div>
+                <div class="bit-seg mac">machine<small>10 bits</small></div>
+                <div class="bit-seg seq">seq<small>12 bits</small></div>
+              </div>
+              <div class="snow-bits" id="snow-bits"><span class="b-sign">0</span> <span class="b-ts">—</span> <span class="b-mac">—</span> <span class="b-seq">—</span></div>
+              <div class="id-display"><span class="lbl">decimal tweet id</span><span id="snow-id">— tap “Tweet” to generate —</span></div>
+            </div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv blue" id="s-ts">—</div><div class="sl">timestamp (ms since epoch)</div></div>
+              <div class="stat-chip"><div class="sv violet" id="s-mac">—</div><div class="sl">machine id</div></div>
+              <div class="stat-chip"><div class="sv good" id="s-seq">—</div><div class="sl">sequence this ms</div></div>
+            </div>
+
+            <div class="sim-controls">
+              <button class="btn btn-primary btn-sm" id="s-tweet">🐦 Tweet</button>
+              <button class="btn btn-outline btn-sm" id="s-burst">⚡ Burst ×5 (same ms)</button>
+              <button class="btn btn-outline btn-sm" id="s-advance">⏭ +1 second</button>
+              <button class="btn btn-outline btn-sm" id="s-reset">↺ Reset</button>
+            </div>
+            <div class="snow-cmp" id="s-sorted"></div>
+            <div class="q-status info" id="s-status">Pick a machine and hit “Tweet” to stamp your first ID.</div>
+            <div class="snow-log" id="snow-log"></div>
+          </div>
+
+          <!-- TRENDING PANEL -->
+          <div class="sim-panel" id="panel-trend">
+            <p style="font-size:.85rem;">Each <strong>tick</strong> is one second of the firehose: a batch of tweets arrives, each carrying a hashtag. We keep a
+            <strong>sliding window</strong> of the last <strong>8 seconds</strong> and show the <strong>top hashtags by count in the window</strong>. Hit
+            <strong>Play</strong>, then <strong>inject a surge</strong> and watch a tag rocket up — then fall as its burst slides out the back of the window.</p>
+
+            <div class="trend-board">
+              <h5><span>🔥 Trending now — last 8s window</span><span id="trend-clock">tick 0</span></h5>
+              <div id="trend-rows"></div>
+            </div>
+
+            <div class="kv-field-label">The sliding window (each bar = one second of tweets; newest on the right)</div>
+            <div class="win-track" id="win-track"></div>
+
+            <div class="kv-field-label">Inject a surge of…</div>
+            <div class="nrw-btns" id="surge-btns">
+              <button data-tag="#Finale">📺 #Finale</button>
+              <button data-tag="#Outage">🛑 #Outage</button>
+              <button data-tag="#NewAlbum">🎵 #NewAlbum</button>
+            </div>
+
+            <div class="sim-controls">
+              <button class="btn btn-primary btn-sm" id="t-play">▶ Play</button>
+              <button class="btn btn-outline btn-sm" id="t-step">⏭ Step tick</button>
+              <button class="btn btn-outline btn-sm" id="t-reset">↺ Reset</button>
+            </div>
+            <div class="q-status info" id="t-status">Press “Play” to start the firehose, then inject a surge.</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="why">
+        <h2>Why This Problem Exists</h2>
+        <p>“Design Twitter” is the classic interview because it <strong>forces</strong> you to confront a single table's limits. Every read a user does has a
+        different shape, and no one storage engine is good at all of them at once:</p>
+        <div class="pillar-grid">
+          <div class="pillar-card conf"><h4>📺 Timeline — read by person</h4><p>“Give me the recent posts from everyone <em>I</em> follow, ranked.” This is a
+          per-user <strong>precomputed inbox</strong> (Day&nbsp;45). It wants a cache/Redis, not a scan.</p></div>
+          <div class="pillar-card integ"><h4>🔎 Search — read by word</h4><p>“Give me every tweet containing <em>this word</em>.” That's an <strong>inverted
+          index</strong> over text — a completely different structure (Elasticsearch, Day&nbsp;55), not a <code>LIKE</code> on a table.</p></div>
+          <div class="pillar-card amber"><h4>📈 Trending — read by aggregate</h4><p>“What are the top hashtags <em>right now</em>?” A real-time
+          <strong>windowed top-k</strong> over a stream. You can't <code>GROUP BY</code> a firehose every few seconds.</p></div>
+          <div class="pillar-card avail"><h4>❤️ Counts — read by number</h4><p>“How many likes does this have?” A hot <strong>counter</strong> that may take a
+          million writes an hour. It wants atomic increments and approximation, not a row lock.</p></div>
+        </div>
+        <p>Trying to serve all four from one normalized SQL table means every query fights every other for the same rows and indexes, and each one is on the
+        <em>wrong</em> data structure for its job. The way out is to stop treating the tweet as a <strong>row to be queried many ways</strong> and start treating
+        it as an <strong>event to be projected into many views</strong>. The tweet is written once; each read surface gets its own store, shaped for exactly how it
+        will be read. That single reframe — <em>one write, many reads</em> — is why this problem exists and what it's really testing.</p>
+      </section>
+
+      <section id="design">
+        <h2>The Design, Step by Step</h2>
+        <p>Build it from the write outward. The surprise of Twitter is how <strong>small</strong> the write path is and how much lives in the views it feeds.</p>
+
+        <h3>The write path — posting a tweet (tiny)</h3>
+        <div class="flow-box">
+          <div class="flow-step"><span class="n">1</span><div>The <strong>tweet service</strong> takes your text (+ media → <strong>object storage + CDN</strong>,
+          Day&nbsp;4) and generates a <strong>Snowflake ID</strong> locally — no round-trip to a central counter. The tweet is now uniquely, sortably named.</div></div>
+          <div class="flow-step"><span class="n">2</span><div>It writes the tweet <strong>once</strong> to the <strong>tweet store</strong> (a partitioned
+          key-value / wide-column store like Cassandra, keyed by tweet ID — Day&nbsp;52). This is the single source of truth. Posting returns to you
+          <em>immediately</em>.</div></div>
+          <div class="flow-step"><span class="n">3</span><div>It emits a <strong>“new tweet” event</strong> onto <strong>Kafka</strong> (Day&nbsp;19). Everything
+          else — timelines, search, trending, counts — happens <strong>asynchronously</strong>, downstream, off this one event.</div></div>
+        </div>
+
+        <h3>The read paths — four independent views</h3>
+        <div class="view-legend">
+          <div class="view-chip vt"><b>📺 Home timeline</b> Consumer fans the tweet into follower inboxes — <em>push</em> for normal accounts, <em>pull</em> for
+          celebrities (Day&nbsp;45). Read = your inbox + a small celeb pull, merged &amp; ranked.</div>
+          <div class="view-chip vs"><b>🔎 Search index</b> Consumer tokenizes the text and updates an <strong>inverted index</strong> (word → tweet IDs).
+          Read = look up the word, return matching IDs, rank.</div>
+          <div class="view-chip vr"><b>📈 Trending</b> Consumer increments a <strong>windowed counter</strong> per hashtag. Read = the current top-k over the
+          sliding window.</div>
+          <div class="view-chip vc"><b>❤️ Counts</b> Like/retweet events increment per-tweet <strong>counters</strong> (often in Redis, batched). Read = the
+          counter value (approximate is fine).</div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="arch-diagram" width="880" height="520" viewBox="0 0 880 520"></svg>
+          <div class="diagram-caption">One write, many reads: the tweet is stored once and emitted to a stream; independent consumers build four read-optimized views, each queried on its own read path.</div>
+        </div>
+
+        <div class="rule-box">
+          <strong>The core move:</strong> the tweet store is the <em>system of record</em>; everything else is a <code>derived view</code> you could rebuild by
+          replaying the event stream. That's what makes each read path independently scalable — and it's the same <strong>“log + materialized views”</strong>
+          idea that underlies event sourcing and CQRS (coming later). A tweet is written once; the timeline, the index, the counters, and the trending board are
+          all just different projections of it.
+        </div>
+      </section>
+
+      <section id="core">
+        <h2>The Heart: One Write, Many Reads</h2>
+        <p>Everything about designing Twitter follows from refusing to let one store serve every read. Let's say it precisely.</p>
+        <p>A naïve design makes the <strong>tweet table</strong> the thing you query four different ways: join it with follows for a timeline, <code>LIKE</code> it
+        for search, <code>GROUP BY</code> it for trending, <code>COUNT</code> it for likes. Every one of those is the <em>wrong</em> access pattern for a row
+        store, and they all contend for the same hardware. A scalable design makes the <strong>tweet event</strong> the thing, and gives each read its own store:</p>
+
+        <table class="algo-table">
+          <tr><th>Read surface</th><th>The right data structure</th><th>Fed from the stream by…</th><th>Consistency</th></tr>
+          <tr><td>📺 Home timeline</td><td>Per-user inbox (Redis list), hybrid fan-out</td><td>Fan-out service (push/pull — Day&nbsp;45)</td><td>Eventual (seconds)</td></tr>
+          <tr><td>🔎 Search</td><td>Inverted index (Elasticsearch — Day&nbsp;55)</td><td>Search indexer</td><td>Eventual (near-real-time)</td></tr>
+          <tr><td>📈 Trending</td><td>Windowed top-k counters</td><td>Trending aggregator (stream job)</td><td>Approximate, windowed</td></tr>
+          <tr><td>❤️ Likes / retweets</td><td>Per-tweet counters (Redis, batched)</td><td>Engagement consumer</td><td>Approximate, async</td></tr>
+          <tr><td>🗄️ The tweet itself</td><td>Partitioned KV / wide-column (Cassandra — Day&nbsp;52)</td><td>Written directly (system of record)</td><td>Strong per tweet</td></tr>
+        </table>
+
+        <p>The payoff is <strong>independent scaling and failure isolation</strong>: a trending spike can't slow your timeline; a search re-index can't block
+        posting; the like-counter can be eventually consistent without anyone caring. The cost is <strong>duplication and eventual consistency</strong> — the same
+        tweet now lives, in different shapes, in four stores, and they converge a beat after the write. For a product where a two-second lag in search or trending
+        is invisible, that's a trade you take every time. The whole art of “design Twitter” is knowing <em>which</em> view each read belongs to, and keeping the
+        write path small enough that it can feed all of them.</p>
+      </section>
+
+      <section id="snowflake">
+        <h2>The Snowflake ID — A Sortable Name With No Coordinator</h2>
+        <p>Before any view can be built, the tweet needs a <strong>name</strong>. That name has to satisfy three things at once, and they fight each other:</p>
+        <div class="pillar-grid">
+          <div class="pillar-card conf"><h4>🔑 Globally unique</h4><p>Billions a day, generated on <strong>thousands of machines at once</strong>, must never
+          collide.</p></div>
+          <div class="pillar-card amber"><h4>⏱ Roughly time-sortable</h4><p>Sorting IDs should sort tweets by <em>time</em>, so timelines and “since this ID”
+          pagination just work.</p></div>
+          <div class="pillar-card avail"><h4>🚫 No central coordinator</h4><p>A single “next number” service would be a bottleneck and a single point of failure
+          at this scale. IDs must be generated <strong>locally</strong>.</p></div>
+        </div>
+        <p>A plain auto-increment column fails #3 (it needs one coordinator). A random UUID fails #2 (random bits don't sort by time) and is bulky. Twitter's
+        answer, <strong>Snowflake</strong>, is to pack the three requirements into the bits of a single <strong>64-bit integer</strong>:</p>
+
+        <div class="diagram-box">
+          <svg id="snow-diagram" width="880" height="360" viewBox="0 0 880 360"></svg>
+          <div class="diagram-caption">A 64-bit Snowflake ID: a timestamp in the high bits (so IDs sort by time), a machine id (so no two machines collide), and a per-millisecond sequence (so one machine can mint 4096 IDs per ms).</div>
+        </div>
+
+        <h3>Why this works — read it field by field</h3>
+        <ul>
+          <li><strong>41 timestamp bits</strong> (milliseconds since a custom epoch) sit in the <em>high</em> bits. Because they dominate the number's magnitude,
+          a later tweet is a <em>larger</em> integer — <strong>sorting IDs sorts by time</strong>, for free. 41 bits of milliseconds ≈ 69 years of range.</li>
+          <li><strong>10 machine bits</strong> give <strong>1024 distinct generators</strong>. Two machines stamping a tweet in the <em>same</em> millisecond still
+          produce different IDs, because their machine field differs — so <strong>no coordination is needed</strong> to stay unique.</li>
+          <li><strong>12 sequence bits</strong> give <strong>4096 IDs per machine per millisecond</strong>. If one machine makes several tweets in the same ms, it
+          just increments the sequence. (Mint more than 4096 in a single ms? Wait for the next ms — a tidy little back-pressure valve.)</li>
+        </ul>
+        <p>The result is a compact 64-bit number that is unique, sortable, and coordination-free — which is exactly what the <strong>Try It Yourself</strong>
+        builder above demonstrates: stamp two tweets and the second ID is larger; burst five in one millisecond and the sequence field keeps them distinct;
+        switch machines and the same instant yields different IDs.</p>
+        <div class="rule-box">
+          <strong>Snowflake in one line:</strong> <code>id = (ms_since_epoch &lt;&lt; 22) | (machine_id &lt;&lt; 12) | sequence</code> — timestamp high (sortable),
+          machine next (collision-free), sequence low (per-ms headroom). One 64-bit integer, no coordinator.
+        </div>
+      </section>
+
+      <section id="scale">
+        <h2>Trending, Search &amp; the Social Graph</h2>
+        <p>Three of the four views deserve a closer look — each is a classic sub-problem in its own right.</p>
+
+        <h3>Trending — a windowed, approximate top-k over a stream</h3>
+        <p>You cannot answer “what's trending?” by re-counting every tweet ever. Trending is inherently about <strong>now</strong>, so it's a
+        <strong>stream</strong> problem (Day&nbsp;19 streams; later, Kafka Streams / Flink, Day&nbsp;59): maintain counts over a <strong>sliding time
+        window</strong> (say the last few minutes), keep an <strong>approximate top-k</strong> rather than exact counts for every one of millions of hashtags, and
+        let old counts <strong>fall off the back</strong> as the window advances — which is exactly why a surging tag climbs and then <em>decays</em> once its
+        burst leaves the window, as you saw in the board above. At real scale the exact per-tag counts are replaced by sketches (count-min sketch, heavy-hitters)
+        so memory stays bounded even with a long tail of hashtags. Trending is “popular <em>recently</em>,” not “popular ever.”</p>
+
+        <h3>Search — an inverted index, not a table scan</h3>
+        <p>Full-text search over every tweet is the same shape as Day&nbsp;11's indexing turned inside out: instead of <code>row → words</code>, you store
+        <code>word → list of tweet IDs</code> — an <strong>inverted index</strong>. The search indexer consumes the tweet stream, tokenizes the text, and appends
+        each tweet's ID to the posting list of every word it contains. A query for “system design” intersects two posting lists and ranks the matches. This is
+        what <strong>Elasticsearch</strong> (Day&nbsp;55) is built for; it's near-real-time, so a tweet becomes searchable a second or two after posting.</p>
+
+        <h3>The social graph — who follows whom</h3>
+        <p>The follow graph is its own store: potentially trillions of edges, read constantly (every fan-out needs “who follows X?” and every profile needs
+        “who does X follow?”). It's typically a <strong>sharded</strong> store (Day&nbsp;13) holding both directions of the edge, or a purpose-built graph store
+        (Day&nbsp;56). Its read pattern — “give me all followers of this account” — is exactly what the timeline fan-out depends on, which is why a celebrity's
+        enormous follower list is what makes pure push explode (Day&nbsp;45) and why the hybrid pulls them instead.</p>
+
+        <div class="pillar-grid">
+          <div class="pillar-card conf"><h4>🧱 Each view scales alone</h4><p>Timeline cache, search cluster, trending job, counter store, and graph store are
+          separate services — scale, deploy, and fail independently.</p></div>
+          <div class="pillar-card avail"><h4>📏 Estimate first (Day&nbsp;30)</h4><p>~500M tweets/day ≈ 6k writes/sec average (far higher at peak), but
+          <strong>reads dwarf writes</strong> — timelines, search, and trending are all read-heavy surfaces.</p></div>
+        </div>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>“One write, many reads” is the clean 80%. These edges are where real Twitter-scale design lives.</p>
+
+        <h3>Clock skew and the Snowflake timestamp</h3>
+        <p>Snowflake IDs sort by time only if machine clocks are roughly in sync and <strong>never run backwards</strong>. If a server's clock jumps backward
+        (an NTP correction), a naïve generator could mint an ID in the “past” and break monotonicity — or worse, collide. Real implementations <strong>refuse to
+        generate</strong> while the clock is behind the last-seen timestamp, waiting until it catches up. The sortability is “roughly,” not “perfectly,” ordered
+        across machines — good enough for timelines, not a substitute for a true logical clock (Day&nbsp;35).</p>
+
+        <h3>Eventual consistency between views</h3>
+        <p>Because the views are fed asynchronously, they <strong>disagree for a moment</strong>: your tweet is posted (in the tweet store) but not yet in a
+        follower's timeline, not yet searchable, not yet counted in trending. Usually invisible — but it means “I posted it, why can't I find it in search?”
+        is <em>expected</em> for a second or two, and any feature that needs read-your-own-writes has to read the <strong>system of record</strong>, not a view.</p>
+
+        <h3>Hot counters and the thundering herd</h3>
+        <p>A tweet that goes viral gets likes faster than a single counter row can be updated safely. You don't take a lock a million times — you
+        <strong>shard the counter</strong>, buffer increments in memory, and flush periodically, accepting a <strong>slightly approximate, slightly delayed</strong>
+        count. Nobody needs the like count to be exact to the millisecond; they need it to be fast and roughly right.</p>
+
+        <h3>Rebuilding a view</h3>
+        <p>Because every view is <em>derived</em> from the tweet stream, you can <strong>rebuild it by replaying the log</strong> — re-index all of search, or
+        regenerate timelines after a bug. That's a superpower of the “log + materialized views” shape: the system of record is small and durable; the big,
+        complex read stores are disposable and reconstructible. The flip side is operational weight — you're now running Kafka, Cassandra, Redis, Elasticsearch,
+        and a stream processor, each with its own failure modes.</p>
+
+        <p style="margin-top:1rem;">The through-line: <code>write once → stream → many views</code> is the skeleton; doing it with <em>clock-safe</em> Snowflake
+        IDs, <em>windowed approximate</em> trending, <em>near-real-time</em> search, <em>sharded approximate</em> counters, and clear rules about which reads hit
+        the system of record versus a view is the craft. Get those right and one tweet quietly becomes five perfectly-shaped answers.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">🎛️</span><div><strong>From the Mailroom to the Control Room</strong>
+          — <span>You step out of yesterday's <strong>mailroom</strong> (the feed) and into the station's <strong>broadcast control room</strong>. The mailroom is
+          still here — it's now just <em>one of the boards</em> on the wall (📺 timelines). The control room is bigger: one incoming story, routed to many
+          boards.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">⏱</span><div><strong>The Timecode Stamp</strong> —
+          <span>At the desk, every story gets a <strong>timecode</strong> the instant it lands — the <strong>Snowflake ID</strong>: a stamp that's unique, says
+          <em>when</em>, and needs no central clerk because each machine stamps its own machine number into it. Stories sort themselves by that stamp.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📈</span><div><strong>The Ticker and the Archive</strong> —
+          <span>Along the bottom crawls the <strong>trending ticker</strong> — only what's hot in the last few minutes, old counts sliding off the edge. Behind
+          the wall sits the <strong>archive</strong> (search), filed word by word. One story feeds them all.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Door Ahead</strong> — <span>A signpost reads
+          <strong>Day 47: Design WhatsApp / a Chat System</strong>. Today a tweet fanned out to the world; next, a <em>message</em> is delivered to one person or
+          a small group — the same “deliver into an inbox” idea, but now with ordering, delivery receipts, and online presence.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Design: Social Media Feed (Day 45)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Design: Twitter-like System (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Design: WhatsApp / Chat (Day 47)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Today builds on…</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Hybrid Fan-out / Feed (Day 45)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Kafka &amp; Streams (Day 19)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Indexing (Day 11)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Sharding (Day 13)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Redis (Day 40)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">CDN (Day 4)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Estimation (Day 30)</span>
+        </div>
+        <p>Today is the second <strong>Classic System Design</strong> of Week 7, and it is the deliberate composition of everything so far. The
+        <strong>home timeline</strong> is literally yesterday's <strong>hybrid fan-out (Day 45)</strong>, re-used as one view among four. The “one write, many
+        reads” backbone runs on <strong>Kafka (Day 19)</strong> and the stream/consumer pattern; <strong>search</strong> is <strong>indexing (Day 11)</strong>
+        inverted into an inverted index (forward to <strong>Elasticsearch, Day 55</strong>); <strong>trending</strong> is a windowed aggregation over a stream
+        (forward to <strong>Kafka Streams / Flink, Day 59</strong>); the <strong>tweet store</strong> and <strong>counters</strong> lean on partitioned storage
+        (forward to <strong>Cassandra, Day 52</strong>) and <strong>Redis (Day 40)</strong>; the <strong>follow graph</strong> uses <strong>sharding (Day 13)</strong>
+        (forward to <strong>graph databases, Day 56</strong>). The Snowflake ID's “sort by time” is a cousin of the ordering ideas from <strong>clocks and
+        causality (Day 35)</strong>. The “log + materialized views” shape returns, named, in <strong>event sourcing &amp; CQRS</strong> later in the course.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"One big SQL table can serve timelines, search, trending, and counts."</td><td>Each read wants a <em>different</em> data structure and they
+          all contend. Split the tweet into <strong>many materialized views</strong>, one per read pattern.</td></tr>
+          <tr><td>"Use a central auto-increment service to generate tweet IDs."</td><td>That's a bottleneck and a single point of failure at this scale. Use
+          <strong>Snowflake</strong> — generate a unique, time-sortable 64-bit ID <strong>locally</strong>, no coordinator.</td></tr>
+          <tr><td>"A random UUID is fine as a tweet ID."</td><td>UUIDs are unique but <strong>don't sort by time</strong> and are bulkier. Timelines and
+          cursor pagination need the time-ordering that Snowflake's high timestamp bits give.</td></tr>
+          <tr><td>"Compute trending with <code>GROUP BY hashtag ORDER BY count</code>."</td><td>You can't re-aggregate a firehose every few seconds. Trending is a
+          <strong>windowed, approximate top-k over a stream</strong> — counts decay as the window slides.</td></tr>
+          <tr><td>"Search is a <code>LIKE '%word%'</code> on the tweets table."</td><td><code>LIKE '%...%'</code> can't use an index and melts. Search needs an
+          <strong>inverted index</strong> (word → tweet IDs), i.e. Elasticsearch.</td></tr>
+          <tr><td>"The like count must be exact and update synchronously."</td><td>A viral tweet overwhelms a single counter. <strong>Shard + batch</strong> the
+          counter and accept a slightly approximate, slightly delayed number — nobody notices.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ You're designing Twitter. (1) Your v1 is one SQL table queried four different ways and it buckles — what's the
+          core reframe that fixes it? (2) Tweets are created on thousands of machines; how do you generate IDs that are unique AND sort by time with no central
+          coordinator, and how is the 64-bit ID laid out? (3) How do you compute the trending list in real time without re-counting everything? (click to reveal)</div>
+          <div class="recall-answer"><strong>(1) One write, many reads.</strong> Stop treating the tweet as a row queried many ways; treat it as an
+          <strong>event</strong> written once and projected into a <strong>separate materialized view per read pattern</strong> — timeline (hybrid fan-out),
+          search (inverted index), trending (windowed counters), counts (counters) — all fed from a Kafka stream. Each view scales and fails independently; the
+          price is eventual consistency between them. <br><br><strong>(2) Snowflake.</strong> Pack a 64-bit integer as <code>timestamp (41 bits) | machine id
+          (10 bits) | sequence (12 bits)</code>. The timestamp in the <em>high</em> bits makes IDs sort by time; the machine id makes two machines collision-free
+          with no coordination; the per-ms sequence (4096/ms) handles bursts on one machine. <code>id = (ts&lt;&lt;22)|(machine&lt;&lt;12)|seq</code>.
+          <br><br><strong>(3) Windowed approximate top-k.</strong> Treat it as a <strong>stream</strong>: keep hashtag counts over a <strong>sliding time
+          window</strong>, maintain an approximate top-k (sketches at scale), and let old counts <strong>fall off the back</strong> as the window advances —
+          so a surge climbs and then decays. Trending is “popular <em>recently</em>,” not “popular ever.”</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">❄️ Twitter Snowflake</div><p>Snowflake is a real Twitter open-source project: 64-bit IDs with a
+          41-bit timestamp, a 10-bit machine/worker id, and a 12-bit sequence, generated with <strong>no central coordinator</strong>. It replaced a database
+          auto-increment that couldn't keep up, and the time-sortable property is what lets timelines and “since id X” pagination work. Many companies (Instagram,
+          Discord with its “snowflakes,” Sony) adopted the same idea.</p></div>
+          <div class="realworld-card"><div class="rw-company">📺 Twitter Timelines</div><p>The home timeline is the <strong>hybrid fan-out</strong> from Day&nbsp;45
+          — tweets pushed into per-user Redis-backed timelines, with high-follower accounts <strong>merged in at read time</strong> to avoid fan-out storms. It's
+          one view among several, not “the database.”</p></div>
+          <div class="realworld-card"><div class="rw-company">🔎 Search &amp; the Firehose</div><p>Tweet search is powered by inverted indexes (Lucene/Elasticsearch
+          lineage), fed near-real-time from the tweet <strong>firehose</strong> — the same event stream that feeds analytics and trending. A tweet becomes
+          searchable seconds after posting, a visible sign of eventual consistency between views.</p></div>
+          <div class="realworld-card"><div class="rw-company">📈 Trends</div><p>Trending topics are computed as <strong>windowed, approximate</strong> aggregations
+          over the stream, with signals beyond raw count (velocity/acceleration of a hashtag, personalization by location and interest) so a sudden surge trends
+          even before its absolute count is huge — and fades as the window moves on.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: In one sentence, what is the core architecture of a Twitter-like system?</div>
+          <div class="fc-a">A: <strong>One write, many reads</strong> — a tweet is written <strong>once</strong> (stamped with a Snowflake ID, emitted to a Kafka
+          stream) and projected into several <strong>read-optimized materialized views</strong> (home timeline, search index, trending counters, engagement
+          counts), each built for its own read pattern and converging via eventual consistency.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What is a Snowflake ID and how is it laid out?</div>
+          <div class="fc-a">A: A <strong>64-bit integer</strong> = <code>timestamp (41 bits) | machine id (10 bits) | sequence (12 bits)</code>. Timestamp in
+          the high bits ⇒ IDs <strong>sort by time</strong>; machine id ⇒ <strong>no coordination, no collisions</strong>; per-ms sequence (4096) ⇒ bursts on one
+          machine. <code>id = (ts&lt;&lt;22)|(machine&lt;&lt;12)|seq</code>.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why not use a central auto-increment or a UUID for tweet IDs?</div>
+          <div class="fc-a">A: A central counter is a <strong>bottleneck + single point of failure</strong> at Twitter scale. A UUID is unique but
+          <strong>doesn't sort by time</strong> (and is bulky). Snowflake gets both: unique <em>and</em> time-sortable, generated locally with no coordinator.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: How is “trending” computed at scale?</div>
+          <div class="fc-a">A: As a <strong>windowed, approximate top-k over a stream</strong>: count hashtags within a <strong>sliding time window</strong>,
+          keep an approximate top-k (sketches for the long tail), and let old counts decay as the window slides. Trending = popular <em>recently</em>, not ever —
+          you never re-aggregate the whole firehose.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why can each read surface (timeline, search, trending, counts) scale and fail independently?</div>
+          <div class="fc-a">A: Because each is a <strong>separate materialized view</strong> fed asynchronously from the tweet stream — none shares a store with
+          the others. A trending spike can't slow timelines; a search re-index can't block posting. The cost is <strong>duplication + eventual consistency</strong>,
+          and views can be <strong>rebuilt by replaying the log</strong>.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>State the “one write, many reads” idea in a sentence: what is written once, and what are the views built from it?</li>
+          <li>Name the four read surfaces of a Twitter-like system and the right data structure for each.</li>
+          <li>Lay out a Snowflake ID bit by bit and explain what each field buys you (uniqueness, sortability, no coordinator).</li>
+          <li>Why does putting the timestamp in the high bits make IDs sort by time? Why is that useful for timelines and pagination?</li>
+          <li>Explain why trending is a stream/windowing problem and not a <code>GROUP BY</code>, and why a surging tag eventually decays.</li>
+          <li>Which read must hit the system of record rather than a view, and why? (Hint: read-your-own-writes.)</li>
+          <li>Name two hard parts (clock skew for Snowflake, hot counters, eventual consistency between views) and how each is handled.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>a Twitter-like system is one write, many reads</strong> — the tweet is written <em>once</em>, stamped with a
+          time-sortable <strong>Snowflake ID</strong>, emitted to a stream, and then projected into a separate <strong>materialized view for every way people
+          read</strong>: the <strong>home timeline</strong> (yesterday's hybrid fan-out), <strong>search</strong> (an inverted index), <strong>trending</strong>
+          (a windowed, approximate top-k over the stream), and <strong>engagement counts</strong> (sharded, approximate counters). No single store serves every
+          read, because each read wants a different data structure. Snowflake solves the tweet's <em>name</em> — unique, time-sortable, and coordination-free —
+          by packing <code>timestamp | machine | sequence</code> into 64 bits. The price of the whole design is <strong>eventual consistency</strong> between views
+          and the operational weight of running many systems; the reward is that each surface scales, fails, and is rebuilt independently. Next,
+          <strong>Day 47 — Design WhatsApp / a Chat System</strong>: we go from broadcasting a tweet to the world to delivering a message to one person — with
+          ordering, receipts, and presence.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-45.html">← Day 45: Design a Social Media Feed</a>
+        <a href="day-47.html" class="coming-soon-link">Day 47: Design WhatsApp / Chat →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 46 of 90 — Design a Twitter-like System</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ══════════════════════════════════════════════════════════════════════
+  //  INTERACTIVE DEMOS — a real Snowflake 64-bit ID builder (BigInt), and a
+  //  live windowed top-k trending board over a simulated firehose.
+  // ══════════════════════════════════════════════════════════════════════
+
+  // ── mode toggle ──────────────────────────────────────────────────────
+  Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(btn){
+    btn.addEventListener('click', function(){
+      var mode = btn.getAttribute('data-mode');
+      Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      document.getElementById('panel-snow').classList.toggle('active', mode === 'snow');
+      document.getElementById('panel-trend').classList.toggle('active', mode === 'trend');
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 1 — SNOWFLAKE ID BUILDER  (real 64-bit math via BigInt)
+  //  id = (ms_since_epoch << 22) | (machine << 12) | sequence
+  //  41 timestamp bits · 10 machine bits · 12 sequence bits
+  // ══════════════════════════════════════════════════════════════════════
+  var MACHINE_BITS = 10n, SEQ_BITS = 12n;
+  var MAX_SEQ = 4096;                       // 2^12
+  var EPOCH = 1420070400000;                // custom epoch (2015-01-01) in ms
+  var machine = 1;                          // selected machine id
+  var simMs = 1000;                         // simulated ms since epoch (small, readable)
+  var lastTsForSeq = -1, sequence = 0;      // per-ms sequence state
+  var lastIdBig = null;                     // for the "sorts by time" check
+  var snowCount = 0;
+
+  function pad(str, n){ while (str.length < n) str = '0' + str; return str; }
+
+  function composeId(ts, mach, seq){
+    return (BigInt(ts) << (MACHINE_BITS + SEQ_BITS)) | (BigInt(mach) << SEQ_BITS) | BigInt(seq);
+  }
+
+  function renderBits(ts, mach, seq){
+    var tsBin  = pad(ts.toString(2), 41);
+    var macBin = pad(mach.toString(2), 10);
+    var seqBin = pad(seq.toString(2), 12);
+    document.getElementById('snow-bits').innerHTML =
+      '<span class="b-sign">0</span> ' +
+      '<span class="b-ts">' + tsBin + '</span> ' +
+      '<span class="b-mac">' + macBin + '</span> ' +
+      '<span class="b-seq">' + seqBin + '</span>';
+  }
+
+  function emit(ts, sameMsForced){
+    // sequence handling: same ms → increment; new ms → reset to 0
+    if (ts === lastTsForSeq){
+      sequence++;
+      if (sequence >= MAX_SEQ){           // overflow: spill into next ms (back-pressure)
+        ts = ts + 1; simMs = ts; sequence = 0;
+      }
+    } else {
+      sequence = 0;
+    }
+    lastTsForSeq = ts;
+
+    var idBig = composeId(ts, machine, sequence);
+    var sorted = (lastIdBig === null) || (idBig > lastIdBig);
+    renderBits(ts, machine, sequence);
+    document.getElementById('snow-id').textContent = idBig.toString();
+    document.getElementById('s-ts').textContent  = ts.toLocaleString();
+    document.getElementById('s-mac').textContent = machine;
+    document.getElementById('s-seq').textContent = sequence;
+
+    // sortability indicator
+    var cmp = document.getElementById('s-sorted');
+    if (lastIdBig !== null){
+      cmp.innerHTML = sorted
+        ? '✓ new ID <b>' + idBig.toString() + '</b> &gt; previous ID — IDs sort by time'
+        : '⚠ new ID is NOT greater than the previous one (clock went backward)';
+    } else { cmp.innerHTML = ''; }
+
+    // log row
+    snowCount++;
+    var row = document.createElement('div');
+    row.className = 'snow-row rise';
+    row.innerHTML =
+      '<span class="sid">' + idBig.toString() + '</span>' +
+      '<span class="pill t">t=' + ts + '</span>' +
+      '<span class="pill m">m=' + machine + '</span>' +
+      '<span class="pill s">#' + sequence + '</span>';
+    var log = document.getElementById('snow-log');
+    log.insertBefore(row, log.firstChild);
+    while (log.children.length > 12) log.removeChild(log.lastChild);
+
+    lastIdBig = idBig;
+    return { ts: ts, seq: sequence, sorted: sorted };
+  }
+
+  function tweetOnce(){
+    // a normal tweet: advance the clock a little (1–18 ms), then stamp
+    simMs += 1 + Math.floor(Math.random() * 18);
+    var r = emit(simMs);
+    var s = document.getElementById('s-status');
+    s.className = 'q-status ok';
+    s.innerHTML = '🐦 <b>Stamped.</b> Machine ' + machine + ', ms ' + r.ts + ', sequence #' + r.seq +
+      '. The timestamp sits in the high bits, so this ID is <b>larger</b> than the last — timelines sort by ID = sort by time.';
+  }
+
+  function burst(){
+    // 5 tweets in the SAME millisecond → sequence field keeps them unique
+    var ts = simMs;                         // freeze the ms
+    lastTsForSeq = ts - 1;                  // force "new ms" path so first of burst = seq 0
+    var first, last;
+    for (var i = 0; i < 5; i++){
+      var r = emit(ts, true);
+      if (i === 0) first = r.seq; last = r.seq;
+    }
+    var s = document.getElementById('s-status');
+    s.className = 'q-status ok';
+    s.innerHTML = '⚡ <b>Burst of 5 in ms ' + ts + '.</b> Same timestamp, same machine — but the <b>sequence</b> field counted ' +
+      first + '→' + last + ', so all five IDs are still unique and still increasing. (4096 per ms per machine before it rolls.)';
+  }
+
+  function advanceSecond(){
+    simMs += 1000;
+    var r = emit(simMs);
+    var s = document.getElementById('s-status');
+    s.className = 'q-status info';
+    s.innerHTML = '⏭ <b>+1 second.</b> The timestamp jumped by 1000 ms, so the ID jumped by roughly 1000 × 2²² ≈ <b>4 billion</b>. ' +
+      'That huge high-bit jump is exactly what makes IDs sort by time.';
+  }
+
+  function resetSnow(){
+    machine = parseInt(document.querySelector('#machine-btns button.active').getAttribute('data-machine'), 10) || 1;
+    simMs = 1000; lastTsForSeq = -1; sequence = 0; lastIdBig = null; snowCount = 0;
+    document.getElementById('snow-log').innerHTML = '';
+    document.getElementById('snow-id').textContent = '— tap “Tweet” to generate —';
+    document.getElementById('snow-bits').innerHTML = '<span class="b-sign">0</span> <span class="b-ts">—</span> <span class="b-mac">—</span> <span class="b-seq">—</span>';
+    document.getElementById('s-ts').textContent = '—';
+    document.getElementById('s-mac').textContent = machine;
+    document.getElementById('s-seq').textContent = '—';
+    document.getElementById('s-sorted').innerHTML = '';
+    var s = document.getElementById('s-status');
+    s.className = 'q-status info';
+    s.innerHTML = 'Machine ' + machine + ' selected. Hit “Tweet” to stamp an ID — then try Burst and +1 second.';
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('#machine-btns button'), function(btn){
+    btn.addEventListener('click', function(){
+      Array.prototype.forEach.call(document.querySelectorAll('#machine-btns button'), function(b){ b.classList.toggle('active', b === btn); });
+      machine = parseInt(btn.getAttribute('data-machine'), 10);
+      document.getElementById('s-mac').textContent = machine;
+      var s = document.getElementById('s-status');
+      s.className = 'q-status info';
+      s.innerHTML = '🖥️ Now generating on <b>Machine ' + machine + '</b>. Its machine-id bits differ, so even the same instant on another machine yields a different ID — no coordination needed.';
+    });
+  });
+  document.getElementById('s-tweet').addEventListener('click', tweetOnce);
+  document.getElementById('s-burst').addEventListener('click', burst);
+  document.getElementById('s-advance').addEventListener('click', advanceSecond);
+  document.getElementById('s-reset').addEventListener('click', resetSnow);
+  resetSnow();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 2 — TRENDING BOARD  (windowed top-k over a simulated firehose)
+  //  Each "tick" = 1 second: a batch of tagged tweets arrives into a bucket.
+  //  Window = last WINDOW buckets; trending = top tags by summed count.
+  // ══════════════════════════════════════════════════════════════════════
+  var TAGS = ['#Finale','#Outage','#NewAlbum','#Caturday','#Election','#Market'];
+  var BASE = { '#Finale':3, '#Outage':2, '#NewAlbum':3, '#Caturday':4, '#Election':2, '#Market':2 };
+  var WINDOW = 8;
+  var buckets = [];           // array of {tag:count}; index 0 = oldest
+  var tick = 0;
+  var playTimer = null;
+  var pendingSurge = null;    // tag to surge on the next tick
+  var prevRank = {};          // tag -> previous rank, for delta arrows
+
+  function newBucket(){
+    var b = {};
+    // base firehose: each tag gets a Poisson-ish random count around its base rate
+    TAGS.forEach(function(t){
+      var base = BASE[t];
+      b[t] = Math.max(0, Math.round(base + (Math.random() * base) - (base / 2)));
+    });
+    // surge: dump a big burst into one tag this tick
+    if (pendingSurge){
+      b[pendingSurge] = (b[pendingSurge] || 0) + 55;
+      pendingSurge = null;
+    }
+    return b;
+  }
+
+  function windowCounts(){
+    var total = {};
+    buckets.forEach(function(b){
+      TAGS.forEach(function(t){ total[t] = (total[t] || 0) + (b[t] || 0); });
+    });
+    return total;
+  }
+
+  function renderWindowTrack(){
+    var track = document.getElementById('win-track');
+    var sums = buckets.map(function(b){ var s = 0; TAGS.forEach(function(t){ s += b[t] || 0; }); return s; });
+    var max = Math.max(1, Math.max.apply(null, sums.length ? sums : [1]));
+    var html = '';
+    for (var i = 0; i < WINDOW; i++){
+      var idx = i - (WINDOW - buckets.length);  // align newest to the right
+      if (idx < 0){ html += '<div class="win-bucket old" style="height:4px"></div>'; continue; }
+      var h = 4 + Math.round((sums[idx] / max) * 30);
+      var cls = (idx === buckets.length - 1) ? 'new' : '';
+      html += '<div class="win-bucket ' + cls + '" style="height:' + h + 'px"></div>';
+    }
+    track.innerHTML = html;
+  }
+
+  function renderBoard(){
+    var total = windowCounts();
+    var ranked = TAGS.slice().sort(function(a,b){ return (total[b]||0) - (total[a]||0); });
+    var max = Math.max(1, total[ranked[0]] || 1);
+    var html = '';
+    ranked.forEach(function(t, i){
+      var c = total[t] || 0;
+      var prev = (prevRank[t] === undefined) ? i : prevRank[t];
+      var delta = prev - i;                 // +ve = moved up
+      var dClass = delta > 0 ? 'up' : (delta < 0 ? 'dn' : 'flat');
+      var dTxt = delta > 0 ? ('▲' + delta) : (delta < 0 ? ('▼' + (-delta)) : '–');
+      var surging = delta > 0 && c > (max * 0.5) && i < 2;
+      html += '<div class="trend-row">' +
+        '<span class="trend-rank' + (i === 0 ? ' top' : '') + '">' + (i+1) + '</span>' +
+        '<span class="trend-tag">' + t + '</span>' +
+        '<span class="trend-barwrap"><span class="trend-bar' + (surging ? ' surge' : '') + '" style="width:' + Math.round((c/max)*100) + '%"></span></span>' +
+        '<span class="trend-count">' + c + '</span>' +
+        '<span class="trend-delta ' + dClass + '">' + dTxt + '</span>' +
+        '</div>';
+      prevRank[t] = i;
+    });
+    document.getElementById('trend-rows').innerHTML = html;
+    document.getElementById('trend-clock').textContent = 'tick ' + tick;
+  }
+
+  function doTick(){
+    tick++;
+    buckets.push(newBucket());
+    while (buckets.length > WINDOW) buckets.shift();   // slide the window
+    renderBoard();
+    renderWindowTrack();
+  }
+
+  function play(){
+    var btn = document.getElementById('t-play');
+    if (playTimer){
+      clearInterval(playTimer); playTimer = null;
+      btn.textContent = '▶ Play';
+      return;
+    }
+    btn.textContent = '⏸ Pause';
+    playTimer = setInterval(doTick, 1000);
+  }
+
+  function resetTrend(){
+    if (playTimer){ clearInterval(playTimer); playTimer = null; document.getElementById('t-play').textContent = '▶ Play'; }
+    buckets = []; tick = 0; pendingSurge = null; prevRank = {};
+    // seed a few ticks so the board isn't empty
+    for (var i = 0; i < 3; i++) doTick();
+    var s = document.getElementById('t-status');
+    s.className = 'q-status info';
+    s.innerHTML = 'Firehose seeded. Press <b>Play</b> to run it, then <b>inject a surge</b> and watch a tag climb — then decay as its burst slides out of the 8-second window.';
+  }
+
+  document.getElementById('t-play').addEventListener('click', play);
+  document.getElementById('t-step').addEventListener('click', doTick);
+  document.getElementById('t-reset').addEventListener('click', resetTrend);
+  Array.prototype.forEach.call(document.querySelectorAll('#surge-btns button'), function(btn){
+    btn.addEventListener('click', function(){
+      pendingSurge = btn.getAttribute('data-tag');
+      var s = document.getElementById('t-status');
+      s.className = 'q-status warn';
+      s.innerHTML = '🔥 <b>Surge queued for ' + pendingSurge + '.</b> On the next tick it gets a burst of ~55 tweets — watch it rocket up the board, then fall as that bucket ages out of the window.';
+      if (!playTimer) doTick();   // if paused, apply immediately
+    });
+  });
+  resetTrend();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  roughjs (Excalidraw-style) diagrams
+  // ══════════════════════════════════════════════════════════════════════
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+    return t;
+  }
+  function arrow(svg, rs, x1, y1, x2, y2, col){
+    col = col || '#64748b';
+    svg.appendChild(rs.line(x1, y1, x2, y2, { stroke:col, strokeWidth:1.6, roughness:0.9 }));
+    var ang = Math.atan2(y2 - y1, x2 - x1);
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang - 0.4), y2 - 10*Math.sin(ang - 0.4), { stroke:col, strokeWidth:1.6, roughness:0.9 }));
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang + 0.4), y2 - 10*Math.sin(ang + 0.4), { stroke:col, strokeWidth:1.6, roughness:0.9 }));
+  }
+
+  // ── Anchor: the broadcast control room ────────────────────────────────
+  function drawAnchorDiagram(){
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+
+    makeTxt(svg, 440, 26, 'THE BROADCAST CONTROL ROOM', '#e2e8f0', 15, 800);
+
+    // reporter files a stamped story
+    svg.appendChild(rs.circle(80, 150, 48, {stroke:'#38bdf8', strokeWidth:1.8, roughness:1, fill:'#38bdf810', fillStyle:'solid'}));
+    makeTxt(svg, 80, 148, '✍️', '#e2e8f0', 20); makeTxt(svg, 80, 192, 'reporter', '#7dd3fc', 10, 700); makeTxt(svg, 80, 205, 'files a tweet', '#7dd3fc', 9, 600);
+
+    // stamped story card
+    svg.appendChild(rs.rectangle(170, 118, 150, 66, {stroke:'#fbbf24', strokeWidth:1.8, roughness:1, fill:'#fbbf2410', fillStyle:'solid'}));
+    makeTxt(svg, 245, 140, '📝 the tweet', '#fcd34d', 11, 800);
+    makeTxt(svg, 245, 158, '⏱ stamped: ID', '#fcd34d', 10, 700);
+    makeTxt(svg, 245, 174, 'written ONCE', '#94a3b8', 9, 600);
+    arrow(svg, rs, 108, 150, 168, 150, '#38bdf8');
+
+    // control desk
+    svg.appendChild(rs.rectangle(360, 110, 120, 80, {stroke:'#e2e8f0', strokeWidth:1.9, roughness:1, fill:'#0b1120', fillStyle:'solid'}));
+    makeTxt(svg, 420, 138, '🎛️ CONTROL', '#e2e8f0', 12, 800); makeTxt(svg, 420, 156, 'DESK', '#e2e8f0', 12, 800);
+    makeTxt(svg, 420, 176, 'route to all', '#94a3b8', 9, 600);
+    arrow(svg, rs, 320, 150, 358, 150, '#fbbf24');
+
+    // four output boards on the right
+    var boards = [
+      { y:48,  emoji:'📺', t:'TIMELINES',   s:'per-follower channels', col:'#38bdf8', tc:'#7dd3fc' },
+      { y:128, emoji:'🔎', t:'ARCHIVE',     s:'search by word',        col:'#a78bfa', tc:'#c4b5fd' },
+      { y:208, emoji:'📈', t:'TRENDING',    s:'hot-now ticker',        col:'#fbbf24', tc:'#fcd34d' },
+      { y:288, emoji:'❤️', t:'APPLAUSE',    s:'like / RT meter',       col:'#22c55e', tc:'#86efac' }
+    ];
+    boards.forEach(function(b){
+      svg.appendChild(rs.rectangle(600, b.y, 220, 60, {stroke:b.col, strokeWidth:1.7, roughness:1, fill:b.col + '10', fillStyle:'solid'}));
+      makeTxt(svg, 630, b.y + 36, b.emoji, '#e2e8f0', 20);
+      makeTxt(svg, 720, b.y + 26, b.t, b.tc, 12, 800);
+      makeTxt(svg, 720, b.y + 44, b.s, '#94a3b8', 9, 600);
+      arrow(svg, rs, 482, 150, 598, b.y + 30, b.col);
+    });
+
+    makeTxt(svg, 440, 338, 'One stamped tweet in · routed to four read-optimized boards out', '#cbd5e1', 11, 700);
+    makeTxt(svg, 440, 358, 'each board is a materialized VIEW — nobody makes one board do all four jobs', '#94a3b8', 10, 600);
+  }
+
+  // ── Architecture: one write, many reads ───────────────────────────────
+  function drawArchDiagram(){
+    var svg = document.getElementById('arch-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.7,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+
+    makeTxt(svg, 150, 24, '✍️  WRITE PATH (tiny)', '#fca5a5', 13, 800);
+    makeTxt(svg, 660, 24, '👁️  READ PATHS — four independent views', '#7dd3fc', 13, 800);
+
+    // write path (left)
+    box(40, 48, 180, 46, '#38bdf8', '#38bdf810'); makeTxt(svg, 130, 68, 'Tweet service', '#7dd3fc', 11, 800); makeTxt(svg, 130, 84, 'make Snowflake ID', '#94a3b8', 9, 400);
+    box(40, 122, 180, 46, '#64748b', '#1e293b'); makeTxt(svg, 130, 142, 'Tweet store', '#cbd5e1', 11, 800); makeTxt(svg, 130, 158, 'write ONCE (Cassandra)', '#94a3b8', 9, 400);
+    box(40, 196, 180, 50, '#fbbf24', '#fbbf2410'); makeTxt(svg, 130, 216, 'Kafka', '#fcd34d', 11, 800); makeTxt(svg, 130, 232, '“new tweet” event stream', '#94a3b8', 9, 400);
+    arrow(svg, rs, 130, 94, 130, 120, '#38bdf8');
+    arrow(svg, rs, 130, 168, 130, 194, '#64748b');
+    makeTxt(svg, 130, 266, 'store once →', '#fca5a5', 9, 700);
+    makeTxt(svg, 130, 280, 'emit event', '#fca5a5', 9, 700);
+
+    // stream spine
+    svg.appendChild(rs.line(220, 221, 300, 221, { stroke:'#fbbf24', strokeWidth:2, roughness:0.8 }));
+    svg.appendChild(rs.line(300, 221, 300, 90, { stroke:'#fbbf24', strokeWidth:2, roughness:0.8 }));
+    svg.appendChild(rs.line(300, 221, 300, 470, { stroke:'#fbbf24', strokeWidth:2, roughness:0.8 }));
+    makeTxt(svg, 300, 500, 'the tweet event stream feeds every view (fan-out of consumers)', '#fcd34d', 10, 700);
+
+    // four views (right)
+    var views = [
+      { y:70,  col:'#38bdf8', tc:'#7dd3fc', t:'📺 Timeline fan-out', s:'push normal / pull celeb (Day 45)', store:'→ per-user inboxes (Redis)' },
+      { y:170, col:'#a78bfa', tc:'#c4b5fd', t:'🔎 Search indexer',   s:'tokenize text → word→IDs',          store:'→ inverted index (Elasticsearch)' },
+      { y:270, col:'#fbbf24', tc:'#fcd34d', t:'📈 Trending aggregator', s:'windowed top-k of hashtags',    store:'→ sliding-window counters' },
+      { y:370, col:'#22c55e', tc:'#86efac', t:'❤️ Engagement consumer', s:'like / RT events',               store:'→ sharded counters (Redis)' }
+    ];
+    views.forEach(function(v){
+      box(360, v.y, 250, 68, v.col, v.col + '10');
+      makeTxt(svg, 485, v.y + 22, v.t, v.tc, 11, 800);
+      makeTxt(svg, 485, v.y + 40, v.s, '#94a3b8', 9, 500);
+      makeTxt(svg, 485, v.y + 56, v.store, v.tc, 9, 700);
+      arrow(svg, rs, 300, (v.y + 34 < 221 ? v.y + 50 : v.y + 18), 358, v.y + 34, v.col);
+      // read client
+      box(650, v.y + 12, 180, 44, '#64748b', '#0b1120');
+      arrow(svg, rs, 610, v.y + 34, 648, v.y + 34, '#64748b');
+    });
+    makeTxt(svg, 740, 86, 'GET /home → read inbox', '#7dd3fc', 9, 600);
+    makeTxt(svg, 740, 186, 'GET /search?q=', '#c4b5fd', 9, 600);
+    makeTxt(svg, 740, 286, 'GET /trends', '#fcd34d', 9, 600);
+    makeTxt(svg, 740, 386, 'GET /tweet → counts', '#86efac', 9, 600);
+
+    makeTxt(svg, 440, 470, 'System of record = the tweet store. Every view is a DERIVED projection, rebuildable by replaying the stream.', '#cbd5e1', 10, 700);
+  }
+
+  // ── Snowflake 64-bit anatomy ──────────────────────────────────────────
+  function drawSnowDiagram(){
+    var svg = document.getElementById('snow-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+
+    makeTxt(svg, 440, 28, 'A SNOWFLAKE ID — 64 BITS', '#e2e8f0', 15, 800);
+
+    var x0 = 40, y0 = 70, totalW = 800, h = 64;
+    // widths proportional to bit counts (1 + 41 + 10 + 12 = 64)
+    var wSign = totalW * (1/64), wTs = totalW * (41/64), wMac = totalW * (10/64), wSeq = totalW * (12/64);
+    var xTs = x0 + wSign, xMac = xTs + wTs, xSeq = xMac + wMac;
+
+    svg.appendChild(rs.rectangle(x0, y0, wSign, h, {stroke:'#64748b', strokeWidth:1.5, roughness:1, fill:'#33415533', fillStyle:'solid'}));
+    makeTxt(svg, x0 + wSign/2, y0 + 30, '0', '#94a3b8', 12, 800); makeTxt(svg, x0 + wSign/2, y0 + 46, 'sign', '#64748b', 7, 600);
+
+    svg.appendChild(rs.rectangle(xTs, y0, wTs, h, {stroke:'#f59e0b', strokeWidth:1.8, roughness:1, fill:'#fbbf2418', fillStyle:'solid'}));
+    makeTxt(svg, xTs + wTs/2, y0 + 28, 'TIMESTAMP', '#fcd34d', 13, 800); makeTxt(svg, xTs + wTs/2, y0 + 46, '41 bits · ms since epoch', '#fcd34d', 9, 600);
+
+    svg.appendChild(rs.rectangle(xMac, y0, wMac, h, {stroke:'#8b5cf6', strokeWidth:1.8, roughness:1, fill:'#a78bfa18', fillStyle:'solid'}));
+    makeTxt(svg, xMac + wMac/2, y0 + 28, 'MACHINE', '#c4b5fd', 11, 800); makeTxt(svg, xMac + wMac/2, y0 + 46, '10 bits', '#c4b5fd', 9, 600);
+
+    svg.appendChild(rs.rectangle(xSeq, y0, wSeq, h, {stroke:'#16a34a', strokeWidth:1.8, roughness:1, fill:'#22c55e18', fillStyle:'solid'}));
+    makeTxt(svg, xSeq + wSeq/2, y0 + 28, 'SEQUENCE', '#86efac', 11, 800); makeTxt(svg, xSeq + wSeq/2, y0 + 46, '12 bits', '#86efac', 9, 600);
+
+    // high-bit / low-bit labels
+    makeTxt(svg, xTs + 6, y0 - 8, '◄ HIGH BITS (dominate magnitude)', '#fcd34d', 9, 700, false, 'start');
+    makeTxt(svg, xSeq + wSeq, y0 - 8, 'LOW BITS ►', '#86efac', 9, 700, false, 'end');
+
+    // callouts
+    function callout(cx, col, tc, title, body){
+      svg.appendChild(rs.rectangle(cx, 180, 240, 92, {stroke:col, strokeWidth:1.6, roughness:1, fill:col + '0c', fillStyle:'solid'}));
+      makeTxt(svg, cx + 120, 204, title, tc, 11, 800);
+      makeTxt(svg, cx + 120, 226, body[0], '#cbd5e1', 9.5, 500);
+      makeTxt(svg, cx + 120, 242, body[1], '#cbd5e1', 9.5, 500);
+      if (body[2]) makeTxt(svg, cx + 120, 258, body[2], '#94a3b8', 9, 500);
+    }
+    callout(40,  '#f59e0b', '#fcd34d', '⏱ timestamp first', ['later tweet ⇒ larger number', 'IDs SORT BY TIME for free', '≈ 69 years of range']);
+    callout(320, '#8b5cf6', '#c4b5fd', '🖥️ machine id', ['1024 generators', 'same ms, 2 machines ⇒', 'different IDs — no coordinator']);
+    callout(600, '#16a34a', '#86efac', '🔢 sequence', ['4096 IDs / ms / machine', 'bursts in one ms stay unique', 'overflow ⇒ wait for next ms']);
+
+    // the formula
+    svg.appendChild(rs.rectangle(40, 296, 800, 40, {stroke:'#38bdf8', strokeWidth:1.5, roughness:1, fill:'#38bdf80a', fillStyle:'solid'}));
+    makeTxt(svg, 440, 320, 'id = (ms_since_epoch << 22)  |  (machine_id << 12)  |  sequence', '#7dd3fc', 13, 800, true);
+  }
+
+  function drawAll(){ drawAnchorDiagram(); drawArchDiagram(); drawSnowDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
