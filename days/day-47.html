@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day 47: Design WhatsApp / a Chat System | System Design Mastery</title>
+  <meta name="description" content="Yesterday a tweet fanned out to the whole world. Today we deliver a single message to one specific person — reliably, in order, in a fraction of a second — and discover that chat is a completely different shape of problem. The web you know is request-response: the browser asks, the server answers, and the server can never speak first. But chat needs the server to push a message to Ben the instant Ana sends it, whether Ben asked or not. So we build around a persistent connection (a WebSocket) held open at a connection server, a session registry that knows which server is holding Ben's socket right now, and an offline inbox for when Ben's phone is dark. Then we add the two things that make chat feel like chat: message ordering (a per-conversation sequence number, so messages never show up scrambled) and the ticks (sent, delivered, read — the little receipts that are really a tiny state machine with acknowledgements flowing back). You'll run two live widgets: a delivery router that routes a message through the session registry and queues it when the recipient is offline, and a message-lifecycle demo that reorders out-of-order arrivals by sequence number, walks each message through its ticks, and dedupes a retried message. Taught with a telephone-switchboard memory anchor, three Excalidraw-style diagrams, the real tradeoffs (connection scaling, presence storms, end-to-end encryption, multi-device sync), and how WhatsApp, Messenger, Slack, and Signal actually do it." />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .breadcrumb { display:flex; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text-muted); margin-bottom:1.5rem; }
+    .breadcrumb a { color: var(--text-muted); } .breadcrumb a:hover { color: var(--accent-light); }
+    .breadcrumb-sep { opacity: .4; }
+    .day-meta { display:flex; align-items:center; gap:.75rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+    .meta-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.75rem; font-weight:600; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); padding:.25rem .65rem; border-radius:20px; }
+    .day-hero h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); margin-bottom: 1rem; }
+    .day-hero .lead { font-size: 1.1rem; color: var(--text-secondary); max-width: 700px; margin-bottom: 1.75rem; }
+    .day-hero-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+    .page-layout { display:grid; grid-template-columns: 220px 1fr; gap:3rem; align-items:start; margin-top:2.5rem; }
+    @media (max-width: 900px) { .page-layout { grid-template-columns: 1fr; } .toc-sidebar { display:none; } }
+    .toc-sidebar { position: sticky; top: 80px; }
+    .toc-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:.75rem; }
+    .toc a { display:block; font-size:.8rem; color:var(--text-muted); padding:.3rem 0; border-left:2px solid transparent; padding-left:.75rem; text-decoration:none; transition:all .15s; }
+    .toc a:hover, .toc a.active { color: var(--accent-light); border-left-color: var(--accent); }
+    section { margin-bottom: 2.75rem; }
+    section h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+    section h3 { font-size: 1.1rem; margin: 1.25rem 0 .6rem; }
+    section p, section li { color: var(--text-secondary); line-height: 1.75; }
+    .algo-table { width:100%; border-collapse: collapse; margin: 1rem 0; font-size: .88rem; }
+    .algo-table th, .algo-table td { border:1px solid var(--border); padding:.6rem .8rem; text-align:left; vertical-align:top; }
+    .algo-table th { background: var(--bg-secondary); }
+    .algo-table code { white-space: nowrap; }
+    .page-nav { display:flex; justify-content:space-between; padding-top:2rem; border-top:1px solid var(--border); font-size:.9rem; gap:1rem; }
+    .page-nav a { color: var(--accent); text-decoration:none; font-weight:600; }
+    .coming-soon-link { opacity: .5; pointer-events: none; }
+    .diagram-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; overflow-x:auto; }
+    .diagram-box svg { display:block; margin: 0 auto; }
+    .flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin: 1rem 0; }
+    .flow-step { display:flex; gap:.75rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px dashed var(--border); }
+    .flow-step:last-child { border-bottom:none; }
+    .flow-step strong { color: var(--text-primary); }
+    .flow-step > span.n { font-weight:800; color: var(--accent-light); min-width:1.6rem; font-family:'JetBrains Mono',monospace; }
+    .pillar-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1rem 0 1.5rem; }
+    .pillar-card { background: var(--bg-card); border:1px solid var(--border); border-left-width:4px; border-radius: var(--radius); padding:1rem 1.2rem; }
+    .pillar-card.conf { border-left-color:#38bdf8; } .pillar-card.integ { border-left-color:#a78bfa; } .pillar-card.avail { border-left-color:#22c55e; } .pillar-card.amber { border-left-color:#fbbf24; }
+    .pillar-card h4 { margin:0 0 .4rem; font-size:1.02rem; display:flex; align-items:center; gap:.4rem; }
+    .pillar-card.conf h4 { color:#7dd3fc; } .pillar-card.integ h4 { color:#c4b5fd; } .pillar-card.avail h4 { color:#86efac; } .pillar-card.amber h4 { color:#fcd34d; }
+    .pillar-card p { margin:.25rem 0; font-size:.83rem; }
+    .code-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:1rem 0 .1rem; font-weight:700; }
+    .mode-toggle { display:inline-flex; gap:.4rem; background:var(--bg-secondary); padding:.3rem; border-radius:10px; margin-bottom:1.1rem; border:1px solid var(--border); flex-wrap:wrap; }
+    .mode-toggle button { border:none; background:transparent; color:var(--text-muted); font-weight:700; font-size:.82rem; padding:.45rem .9rem; border-radius:7px; cursor:pointer; transition:all .15s; }
+    .mode-toggle button.active { background: var(--accent); color:#fff; }
+    .sim-panel { display:none; } .sim-panel.active { display:block; }
+    .q-status { text-align:center; font-weight:700; font-size:.88rem; padding:.55rem 1rem; border-radius: var(--radius); margin:.75rem 0 1rem; line-height:1.6; }
+    .q-status.ok { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
+    .q-status.warn { background:#f59e0b18; color:#fbbf24; border:1px solid #f59e0b55; }
+    .q-status.bad { background:#fb718518; color:#fb7185; border:1px solid #fb718555; }
+    .q-status.info { background:#38bdf818; color:#7dd3fc; border:1px solid #38bdf855; }
+    .sim-controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 1rem; }
+    .stat-row { display:flex; gap:.6rem; flex-wrap:wrap; margin:.9rem 0; }
+    .stat-chip { flex:1; min-width:120px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:.6rem .8rem; text-align:center; }
+    .stat-chip .sv { font-size:1.2rem; font-weight:800; color:var(--text-primary); font-family:'JetBrains Mono',monospace; }
+    .stat-chip .sv.good { color:#86efac; } .stat-chip .sv.warn { color:#fbbf24; } .stat-chip .sv.blue { color:#7dd3fc; } .stat-chip .sv.bad { color:#fca5a5; } .stat-chip .sv.violet { color:#c4b5fd; }
+    .stat-chip .sl { font-size:.65rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin-top:.2rem; }
+    .rule-box { background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius); padding:.9rem 1.1rem; margin:1rem 0; font-size:.84rem; }
+    .rule-box code { font-family:'JetBrains Mono',monospace; color:#7dd3fc; }
+    .nrw-btns { display:flex; gap:.4rem; flex-wrap:wrap; margin:.35rem 0; align-items:center; }
+    .nrw-btns button { border:1.5px solid var(--border); background:var(--bg-card); color:var(--text-secondary); font-weight:800; font-family:'JetBrains Mono',monospace; font-size:.86rem; min-width:40px; padding:.4rem .7rem; border-radius:8px; cursor:pointer; transition:all .12s; }
+    .nrw-btns button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .kv-field-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; margin-top:.6rem; }
+    .diagram-caption { font-size:.76rem; color:var(--text-muted); text-align:center; margin-top:.3rem; }
+    /* ── delivery router widget ─────────────────────────────────── */
+    .reg-board { background:#0b1120; border:1.5px solid var(--border); border-radius:12px; padding:.9rem 1rem; margin:.7rem 0; }
+    .reg-board h5 { margin:0 0 .55rem; font-size:.76rem; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; }
+    .user-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.6rem; margin:.3rem 0 .4rem; }
+    .user-card { background:var(--bg-card); border:1.5px solid var(--border); border-radius:10px; padding:.6rem .7rem; }
+    .user-card .uname { font-weight:800; color:#e2e8f0; font-size:.9rem; display:flex; align-items:center; gap:.35rem; }
+    .user-card .ustate { font-family:'JetBrains Mono',monospace; font-size:.7rem; margin-top:.25rem; }
+    .user-card.on  { border-color:#22c55e66; } .user-card.on .ustate { color:#86efac; }
+    .user-card.off { border-color:#fb718555; } .user-card.off .ustate { color:#fca5a5; }
+    .user-card .inbox-badge { font-size:.66rem; margin-top:.3rem; color:#fcd34d; font-weight:700; }
+    .toggle-mini { font-size:.66rem; padding:.2rem .5rem; border-radius:6px; border:1px solid var(--border); background:var(--bg-secondary); color:var(--text-muted); cursor:pointer; font-weight:700; margin-top:.4rem; }
+    .route-trail { margin:.6rem 0 0; max-height:230px; overflow-y:auto; }
+    .route-row { display:flex; align-items:center; gap:.5rem; font-family:'JetBrains Mono',monospace; font-size:.72rem; padding:.4rem .55rem; margin:.3rem 0; border-radius:8px; border:1px solid var(--border); background:var(--bg-card); }
+    .route-row.rise { animation: rtpop .5s ease; }
+    @keyframes rtpop { 0%{ background:#38bdf822; transform:translateX(-6px);} 100%{ background:var(--bg-card); transform:none; } }
+    .route-row .rpath { color:#cbd5e1; flex:1; min-width:0; word-break:break-word; }
+    .route-row .rpill { font-size:.6rem; padding:.1rem .4rem; border-radius:5px; font-weight:800; white-space:nowrap; }
+    .route-row .rpill.live { background:#22c55e22; color:#86efac; } .route-row .rpill.q { background:#fbbf2422; color:#fcd34d; } .route-row .rpill.flush { background:#38bdf822; color:#7dd3fc; }
+    /* ── message lifecycle widget ──────────────────────────────── */
+    .chat-board { background:#0b1120; border:1.5px solid var(--border); border-radius:12px; padding:.9rem 1rem; margin:.7rem 0; }
+    .chat-board h5 { margin:0 0 .55rem; font-size:.76rem; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; display:flex; justify-content:space-between; }
+    .bubble { background:#164e3b; border:1px solid #22c55e44; border-radius:12px 12px 2px 12px; padding:.5rem .7rem; margin:.4rem 0 .4rem auto; max-width:85%; }
+    .bubble.rise { animation: bpop .4s ease; }
+    @keyframes bpop { 0%{ transform:translateY(8px); opacity:0; } 100%{ transform:none; opacity:1; } }
+    .bubble .btext { color:#e2e8f0; font-size:.86rem; }
+    .bubble .bmeta { display:flex; align-items:center; gap:.5rem; justify-content:flex-end; margin-top:.2rem; font-family:'JetBrains Mono',monospace; font-size:.64rem; color:#94a3b8; }
+    .bubble .seqtag { background:#38bdf822; color:#7dd3fc; padding:.05rem .35rem; border-radius:4px; font-weight:800; }
+    .bubble .idtag { color:#64748b; }
+    .ticks { font-weight:800; font-size:.82rem; letter-spacing:-1px; }
+    .ticks.sent { color:#64748b; } .ticks.deliv { color:#94a3b8; } .ticks.read { color:#38bdf8; }
+    .arrival-strip { display:flex; gap:.35rem; flex-wrap:wrap; align-items:center; margin:.5rem 0; font-family:'JetBrains Mono',monospace; font-size:.72rem; color:#94a3b8; }
+    .arr-chip { background:#1e293b; border:1px solid var(--border); border-radius:6px; padding:.2rem .5rem; font-weight:800; color:#fca5a5; }
+    .arr-chip.ord { color:#86efac; }
+    .arr-arrow { color:#64748b; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="../index.html" class="nav-logo"><span class="nav-logo-icon">⚙</span> System Design Mastery</a>
+    <div class="nav-center">
+      <div class="nav-progress-bar"><div class="nav-progress-fill"></div></div>
+      <span class="nav-progress-label">0/90 days</span>
+    </div>
+    <div class="nav-actions"><a href="../index.html" class="btn btn-ghost btn-sm">← All Days</a></div>
+  </div>
+</nav>
+
+<div class="day-hero">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="../index.html">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="../index.html#phases">Phase 2: Intermediate Systems</a><span class="breadcrumb-sep">/</span>
+      <span>Day 47</span>
+    </div>
+    <div class="day-meta">
+      <span class="meta-pill">📅 Day 47 of 90</span>
+      <span class="meta-pill">⏱ ~40 min read</span>
+      <span class="meta-pill">📗 Phase 2 — Intermediate Systems</span>
+      <span class="meta-pill">🗂 Week 7 — Classic System Designs</span>
+    </div>
+    <h1>Design WhatsApp / a Chat System<br><span style="color:var(--accent)">Deliver One Message to One Person</span></h1>
+    <p class="lead">
+      Yesterday a tweet fanned out to the whole world. Today we do the opposite: deliver a <em>single</em> message to <em>one</em> specific person — reliably,
+      in order, in a fraction of a second — and discover that chat is a completely different shape of problem. The web you grew up on is
+      <strong>request–response</strong>: the browser asks, the server answers, and the server can <em>never speak first</em>. But chat needs the server to
+      <strong>push</strong> a message to Ben the instant Ana sends it, whether Ben asked for it or not. So we build around three ideas: a <strong>persistent
+      connection</strong> (a WebSocket) held open at a connection server, a <strong>session registry</strong> that knows which server is holding Ben's socket
+      right now, and an <strong>offline inbox</strong> for when Ben's phone is dark. Then we add the two things that make chat <em>feel</em> like chat:
+      <strong>message ordering</strong> (a per-conversation sequence number, so messages never arrive scrambled) and <strong>the ticks</strong> — sent, delivered,
+      read — which are really a tiny state machine with acknowledgements flowing back. You'll run both live: a delivery router that queues a message when the
+      recipient is offline and flushes it on reconnect, and a lifecycle demo that reorders out-of-order arrivals by sequence number and dedupes a retried message.
+    </p>
+    <div class="day-hero-actions">
+      <button id="mark-complete-btn" class="btn btn-primary">Mark as Complete</button>
+      <a href="#practice" class="btn btn-ghost">Practice Questions</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-layout">
+
+    <aside class="toc-sidebar">
+      <nav class="toc">
+        <div class="toc-title">On this page</div>
+        <a href="#anchor">Visual Anchor</a>
+        <a href="#story">The Story</a>
+        <a href="#model">Mental Model</a>
+        <a href="#sim">Try It Yourself</a>
+        <a href="#why">Why This Problem Exists</a>
+        <a href="#design">The Design, Step by Step</a>
+        <a href="#core">The Heart: Connection + Registry</a>
+        <a href="#order">Ordering, Receipts &amp; Idempotency</a>
+        <a href="#scale">Groups, Presence &amp; Push</a>
+        <a href="#tradeoffs">The Hard Parts</a>
+        <a href="#palace">Memory Palace</a>
+        <a href="#graph">Connections</a>
+        <a href="#mistakes">Common Mistakes</a>
+        <a href="#recall">Active Recall</a>
+        <a href="#realworld">Real-World Engineering</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#practice">Memory Test</a>
+        <a href="#takeaway">Takeaway</a>
+      </nav>
+    </aside>
+
+    <main>
+
+      <section id="anchor">
+        <h2>Visual Memory Anchor</h2>
+        <div class="anchor-card">
+          <div class="anchor-emoji">☎️ 🔌 📮 ✓✓</div>
+          <div class="anchor-text">
+            <h4>Picture this</h4>
+            <p>Picture an old <strong>telephone switchboard room</strong>. Ana wants to reach Ben. She doesn't dial Ben directly — she speaks to the
+            <strong>operator</strong> sitting at the switchboard. The operator keeps a board of sockets, and a little card index that says, in real time,
+            <em>which socket each person is currently plugged into</em>. That card index is the <strong>session registry</strong>: not “where does Ben live,”
+            but “which line is Ben on <em>right now</em>.”</p>
+            <p>When Ben's line is <strong>plugged in</strong> (his phone is open, holding a live connection), the operator grabs a patch cord and connects Ana's
+            message straight through — it lands on Ben's phone instantly. That patch cord is the <strong>WebSocket</strong>: a connection the operator can speak
+            down <em>without Ben asking first</em>. But when Ben's line is <strong>unplugged</strong> (offline), the operator can't push anything. So she drops the
+            note into <strong>Ben's pigeonhole</strong> — a little mailbox behind the board — and the moment Ben plugs back in, she hands over everything waiting
+            there, <em>in the order it arrived</em>. That pigeonhole is the <strong>offline inbox</strong>.</p>
+            <p>Two more details make it feel like real chat. First, every note gets a <strong>numbered ticket</strong> as it passes the desk — ticket 1, 2, 3 —
+            so even if two notes race and arrive out of order, Ben reads them in ticket order. That's the <strong>sequence number</strong>. Second, the operator
+            sends a little <strong>return-receipt card</strong> back to Ana: one check when the note reached the desk, two checks when it reached Ben's phone, and
+            the checks turn blue when Ben actually reads it. Those are the <strong>ticks</strong>. Hold the whole picture: an <strong>operator with a live socket
+            board, a card index of who's plugged in where, a wall of pigeonholes for the absent, numbered tickets, and return-receipt cards.</strong> That room
+            <em>is</em> a chat system.</p>
+          </div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="anchor-diagram" width="880" height="450" viewBox="0 0 880 450"></svg>
+          <div class="diagram-caption">The switchboard room: plugged in → patch straight through (WebSocket push); unplugged → drop in the pigeonhole (offline inbox) and hand over on reconnect; numbered tickets keep order; receipt cards are the ticks.</div>
+        </div>
+      </section>
+
+      <section id="story">
+        <h2>The Story</h2>
+        <div class="story-box">
+          <p>
+            <span class="story-character">Mara</span> built her first chat feature the way she'd built everything else on the web: the client asks, the server
+            answers. To receive new messages, the app <strong>polled</strong> — “any new messages?” every two seconds. It worked for a demo. Then reality arrived:
+            with a million users each asking every two seconds, the servers drowned in a flood of mostly-empty “nope, nothing new” replies — and messages still
+            felt laggy, arriving up to two seconds late. Polling was burning enormous resources to deliver <em>nothing</em>, most of the time.
+          </p>
+          <p>
+            Her mentor reframed it. “You're using a <em>pull</em> tool for a <em>push</em> problem. The server knows the instant a message arrives — let it
+            <strong>tell</strong> the recipient, instead of making the recipient ask over and over.” The fix was a <strong>persistent connection</strong>: each
+            online phone holds a <strong>WebSocket</strong> open to a <strong>connection server</strong>, and the server pushes messages down it the moment they
+            arrive. No polling, no lag. But that raised a sharp new question: with millions of sockets spread across thousands of connection servers, when Ana
+            sends to Ben, <em>which server is holding Ben's socket?</em>
+          </p>
+          <p>
+            That became the heart of the design: a <strong>session registry</strong> — a fast, in-memory map (Redis) from <code>user → connection server</code>,
+            updated every time someone connects or disconnects. Ana's message goes to her connection server, which asks the registry “where's Ben?”, routes the
+            message to Ben's connection server, and that server pushes it down Ben's socket. And when Ben is <strong>offline</strong> — no socket at all — the
+            message is written to his <strong>offline inbox</strong> and delivered the moment he reconnects.
+          </p>
+          <p>
+            Two subtler problems nagged. First, <strong>order</strong>: two messages could take different paths and arrive scrambled. Mara had the server stamp
+            each message with a <strong>per-conversation sequence number</strong>, so the client could buffer and display them in order no matter what the network
+            did. Second, <strong>reliability</strong>: on a flaky mobile network, the client resends a message it isn't sure got through — so the server had to
+            <strong>dedupe</strong> using a client-generated message ID, making the send <strong>idempotent</strong>. By the end, Mara hadn't built a faster poll.
+            She'd built a <strong>switchboard</strong>: live sockets, a registry of who's where, pigeonholes for the absent, tickets for order, and receipts for
+            trust. Which is, almost exactly, how WhatsApp works.
+          </p>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="model-card">
+          <div class="model-label">What should stay in your head</div>
+          <div class="model-statement">A chat system is <strong>targeted, server-pushed delivery of a message to a specific recipient</strong> — the opposite of
+          Twitter's broadcast. Because HTTP is request–response (the server can't speak first), each online client holds a <strong>persistent WebSocket</strong>
+          to a <strong>connection server</strong>. To route a message you need a <strong>session registry</strong> (<code>user → which connection server holds
+          their socket</code>, in Redis): the sender's server looks up the recipient, forwards the message to the recipient's connection server, which
+          <strong>pushes</strong> it down the socket. If the recipient is <strong>offline</strong>, the message is stored in a durable <strong>offline
+          inbox</strong> and delivered on reconnect (plus a mobile <strong>push notification</strong> via APNs/FCM to wake the app). Two guarantees make it feel
+          right: <strong>ordering</strong> — the server stamps each message with a <strong>per-conversation sequence number</strong> so clients can reorder
+          out-of-order arrivals; and <strong>receipts</strong> — the ticks (sent → delivered → read) are a tiny state machine driven by <strong>acknowledgements</strong>
+          flowing back. Reliability on flaky networks comes from <strong>idempotency</strong>: the client attaches a unique message ID so a retried send is
+          <strong>deduped</strong>, not duplicated. One-line test: <em>hold a socket open, know who's on which server, push if online or stash in an inbox if not,
+          number every message for order, and ack it back for receipts.</em></div>
+        </div>
+      </section>
+
+      <section id="sim">
+        <h2>Try It Yourself — Route a Message, Then Watch Its Life</h2>
+        <div class="sim-box">
+          <p>Two working demos for the two halves of chat. In <strong>Delivery Router</strong> you send a message and watch it get routed through the session
+          registry — pushed instantly if the recipient is online, or stashed in their offline inbox and flushed (in order) when they reconnect. In <strong>Message
+          Lifecycle</strong> you send messages that arrive <em>out of order</em> over the network, watch the client reorder them by sequence number, walk each one
+          through its ticks (sent → delivered → read), and retry one to see the server <em>dedupe</em> it.</p>
+
+          <div class="mode-toggle" id="mode-toggle">
+            <button data-mode="route" class="active">🔌 Delivery Router</button>
+            <button data-mode="ticks">✓✓ Message Lifecycle</button>
+          </div>
+
+          <!-- ROUTER PANEL -->
+          <div class="sim-panel active" id="panel-route">
+            <p style="font-size:.85rem;">Ana (always online) sends to <strong>Ben</strong> or <strong>Cleo</strong>. Toggle a recipient <strong>offline</strong>
+            and send: the message is written to their <strong>offline inbox</strong> instead of pushed. Toggle them back <strong>online</strong> and the inbox
+            <strong>flushes in order</strong>. The registry below is the live <code>user → connection server</code> map that makes routing possible.</p>
+
+            <div class="reg-board">
+              <h5>📇 Session registry &amp; presence — who is plugged into which connection server?</h5>
+              <div class="user-grid" id="user-grid"></div>
+            </div>
+
+            <div class="kv-field-label">Send a message from Ana to…</div>
+            <div class="nrw-btns" id="recipient-btns">
+              <button data-to="Ben" class="active">💬 Ben</button>
+              <button data-to="Cleo">💬 Cleo</button>
+            </div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv good" id="r-delivered">0</div><div class="sl">delivered (pushed live)</div></div>
+              <div class="stat-chip"><div class="sv warn" id="r-queued">0</div><div class="sl">queued (recipient offline)</div></div>
+              <div class="stat-chip"><div class="sv blue" id="r-flushed">0</div><div class="sl">flushed on reconnect</div></div>
+            </div>
+
+            <div class="sim-controls">
+              <button class="btn btn-primary btn-sm" id="r-send">📨 Send message</button>
+              <button class="btn btn-outline btn-sm" id="r-reset">↺ Reset</button>
+            </div>
+            <div class="q-status info" id="r-status">Pick a recipient and hit “Send.” Try sending while they're offline, then bring them back online.</div>
+            <div class="route-trail" id="route-trail"></div>
+          </div>
+
+          <!-- LIFECYCLE PANEL -->
+          <div class="sim-panel" id="panel-ticks">
+            <p style="font-size:.85rem;">Each <strong>Send</strong> hands the server a message with a <strong>client ID</strong>; the server assigns the next
+            <strong>sequence number</strong> in the conversation, stores it, and acks (✓). With <strong>out-of-order delivery</strong> on, messages arrive over
+            the “network” shuffled — but the client buffers and renders them in <strong>sequence order</strong> anyway. <strong>Advance ticks</strong> walks the
+            newest messages from ✓ sent → ✓✓ delivered → <span style="color:#38bdf8">✓✓ read</span>. <strong>Retry last</strong> resends with the <em>same</em>
+            client ID so the server <strong>dedupes</strong> it.</p>
+
+            <div class="nrw-btns" id="reorder-btns">
+              <button data-reorder="on" class="active">🔀 Out-of-order delivery: ON</button>
+              <button data-reorder="off">➡️ In-order delivery</button>
+            </div>
+
+            <div class="chat-board">
+              <h5><span>💬 Conversation — rendered in sequence order</span><span id="chat-clock">seq 0</span></h5>
+              <div class="arrival-strip" id="arrival-strip"></div>
+              <div id="chat-bubbles"></div>
+            </div>
+
+            <div class="stat-row">
+              <div class="stat-chip"><div class="sv blue" id="t-seq">0</div><div class="sl">highest sequence assigned</div></div>
+              <div class="stat-chip"><div class="sv good" id="t-delivered">0</div><div class="sl">messages stored</div></div>
+              <div class="stat-chip"><div class="sv warn" id="t-dedup">0</div><div class="sl">duplicates deduped</div></div>
+            </div>
+
+            <div class="sim-controls">
+              <button class="btn btn-primary btn-sm" id="t-send">📨 Send message</button>
+              <button class="btn btn-outline btn-sm" id="t-advance">✓✓ Advance ticks</button>
+              <button class="btn btn-outline btn-sm" id="t-retry">🔁 Retry last (same id)</button>
+              <button class="btn btn-outline btn-sm" id="t-reset">↺ Reset</button>
+            </div>
+            <div class="q-status info" id="t-status">Send a few messages with out-of-order delivery on, and watch them still render in sequence order.</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="why">
+        <h2>Why This Problem Exists</h2>
+        <p>“Design WhatsApp” is a classic interview because it breaks the one assumption every web app is built on: that the <strong>client always starts the
+        conversation</strong>. In a normal request–response world the server is a waiter — it only ever speaks when spoken to. Chat inverts that: the server must
+        be able to <strong>tap the recipient on the shoulder</strong> the instant a message arrives. Four requirements fall out of that, and none of them is how
+        the ordinary web works:</p>
+        <div class="pillar-grid">
+          <div class="pillar-card conf"><h4>📡 Server-initiated push</h4><p>The server must deliver <em>without</em> the client asking. Polling (“anything new?”)
+          wastes resources and lags; you need a connection the server can speak down — a <strong>WebSocket</strong> (Day&nbsp;20).</p></div>
+          <div class="pillar-card integ"><h4>🎯 Targeted routing</h4><p>Not broadcast to the world (Day&nbsp;46) — delivery to <em>one</em> specific person who is
+          connected to <em>one</em> of thousands of servers. You must know <strong>which</strong>.</p></div>
+          <div class="pillar-card amber"><h4>🔢 Ordering</h4><p>Messages must appear in the order they were sent, even when the network reorders them. That needs
+          a <strong>per-conversation sequence</strong>, not wall-clock timestamps.</p></div>
+          <div class="pillar-card avail"><h4>📬 Offline + receipts</h4><p>Phones go dark constantly. Messages must survive until the recipient returns
+          (<strong>offline inbox</strong>), and senders expect <strong>delivered/read</strong> feedback.</p></div>
+        </div>
+        <p>A chat message is also small, frequent, and intensely latency-sensitive — a 300&nbsp;ms delay is the difference between “instant” and “broken.” And the
+        connection itself is now <strong>stateful</strong>: unlike a stateless web request, a WebSocket is a long-lived thing pinned to one server, which changes
+        how you load-balance, scale, and recover. That combination — push, targeted routing, ordering, offline durability, and millions of stateful long-lived
+        connections — is why chat gets its own design, and why “just add a database” doesn't cut it.</p>
+      </section>
+
+      <section id="design">
+        <h2>The Design, Step by Step</h2>
+        <p>Follow one message from Ana's thumb to Ben's screen. The surprise is how much of the system is about <strong>the connection</strong>, not the database.</p>
+
+        <h3>The pieces</h3>
+        <div class="flow-box">
+          <div class="flow-step"><span class="n">1</span><div><strong>Connection servers</strong> (a.k.a. gateway / WebSocket servers) hold the millions of
+          open sockets. Each online client keeps <em>one</em> long-lived WebSocket to one of these. They are the only stateful tier.</div></div>
+          <div class="flow-step"><span class="n">2</span><div>A <strong>session registry</strong> (Redis — Day&nbsp;7/40) maps <code>user → connection
+          server</code>. On connect you write your entry; on disconnect you remove it. This is how anyone finds <em>where you are right now</em>.</div></div>
+          <div class="flow-step"><span class="n">3</span><div>A <strong>message service</strong> assigns each message a <strong>per-conversation sequence
+          number</strong>, dedupes by client message ID (idempotency), and writes it to the <strong>message store</strong>.</div></div>
+          <div class="flow-step"><span class="n">4</span><div>A <strong>message store</strong> (a partitioned wide-column store like Cassandra — Day&nbsp;52,
+          keyed by conversation) is the durable log of every message, ordered by sequence. It doubles as the offline inbox.</div></div>
+          <div class="flow-step"><span class="n">5</span><div>A <strong>push-notification service</strong> (APNs for iOS, FCM for Android) wakes the app when the
+          recipient is offline and has no socket to push down.</div></div>
+        </div>
+
+        <h3>The path of one message</h3>
+        <div class="flow-box">
+          <div class="flow-step"><span class="n">A</span><div>Ana's phone sends the message up her <strong>WebSocket</strong> to <strong>connection server
+          A</strong>, tagged with a client-generated message ID.</div></div>
+          <div class="flow-step"><span class="n">B</span><div>The <strong>message service</strong> assigns sequence <code>#n</code> for this conversation, stores
+          it, and <strong>acks Ana</strong> (her first ✓).</div></div>
+          <div class="flow-step"><span class="n">C</span><div>It asks the <strong>registry</strong>: “where is Ben?” If Ben is online → forward to
+          <strong>connection server B</strong>, which <strong>pushes</strong> down Ben's socket. Ben's phone acks → Ana's ✓✓.</div></div>
+          <div class="flow-step"><span class="n">D</span><div>If Ben is offline → the message simply waits in the <strong>store (his inbox)</strong>; a
+          <strong>push notification</strong> is sent. When Ben reconnects, his connection server pulls everything after his last-seen sequence and delivers it in
+          order.</div></div>
+        </div>
+
+        <div class="diagram-box">
+          <svg id="arch-diagram" width="880" height="540" viewBox="0 0 880 540"></svg>
+          <div class="diagram-caption">The chat path: client ⟷ connection server over a WebSocket; the message service assigns a sequence number, persists to the store, and routes via the session registry to the recipient's connection server — or to the offline inbox + a push notification if they're dark.</div>
+        </div>
+
+        <div class="rule-box">
+          <strong>The core move:</strong> separate the <code>stateful connection tier</code> (sockets, pinned to servers, tracked in a registry) from the
+          <code>stateless message tier</code> (assign sequence, store, route). The connection servers are dumb pipes that hold sockets and forward; the message
+          service owns ordering, idempotency, and durability. That split is what lets you scale sockets and logic independently.
+        </div>
+      </section>
+
+      <section id="core">
+        <h2>The Heart: The Connection + the Registry</h2>
+        <p>Everything hard about chat flows from one fact: <strong>you can't push to someone you can't find.</strong> So the two load-bearing pieces are the
+        persistent <strong>connection</strong> and the <strong>session registry</strong> that locates it.</p>
+
+        <h3>Why a WebSocket, and not polling or long-polling</h3>
+        <p>To receive a server-initiated message you need a channel the server can write to at any time. Three options, in order of how much they waste:</p>
+        <table class="algo-table">
+          <tr><th>Approach</th><th>How it works</th><th>Verdict for chat</th></tr>
+          <tr><td>Short polling</td><td>Client asks “anything new?” every N seconds.</td><td>❌ Wasteful (mostly empty replies) and laggy (up to N seconds late).</td></tr>
+          <tr><td>Long polling</td><td>Client asks and the server <em>holds</em> the request open until a message arrives.</td><td>➖ Works, lower latency, but one in-flight request per message and reconnection churn.</td></tr>
+          <tr><td>WebSocket</td><td>One long-lived, <strong>bidirectional</strong> TCP connection; server pushes anytime.</td><td>✅ The default — true push, minimal overhead, both directions.</td></tr>
+          <tr><td>SSE</td><td>Server-sent events: server→client push over HTTP, one direction.</td><td>➖ Great for feeds/notifications; chat wants two-way, so WebSocket wins.</td></tr>
+        </table>
+        <p>The catch: a WebSocket is <strong>stateful</strong>. A stateless web request can hit any server behind a load balancer; a socket is <em>pinned</em> to
+        the exact connection server that accepted it. That one fact ripples through everything — load balancing (you route the <em>handshake</em>, then the
+        connection sticks), scaling (a server holds, say, tens of thousands of sockets; add servers to add capacity), and failure (if a connection server dies,
+        all its clients must reconnect — and re-register).</p>
+
+        <h3>The session registry — the switchboard's card index</h3>
+        <p>Because sockets are scattered across thousands of connection servers, routing needs a live directory. The <strong>session registry</strong> is an
+        in-memory map (Redis) of <code>user_id → connection_server_id</code> (plus presence: online/last-seen). It's written on every connect/disconnect and read
+        on every send. It is the single thing that turns “deliver to Ben” into “forward to the exact server holding Ben's socket.” When Ben isn't in the registry
+        at all, he's offline — so the message goes to his inbox and a push notification wakes his phone.</p>
+        <div class="rule-box">
+          <strong>In one line:</strong> <code>online ? push down the socket on their connection server : store in the inbox + send a push notification</code>. The
+          registry is how you tell which case you're in — and it must be fast, because every single message does a lookup.
+        </div>
+      </section>
+
+      <section id="order">
+        <h2>Ordering, Receipts &amp; Idempotency</h2>
+        <p>Delivery is half the job. The other half is making messages <strong>trustworthy</strong>: in the right order, acknowledged, and never duplicated.</p>
+
+        <h3>Ordering — a per-conversation sequence number</h3>
+        <p>Two messages sent a millisecond apart can take different paths and arrive <strong>out of order</strong>. You cannot order by client timestamps — phone
+        clocks drift and lie. Instead, the <strong>message service assigns a monotonic sequence number per conversation</strong> as it stores each message. The
+        client holds a small buffer and renders strictly by sequence, so a late-arriving <code>#2</code> slots in <em>before</em> the <code>#3</code> that beat it
+        across the network — exactly what the <strong>Message Lifecycle</strong> widget shows. Ordering is <em>per conversation</em>, not globally: you only need
+        messages within one chat to agree, which is far cheaper than a global order across all chats (a theme you'll meet again in message ordering and
+        logical clocks, Day&nbsp;35).</p>
+
+        <h3>Receipts — the ticks are a state machine</h3>
+        <p>The single/double/blue ticks are a tiny <strong>state machine</strong> driven by <strong>acknowledgements</strong> flowing backward:</p>
+        <table class="algo-table">
+          <tr><th>State</th><th>Shown</th><th>Triggered when…</th></tr>
+          <tr><td>Sent</td><td><span class="ticks sent">✓</span></td><td>The server received &amp; stored the message (acks the sender).</td></tr>
+          <tr><td>Delivered</td><td><span class="ticks deliv">✓✓</span></td><td>The message reached the recipient's device, which acks back.</td></tr>
+          <tr><td>Read</td><td><span class="ticks read">✓✓</span></td><td>The recipient actually opened the chat; the device sends a read receipt.</td></tr>
+        </table>
+        <p>Each tick is just an ack traveling the reverse path. That's also why receipts can be turned off (privacy) — the client simply withholds the read ack.</p>
+
+        <div class="diagram-box">
+          <svg id="life-diagram" width="880" height="350" viewBox="0 0 880 350"></svg>
+          <div class="diagram-caption">A message's life: the ticks are a state machine driven by acks flowing back; ordering is handled by the client re-sorting on the server-assigned sequence number; a retried message carries the same ID and is deduped.</div>
+        </div>
+
+        <h3>Idempotency — safe retries on a flaky network</h3>
+        <p>Mobile networks drop. If Ana's phone doesn't see the ✓, it will <strong>resend</strong> — and now the server might get the same message twice. The fix
+        is <strong>idempotency</strong>: the client attaches a unique <strong>message ID</strong> (a UUID or Snowflake ID, Day&nbsp;46) to each message. The server
+        treats the ID as a dedupe key: if it has already stored that ID, it re-acks but does <em>not</em> store a second copy. “Send” becomes safe to repeat — the
+        retry in the widget bumps the <em>deduped</em> counter, not a second bubble. At-least-once delivery + idempotent handling = exactly-once <em>effect</em>,
+        which is the realistic target (true exactly-once delivery is effectively impossible over an unreliable network).</p>
+        <div class="rule-box">
+          <strong>The trust trio:</strong> <code>per-conversation sequence</code> (order) · <code>acks flowing back</code> (sent/delivered/read ticks) ·
+          <code>client message ID as a dedupe key</code> (idempotent retries). Order, receipts, and no duplicates — the three things that make chat feel solid.
+        </div>
+      </section>
+
+      <section id="scale">
+        <h2>Groups, Presence &amp; Push</h2>
+        <p>Three features turn one-to-one messaging into a real product — and each has a scale twist.</p>
+
+        <h3>Group chat — fan-out, but small</h3>
+        <p>A group message is delivered by <strong>fanning out</strong> to each member: look up every member in the registry, push to the online ones, inbox the
+        offline ones. This is the same fan-out idea as the feed (Day&nbsp;45) and Twitter (Day&nbsp;46) — but groups are <em>small</em> (tens, maybe a few
+        hundred), so write-time fan-out is fine; there's no celebrity-sized explosion. The sequence number is now assigned <strong>per group</strong>, so all
+        members see the same order. Very large broadcast groups (tens of thousands) start to look like the Twitter problem again and may switch strategies.</p>
+
+        <h3>Presence — the “online / last seen” storm</h3>
+        <p>Showing who's online sounds trivial and is secretly one of the hardest parts. If every status change (online, offline, typing…) were broadcast to
+        everyone who might care, a popular user toggling presence would trigger a <strong>fan-out storm</strong> of updates. Real systems tame it: update presence
+        in the registry with a <strong>heartbeat + TTL</strong> (miss a few heartbeats → marked offline), and only push presence to the small set of people
+        <em>currently looking at</em> that user's chat, often <strong>throttled</strong> (you don't need millisecond-accurate “last seen”). Presence is best-effort
+        and approximate on purpose.</p>
+
+        <h3>Push notifications — reaching the dark phone</h3>
+        <p>When the recipient is offline, there's no socket to push down, but you still must reach them. The message service hands off to a
+        <strong>push-notification service</strong> → Apple's <strong>APNs</strong> or Google's <strong>FCM</strong> → the OS wakes the app, which reconnects its
+        WebSocket and pulls everything after its last-seen sequence from the inbox. (Designing that notification system in its own right is Day&nbsp;50.)</p>
+
+        <div class="pillar-grid">
+          <div class="pillar-card conf"><h4>🧵 Stateful connections scale apart</h4><p>The socket tier scales by connection count; the message/storage tier scales
+          by throughput. Keep them separate so a socket spike doesn't stall writes.</p></div>
+          <div class="pillar-card avail"><h4>📏 Estimate first (Day&nbsp;30)</h4><p>Billions of messages/day, but the headline number is <strong>concurrent
+          connections</strong> — tens of millions of open sockets — which is a connection-count problem, not a QPS one.</p></div>
+        </div>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>The Hard Parts</h2>
+        <p>“Hold a socket, route via a registry, number for order, ack for receipts” is the clean 80%. These edges are where chat-at-scale really lives.</p>
+
+        <h3>Millions of persistent connections (the C10M problem)</h3>
+        <p>A web server is tuned for short requests; holding <strong>tens of millions of idle-but-open</strong> connections is a different beast — each costs
+        memory and a file descriptor, and every one sends periodic <strong>heartbeats</strong> to prove it's alive and to keep NATs/firewalls from closing it.
+        Connection servers are specially tuned for this, and because a socket is pinned, a server restart or crash forces a <strong>reconnection stampede</strong>
+        you must spread out (jittered backoff) so clients don't all slam back at once.</p>
+
+        <h3>Presence at scale</h3>
+        <p>As above: naïve presence fan-out melts. The real answer is heartbeats + TTL in the registry, subscribe-only-to-who-you're-looking-at, and heavy
+        throttling. Accept that “last seen” is approximate — exactness isn't worth a fan-out storm.</p>
+
+        <h3>Multi-device sync</h3>
+        <p>You read on your phone; the web app must update too. Now a “conversation” has several endpoints, and a message (and its read state) must sync to all of
+        a user's devices and stay consistent. The sequence number helps — each device tracks its own last-seen seq and pulls the gap — but reconciling reads and
+        deletes across devices is genuinely fiddly.</p>
+
+        <h3>End-to-end encryption</h3>
+        <p>In apps like WhatsApp and Signal, the server <strong>routes ciphertext it cannot read</strong> (the Signal protocol). That constrains the design: the
+        server can't index message content, do server-side search, or inspect for ordering by content — it orders and routes <strong>envelopes</strong>, not
+        contents. Features like search move onto the <em>device</em>. Security and routing pull in opposite directions, and E2E is a deliberate trade of
+        server-side capability for privacy.</p>
+
+        <p style="margin-top:1rem;">The through-line: <code>persistent socket → registry lookup → push or inbox</code> is the skeleton; doing it with
+        <em>sequence-numbered</em> ordering, <em>ack-driven</em> receipts, <em>idempotent</em> retries, <em>heartbeat-based</em> presence, graceful reconnection,
+        multi-device sync, and (optionally) end-to-end encryption is the craft. Get those right and a message crosses the planet in 100&nbsp;ms and <em>feels</em>
+        like it was never in doubt.</p>
+      </section>
+
+      <section id="palace">
+        <h2>Memory Palace</h2>
+        <p>We keep building the same house, room by room, so the whole course lives in one place you can walk through.</p>
+        <div class="flow-box">
+          <div class="palace-room"><span class="palace-icon">☎️</span><div><strong>From the Control Room to the Switchboard Room</strong>
+          — <span>You leave yesterday's <strong>broadcast control room</strong> (Twitter, one story to the world) and step into the <strong>switchboard
+          room</strong>. Here it's the opposite: not broadcasting to everyone, but <em>connecting two people line to line</em> — targeted delivery, not
+          fan-out-to-the-world.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🔌</span><div><strong>The Patch Cords &amp; the Card Index</strong> —
+          <span>The operator holds live <strong>patch cords</strong> (WebSockets) and a <strong>card index</strong> of who's plugged into which socket (the
+          <strong>session registry</strong>). Plugged in → patch straight through (push); the index is how she finds the right line.</span></div></div>
+          <div class="palace-room"><span class="palace-icon">📮</span><div><strong>The Pigeonholes, Tickets &amp; Receipts</strong> —
+          <span>Along the wall, <strong>pigeonholes</strong> hold notes for the absent (the <strong>offline inbox</strong>). Each note gets a <strong>numbered
+          ticket</strong> (sequence number) so it's read in order, and a <strong>return-receipt card</strong> goes back to the sender (the ✓ / ✓✓ / blue
+          ticks).</span></div></div>
+          <div class="palace-room"><span class="palace-icon">🚪</span><div><strong>The Door Ahead</strong> — <span>A signpost reads
+          <strong>Day 48: Design YouTube / a Video Platform</strong>. Today we moved tiny text messages between two people; next we move <em>enormous</em> video
+          to millions — upload, transcoding into many resolutions, and streaming from a CDN.</span></div></div>
+        </div>
+      </section>
+
+      <section id="graph">
+        <h2>Connection Graph</h2>
+        <div class="graph-row">
+          <span class="graph-node dim">Design: Twitter-like System (Day 46)</span><span class="graph-arrow">→</span>
+          <span class="graph-node">Design: WhatsApp / Chat (today)</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">Design: YouTube / Video (Day 48)</span>
+        </div>
+        <div class="graph-row" style="margin-top:.5rem;">
+          <span class="graph-node">Today builds on…</span><span class="graph-arrow">→</span>
+          <span class="graph-node dim">WebSockets &amp; SSE (Day 20)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">TCP / HTTP (Day 3)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Load Balancing (Day 5)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Redis (Day 7 / 40)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Message Queues (Day 18)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Sharding (Day 13)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Fan-out (Day 45)</span><span class="graph-arrow">·</span>
+          <span class="graph-node dim">Snowflake IDs (Day 46)</span>
+        </div>
+        <p>Today is the third <strong>Classic System Design</strong> of Week 7, and the deliberate <em>mirror</em> of Day 46: Twitter broadcasts one write to the
+        whole world; chat delivers one write to one person. The push channel is <strong>WebSockets (Day 20)</strong> over <strong>TCP (Day 3)</strong>; the
+        <strong>session registry</strong> and presence live in <strong>Redis (Day 7 / 40)</strong>; routing and offline inboxing reuse <strong>queues
+        (Day 18)</strong> and <strong>sharding (Day 13)</strong>; group delivery is the <strong>fan-out (Day 45)</strong> pattern at a small, safe scale; and the
+        client message ID that makes retries idempotent is the same kind of unique identifier as the <strong>Snowflake ID (Day 46)</strong>. The per-conversation
+        ordering is a gentle first taste of <strong>message ordering and logical clocks (Day 35)</strong>. Stickiness of a stateful socket to one server leans on
+        <strong>load balancing (Day 5)</strong>. The offline-wake path forward-references the dedicated <strong>Notification System (Day 50)</strong>, and the next
+        lesson, <strong>YouTube (Day 48)</strong>, swaps tiny messages for massive video.</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>Common Mistakes &amp; Misconceptions</h2>
+        <table class="algo-table">
+          <tr><th>The misconception</th><th>The reality</th></tr>
+          <tr><td>"Just poll the server every couple of seconds for new messages."</td><td>Polling wastes huge resources on empty replies and lags. Chat needs
+          <strong>server push</strong> over a persistent <strong>WebSocket</strong>.</td></tr>
+          <tr><td>"The load balancer can send messages to any server, like normal web requests."</td><td>A WebSocket is <strong>stateful</strong> — pinned to the
+          one connection server holding it. You need a <strong>session registry</strong> to find it.</td></tr>
+          <tr><td>"Order messages by their timestamps."</td><td>Device clocks drift and lie. Order by a <strong>per-conversation sequence number</strong> the
+          server assigns.</td></tr>
+          <tr><td>"If the recipient is offline, just drop the message or fail the send."</td><td>Store it in a durable <strong>offline inbox</strong> and deliver
+          on reconnect; send a <strong>push notification</strong> to wake the app.</td></tr>
+          <tr><td>"Retrying a send might duplicate the message, so never retry."</td><td>Attach a unique <strong>client message ID</strong>; the server
+          <strong>dedupes</strong> on it, making retries safe (idempotent).</td></tr>
+          <tr><td>"Presence (online/last-seen) is easy — just broadcast every status change."</td><td>That causes a <strong>fan-out storm</strong>. Use
+          heartbeats + TTL and push presence only to who's currently looking, throttled and approximate.</td></tr>
+        </table>
+      </section>
+
+      <section id="recall">
+        <h2>Active Recall</h2>
+        <div class="recall-box">
+          <div class="recall-q recall-toggle">❓ You're designing WhatsApp. (1) Your v1 polls the server for new messages and it's wasteful and laggy — what's the
+          core fix, and what new problem does it create? (2) Ana sends to Ben across thousands of servers — how does her message find Ben, and what happens if Ben
+          is offline? (3) Two messages arrive out of order and a flaky network makes Ana's phone resend one — how do you guarantee order and avoid duplicates?
+          (click to reveal)</div>
+          <div class="recall-answer"><strong>(1) Server push over a persistent WebSocket.</strong> Instead of the client asking repeatedly, each online client holds
+          a long-lived WebSocket to a <strong>connection server</strong>, and the server pushes messages the instant they arrive. The new problem: a WebSocket is
+          <strong>stateful</strong> — pinned to one server — so with millions of sockets across thousands of servers, you must track <em>which</em> server holds
+          <em>whom</em>. <br><br><strong>(2) The session registry.</strong> A fast in-memory map (Redis) of <code>user → connection server</code>, written on
+          connect/disconnect. Ana's server looks Ben up, forwards to Ben's connection server, which pushes down his socket. If Ben is <strong>offline</strong>
+          (not in the registry), the message is stored in his <strong>offline inbox</strong> and a <strong>push notification</strong> wakes his app, which
+          reconnects and pulls everything after its last-seen sequence. <br><br><strong>(3) Sequence numbers + idempotency.</strong> The server assigns a
+          <strong>per-conversation sequence number</strong>; the client buffers and renders strictly in sequence order, so a late <code>#2</code> slots before
+          <code>#3</code>. For retries, the client attaches a unique <strong>message ID</strong>; the server treats it as a <strong>dedupe key</strong>, so a
+          resend is acknowledged but not stored twice — at-least-once delivery + idempotent handling = exactly-once <em>effect</em>.</div>
+        </div>
+      </section>
+
+      <section id="realworld">
+        <h2>Real-World Engineering</h2>
+        <div class="realworld-grid">
+          <div class="realworld-card"><div class="rw-company">💬 WhatsApp</div><p>Famous for running hundreds of millions of connections on a famously small team,
+          built on <strong>Erlang/BEAM</strong> — a runtime designed for millions of lightweight, long-lived processes (one per connection). Messages are
+          <strong>end-to-end encrypted</strong> (Signal protocol): the server routes ciphertext envelopes and stores them only until delivered.</p></div>
+          <div class="realworld-card"><div class="rw-company">✈️ Signal</div><p>The <strong>Signal protocol</strong> is the gold standard for E2E chat (also used
+          by WhatsApp and Messenger's secret chats). The server is deliberately kept <em>ignorant</em> — it can't read messages — so features like search and
+          backup live on the device, a clean illustration of the privacy-vs-capability trade.</p></div>
+          <div class="realworld-card"><div class="rw-company">💼 Slack</div><p>Uses <strong>WebSockets</strong> for real-time events and a session/presence layer to
+          route them. Slack's scale twist is <em>channels</em> (group fan-out) plus rich presence and typing indicators, with heavy use of throttling and
+          per-workspace sharding.</p></div>
+          <div class="realworld-card"><div class="rw-company">🎮 Discord</div><p>Pushes real-time events over WebSockets to tens of millions of concurrent users,
+          with a gateway tier for connections and (famously) <strong>Cassandra/ScyllaDB</strong> for the message store — a textbook “connection tier + wide-column
+          message log” split, exactly the shape of this lesson.</p></div>
+        </div>
+      </section>
+
+      <section id="flashcards">
+        <h2>Flashcards (Spaced Repetition)</h2>
+        <div class="flashcard">
+          <div class="fc-q">Q: In one sentence, what is the core architecture of a chat system?</div>
+          <div class="fc-a">A: Each online client holds a persistent <strong>WebSocket</strong> to a <strong>connection server</strong>; a <strong>session
+          registry</strong> (<code>user → connection server</code>, in Redis) lets the sender route a message to the recipient's server, which <strong>pushes</strong>
+          it down the socket — or, if the recipient is offline, stores it in an <strong>offline inbox</strong> and sends a push notification.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why a WebSocket instead of polling or a normal HTTP request?</div>
+          <div class="fc-a">A: Chat needs <strong>server-initiated push</strong> — the server must deliver without the client asking. Polling wastes resources and
+          lags; a WebSocket is a long-lived, <strong>bidirectional</strong> connection the server can write to at any time. The cost: it's <strong>stateful</strong>,
+          pinned to one connection server.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: How do you guarantee messages appear in the right order?</div>
+          <div class="fc-a">A: The server assigns a <strong>per-conversation sequence number</strong> as it stores each message (never trust client timestamps).
+          The client buffers and renders strictly by sequence, so out-of-order network arrivals are reordered correctly. Ordering is per-conversation, not global.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: What do the sent / delivered / read ticks actually represent, and how do retries avoid duplicates?</div>
+          <div class="fc-a">A: The ticks are a tiny state machine driven by <strong>acks flowing back</strong>: ✓ = server stored it, ✓✓ = reached the device,
+          blue ✓✓ = read. Retries are made safe by <strong>idempotency</strong>: the client attaches a unique message ID the server uses as a <strong>dedupe
+          key</strong>, so a resend is acked but not stored twice.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+        <div class="flashcard">
+          <div class="fc-q">Q: Why is presence (online / last-seen) secretly one of the hardest parts?</div>
+          <div class="fc-a">A: Broadcasting every status change causes a <strong>fan-out storm</strong>. Real systems use <strong>heartbeats + TTL</strong> in the
+          registry (miss heartbeats → offline), push presence only to people currently viewing that chat, and <strong>throttle</strong> it — accepting that
+          “last seen” is approximate.</div>
+          <button class="btn btn-outline btn-sm flashcard-save-btn">Save to my deck</button>
+        </div>
+      </section>
+
+      <section id="practice">
+        <h2>Memory Test — Answer Without Looking Up</h2>
+        <ul class="memtest-list">
+          <li>Why can't a normal request–response web design deliver chat messages, and what replaces it?</li>
+          <li>What is the session registry, what does it map, and when is it written and read?</li>
+          <li>Walk a message from Ana's thumb to Ben's screen when Ben is online. Now walk it when Ben is offline.</li>
+          <li>Why order messages by a server-assigned sequence number rather than by timestamps? Is the order global or per-conversation?</li>
+          <li>Explain the three ticks as a state machine. What flows back to drive each transition?</li>
+          <li>How does a client-generated message ID make retries safe? What delivery guarantee does that give you in practice?</li>
+          <li>Name two hard parts (millions of persistent connections, presence fan-out, multi-device sync, E2E encryption) and how each is handled.</li>
+        </ul>
+      </section>
+
+      <section id="takeaway">
+        <div class="takeaway-box">
+          If you only remember one thing: <strong>chat is targeted, server-pushed delivery</strong> — the mirror image of Twitter's broadcast. Because the web is
+          request–response, each online client holds a persistent <strong>WebSocket</strong> to a <strong>connection server</strong>, and a <strong>session
+          registry</strong> (<code>user → connection server</code>, in Redis) lets the sender route a message to the recipient's server to be <strong>pushed</strong>
+          down the socket — or, if they're offline, stashed in a durable <strong>inbox</strong> and followed by a <strong>push notification</strong>. Three
+          guarantees make it feel solid: a <strong>per-conversation sequence number</strong> for order, <strong>acks flowing back</strong> for the sent/delivered/read
+          ticks, and a <strong>client message ID</strong> as a dedupe key for idempotent retries. The real difficulty is operational — millions of stateful
+          long-lived connections, presence without fan-out storms, multi-device sync, and routing ciphertext you can't read. Next,
+          <strong>Day 48 — Design YouTube / a Video Platform</strong>: from moving tiny text between two people to moving enormous video to millions — upload,
+          transcoding, and CDN streaming.
+        </div>
+      </section>
+
+      <div class="page-nav">
+        <a href="day-46.html">← Day 46: Design a Twitter-like System</a>
+        <a href="day-48.html" class="coming-soon-link">Day 48: Design YouTube / Video →</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>System Design Mastery &copy; 2026</span>
+    <span>Day 47 of 90 — Design WhatsApp / a Chat System</span>
+    <a href="../index.html">← Back to Course</a>
+  </div>
+</footer>
+
+<!-- Roughjs for Excalidraw-style diagrams -->
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="../assets/progress.js"></script>
+<script src="../assets/lesson-interactive.js"></script>
+<script>
+(function(){
+  // ══════════════════════════════════════════════════════════════════════
+  //  INTERACTIVE DEMOS — a real session-registry delivery router (push vs
+  //  offline-inbox + flush), and a real per-conversation sequence/ordering +
+  //  tick-state-machine + idempotent-dedup message lifecycle.
+  // ══════════════════════════════════════════════════════════════════════
+
+  // ── mode toggle ──────────────────────────────────────────────────────
+  Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(btn){
+    btn.addEventListener('click', function(){
+      var mode = btn.getAttribute('data-mode');
+      Array.prototype.forEach.call(document.querySelectorAll('#mode-toggle button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      document.getElementById('panel-route').classList.toggle('active', mode === 'route');
+      document.getElementById('panel-ticks').classList.toggle('active', mode === 'ticks');
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 1 — DELIVERY ROUTER (session registry: push if online, else inbox)
+  // ══════════════════════════════════════════════════════════════════════
+  var users = {
+    Ana:  { online: true,  server: 'conn-1', inbox: [], fixed: true },
+    Ben:  { online: true,  server: 'conn-2', inbox: [] },
+    Cleo: { online: true,  server: 'conn-3', inbox: [] }
+  };
+  var recipient = 'Ben';
+  var rStats = { delivered: 0, queued: 0, flushed: 0 };
+  var rSeq = 0;
+
+  function renderUsers(){
+    var g = document.getElementById('user-grid');
+    var html = '';
+    Object.keys(users).forEach(function(name){
+      var u = users[name];
+      var cls = u.online ? 'on' : 'off';
+      var state = u.online ? ('🟢 online · ' + u.server) : '⚫ offline · not in registry';
+      html += '<div class="user-card ' + cls + '">' +
+        '<div class="uname">' + (name === 'Ana' ? '🧑 ' : '🧑‍🦱 ') + name + (u.fixed ? ' <span style="font-size:.6rem;color:#64748b">(sender)</span>' : '') + '</div>' +
+        '<div class="ustate">' + state + '</div>' +
+        (u.inbox.length ? '<div class="inbox-badge">📮 inbox: ' + u.inbox.length + ' waiting</div>' : '') +
+        (u.fixed ? '' : '<button class="toggle-mini" data-toggle="' + name + '">' + (u.online ? 'Go offline' : 'Reconnect') + '</button>') +
+        '</div>';
+    });
+    g.innerHTML = html;
+    Array.prototype.forEach.call(g.querySelectorAll('[data-toggle]'), function(b){
+      b.addEventListener('click', function(){ toggleUser(b.getAttribute('data-toggle')); });
+    });
+  }
+
+  function trail(html, pill, pillCls){
+    var row = document.createElement('div');
+    row.className = 'route-row rise';
+    row.innerHTML = '<span class="rpath">' + html + '</span>' +
+      (pill ? '<span class="rpill ' + pillCls + '">' + pill + '</span>' : '');
+    var t = document.getElementById('route-trail');
+    t.insertBefore(row, t.firstChild);
+    while (t.children.length > 14) t.removeChild(t.lastChild);
+  }
+
+  function setRStats(){
+    document.getElementById('r-delivered').textContent = rStats.delivered;
+    document.getElementById('r-queued').textContent    = rStats.queued;
+    document.getElementById('r-flushed').textContent   = rStats.flushed;
+  }
+
+  function sendRoute(){
+    rSeq++;
+    var to = recipient, u = users[to];
+    var msgLabel = 'msg #' + rSeq + ' “' + pickText(rSeq) + '”';
+    var s = document.getElementById('r-status');
+    if (u.online){
+      rStats.delivered++;
+      trail('Ana@conn-1 → message service → <b>registry: ' + to + '@' + u.server + '</b> → push down socket → ✓✓ ' + to, 'LIVE', 'live');
+      s.className = 'q-status ok';
+      s.innerHTML = '✓✓ <b>' + msgLabel + '</b> pushed to ' + to + ' instantly — registry found them on <b>' + u.server + '</b>.';
+    } else {
+      rStats.queued++;
+      u.inbox.push(msgLabel);
+      trail('Ana@conn-1 → message service → <b>registry: ' + to + ' not found (offline)</b> → store in ' + to + "'s inbox + send push notification", 'QUEUED', 'q');
+      s.className = 'q-status warn';
+      s.innerHTML = '📮 ' + to + ' is offline — <b>' + msgLabel + '</b> stored in their inbox (now ' + u.inbox.length + ' waiting) and a push notification sent. Bring them back online to flush.';
+    }
+    setRStats();
+    renderUsers();
+  }
+
+  function toggleUser(name){
+    var u = users[name];
+    if (u.online){
+      u.online = false; u.server = null;
+      trail('<b>' + name + ' disconnected</b> → removed from registry', 'OFFLINE', 'q');
+    } else {
+      u.online = true;
+      u.server = (name === 'Ben' ? 'conn-2' : 'conn-3');
+      trail('<b>' + name + ' reconnected</b> on ' + u.server + ' → re-added to registry', 'ONLINE', 'live');
+      // flush the offline inbox in order
+      if (u.inbox.length){
+        var n = u.inbox.length;
+        u.inbox.forEach(function(m){
+          rStats.flushed++;
+          trail('flush → push <b>' + m + '</b> down ' + name + "'s socket → ✓✓", 'FLUSH', 'flush');
+        });
+        u.inbox = [];
+        var s = document.getElementById('r-status');
+        s.className = 'q-status info';
+        s.innerHTML = '🔌 ' + name + ' reconnected — <b>' + n + '</b> queued message' + (n>1?'s':'') + ' flushed from the inbox, in order.';
+      }
+    }
+    setRStats();
+    renderUsers();
+  }
+
+  function pickText(n){
+    var texts = ['hey!', 'you around?', 'lunch?', 'check this out', 'call me', 'on my way', 'nice 👍', 'see you soon'];
+    return texts[(n - 1) % texts.length];
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('#recipient-btns button'), function(b){
+    b.addEventListener('click', function(){
+      recipient = b.getAttribute('data-to');
+      Array.prototype.forEach.call(document.querySelectorAll('#recipient-btns button'), function(x){
+        x.classList.toggle('active', x === b);
+      });
+    });
+  });
+  document.getElementById('r-send').addEventListener('click', sendRoute);
+  document.getElementById('r-reset').addEventListener('click', function(){
+    users.Ben.online = true;  users.Ben.server = 'conn-2';  users.Ben.inbox = [];
+    users.Cleo.online = true; users.Cleo.server = 'conn-3'; users.Cleo.inbox = [];
+    rStats = { delivered: 0, queued: 0, flushed: 0 }; rSeq = 0;
+    document.getElementById('route-trail').innerHTML = '';
+    var s = document.getElementById('r-status');
+    s.className = 'q-status info';
+    s.innerHTML = 'Reset. Pick a recipient and hit “Send.” Try sending while they’re offline, then bring them back online.';
+    setRStats(); renderUsers();
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  WIDGET 2 — MESSAGE LIFECYCLE (sequence ordering + ticks + idempotent dedup)
+  // ══════════════════════════════════════════════════════════════════════
+  var reorder = true;          // out-of-order network delivery
+  var serverSeq = 0;           // monotonic per-conversation sequence
+  var stored = {};             // clientId -> message (dedup key = clientId)
+  var buffer = [];             // messages the client has "received", in arrival order
+  var clientCounter = 0;
+  var dedupCount = 0;
+  var lastClientId = null;
+  var MSGS = ['hey!', 'are you free later?', 'got the tickets 🎟️', 'meet at 7?', 'sounds good', 'see you there', 'running 5 min late', 'here now'];
+
+  function tSetStats(){
+    document.getElementById('t-seq').textContent       = serverSeq;
+    document.getElementById('t-delivered').textContent = Object.keys(stored).length;
+    document.getElementById('t-dedup').textContent     = dedupCount;
+    document.getElementById('chat-clock').textContent  = 'seq ' + serverSeq;
+  }
+
+  // server-side handling: assign seq + dedupe by clientId
+  function serverReceive(clientId, text){
+    if (stored[clientId]){            // idempotent: already seen this id
+      dedupCount++;
+      return stored[clientId];        // re-ack, do NOT assign a new seq
+    }
+    serverSeq++;
+    var msg = { clientId: clientId, seq: serverSeq, text: text, state: 'sent' };
+    stored[clientId] = msg;
+    return msg;
+  }
+
+  // client-side: receive into buffer (maybe out of order), then render sorted by seq
+  function clientReceive(msg){
+    if (!buffer.some(function(m){ return m.seq === msg.seq; })) buffer.push(msg);
+    renderChat();
+  }
+
+  function tickGlyph(state){
+    if (state === 'read')  return '<span class="ticks read">✓✓</span>';
+    if (state === 'deliv') return '<span class="ticks deliv">✓✓</span>';
+    return '<span class="ticks sent">✓</span>';
+  }
+
+  function renderChat(){
+    // the client always displays in SEQUENCE order, regardless of arrival order
+    var ordered = buffer.slice().sort(function(a,b){ return a.seq - b.seq; });
+    var html = '';
+    ordered.forEach(function(m){
+      html += '<div class="bubble rise">' +
+        '<div class="btext">' + m.text + '</div>' +
+        '<div class="bmeta"><span class="seqtag">seq ' + m.seq + '</span>' +
+        '<span class="idtag">' + m.clientId + '</span>' + tickGlyph(m.state) + '</div>' +
+        '</div>';
+    });
+    document.getElementById('chat-bubbles').innerHTML = html;
+
+    // arrival-order strip vs display order, to make reordering visible
+    var strip = document.getElementById('arrival-strip');
+    if (buffer.length){
+      var arr = buffer.map(function(m){ return '<span class="arr-chip">#' + m.seq + '</span>'; }).join('<span class="arr-arrow">·</span>');
+      var ord = ordered.map(function(m){ return '<span class="arr-chip ord">#' + m.seq + '</span>'; }).join('<span class="arr-arrow">·</span>');
+      strip.innerHTML = 'network arrival: ' + arr + ' <span class="arr-arrow">⟶ buffer &amp; sort ⟶</span> display: ' + ord;
+    } else { strip.innerHTML = ''; }
+  }
+
+  function tSend(){
+    clientCounter++;
+    var clientId = 'c-' + clientCounter;
+    lastClientId = clientId;
+    var text = MSGS[(clientCounter - 1) % MSGS.length];
+    var msg = serverReceive(clientId, text);
+
+    // simulate network delivery to the client: in-order, or shuffled
+    if (reorder){
+      // deliver with a random small delay so arrivals interleave out of order
+      setTimeout(function(){ clientReceive(msg); updateTStatus(msg, false); }, Math.floor(Math.random() * 700) + 60);
+    } else {
+      clientReceive(msg); updateTStatus(msg, false);
+    }
+    tSetStats();
+  }
+
+  function updateTStatus(msg, wasDup){
+    var s = document.getElementById('t-status');
+    if (wasDup){
+      s.className = 'q-status warn';
+      s.innerHTML = '🔁 Retried <b>' + msg.clientId + '</b> with the same client ID — server <b>deduped</b> it (no new sequence, no duplicate bubble). Deduped so far: ' + dedupCount + '.';
+    } else if (reorder){
+      s.className = 'q-status info';
+      s.innerHTML = 'Server assigned <b>seq ' + msg.seq + '</b> to <b>' + msg.clientId + '</b>. It may arrive out of order over the network — but the client re-sorts by sequence before showing it.';
+    } else {
+      s.className = 'q-status ok';
+      s.innerHTML = 'Server assigned <b>seq ' + msg.seq + '</b> to <b>' + msg.clientId + '</b> and delivered it in order.';
+    }
+  }
+
+  function tAdvance(){
+    // walk the most-recent messages one step along sent → deliv → read
+    var ordered = buffer.slice().sort(function(a,b){ return a.seq - b.seq; });
+    var changed = false;
+    ordered.forEach(function(m){
+      if (m.state === 'sent'){ m.state = 'deliv'; changed = true; }
+      else if (m.state === 'deliv'){ m.state = 'read'; changed = true; }
+    });
+    renderChat();
+    var s = document.getElementById('t-status');
+    if (changed){
+      s.className = 'q-status ok';
+      s.innerHTML = '✓✓ Acks flowed back: each message advanced one step (✓ sent → ✓✓ delivered → <span style="color:#38bdf8">✓✓ read</span>).';
+    } else {
+      s.className = 'q-status info';
+      s.innerHTML = buffer.length ? 'All delivered messages are already marked read. Send more, then advance again.' : 'Send a message first, then advance its ticks.';
+    }
+  }
+
+  function tRetry(){
+    if (!lastClientId){
+      var s = document.getElementById('t-status');
+      s.className = 'q-status info'; s.innerHTML = 'Send a message first, then retry it.';
+      return;
+    }
+    var text = stored[lastClientId] ? stored[lastClientId].text : '(resend)';
+    var before = dedupCount;
+    var msg = serverReceive(lastClientId, text);   // same id → should dedupe
+    clientReceive(msg);                            // no new bubble (same seq)
+    tSetStats();
+    updateTStatus(msg, dedupCount > before);
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('#reorder-btns button'), function(b){
+    b.addEventListener('click', function(){
+      reorder = b.getAttribute('data-reorder') === 'on';
+      Array.prototype.forEach.call(document.querySelectorAll('#reorder-btns button'), function(x){
+        x.classList.toggle('active', x === b);
+      });
+    });
+  });
+  document.getElementById('t-send').addEventListener('click', tSend);
+  document.getElementById('t-advance').addEventListener('click', tAdvance);
+  document.getElementById('t-retry').addEventListener('click', tRetry);
+  document.getElementById('t-reset').addEventListener('click', function(){
+    serverSeq = 0; stored = {}; buffer = []; clientCounter = 0; dedupCount = 0; lastClientId = null;
+    document.getElementById('chat-bubbles').innerHTML = '';
+    document.getElementById('arrival-strip').innerHTML = '';
+    var s = document.getElementById('t-status');
+    s.className = 'q-status info';
+    s.innerHTML = 'Reset. Send a few messages with out-of-order delivery on, and watch them still render in sequence order.';
+    tSetStats();
+  });
+
+  // initial paint
+  renderUsers(); setRStats(); tSetStats();
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  EXCALIDRAW-STYLE DIAGRAMS (roughjs)
+  // ══════════════════════════════════════════════════════════════════════
+  var NS = 'http://www.w3.org/2000/svg';
+  function makeTxt(svg, x, y, text, color, size, weight, mono, anchor) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('text-anchor', anchor || 'middle');
+    t.setAttribute('fill', color || '#cbd5e1');
+    t.setAttribute('font-family', mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif');
+    t.setAttribute('font-size', size || '11');
+    if (weight) t.setAttribute('font-weight', weight);
+    t.textContent = text;
+    svg.appendChild(t);
+    return t;
+  }
+  function arrow(svg, rs, x1, y1, x2, y2, col){
+    col = col || '#64748b';
+    svg.appendChild(rs.line(x1, y1, x2, y2, { stroke:col, strokeWidth:1.6, roughness:0.9 }));
+    var ang = Math.atan2(y2 - y1, x2 - x1);
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang - 0.4), y2 - 10*Math.sin(ang - 0.4), { stroke:col, strokeWidth:1.6, roughness:0.9 }));
+    svg.appendChild(rs.line(x2, y2, x2 - 10*Math.cos(ang + 0.4), y2 - 10*Math.sin(ang + 0.4), { stroke:col, strokeWidth:1.6, roughness:0.9 }));
+  }
+
+  // ── Anchor: the switchboard room ──────────────────────────────────────
+  function drawAnchorDiagram(){
+    var svg = document.getElementById('anchor-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.7,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+
+    makeTxt(svg, 440, 26, 'THE SWITCHBOARD ROOM', '#e2e8f0', 15, 800);
+
+    // Ana (online, left)
+    box(40, 90, 150, 70, '#22c55e', '#22c55e10');
+    makeTxt(svg, 115, 120, '🧑  Ana', '#86efac', 13, 800);
+    makeTxt(svg, 115, 140, 'line plugged in', '#86efac', 9, 600);
+
+    // the operator / switchboard (center)
+    box(330, 70, 220, 190, '#38bdf8', '#38bdf80c');
+    makeTxt(svg, 440, 98, '🔌 OPERATOR + SWITCHBOARD', '#7dd3fc', 12, 800);
+    makeTxt(svg, 440, 128, 'live socket board', '#cbd5e1', 10, 600);
+    makeTxt(svg, 440, 146, '(WebSockets)', '#94a3b8', 9, 500);
+    // card index inside
+    box(360, 165, 160, 72, '#a78bfa', '#a78bfa12');
+    makeTxt(svg, 440, 184, '📇 card index', '#c4b5fd', 10, 800);
+    makeTxt(svg, 440, 200, 'Ana → socket 1', '#cbd5e1', 8.5, 500);
+    makeTxt(svg, 440, 214, 'Ben → (unplugged)', '#fca5a5', 8.5, 500);
+    makeTxt(svg, 440, 228, '= session registry', '#94a3b8', 8, 600);
+
+    // Ben (offline, right)
+    box(690, 90, 150, 70, '#fb7185', '#fb718510');
+    makeTxt(svg, 765, 120, '🧑‍🦱  Ben', '#fca5a5', 13, 800);
+    makeTxt(svg, 765, 140, 'line UNPLUGGED (offline)', '#fca5a5', 8.5, 600);
+
+    // Ben's pigeonhole (offline inbox)
+    box(690, 185, 150, 95, '#fbbf24', '#fbbf2410');
+    makeTxt(svg, 765, 208, '📮 pigeonhole', '#fcd34d', 11, 800);
+    makeTxt(svg, 765, 226, 'Ben’s offline inbox', '#fcd34d', 8.5, 600);
+    box(708, 236, 114, 34, '#94a3b8', '#0b1120');
+    makeTxt(svg, 765, 253, '🎫 note #7 waiting', '#cbd5e1', 8.5, 700);
+    makeTxt(svg, 765, 266, '(delivered on reconnect)', '#94a3b8', 7.5, 500);
+
+    // patch cord Ana -> operator
+    arrow(svg, rs, 190, 125, 328, 150, '#22c55e');
+    makeTxt(svg, 258, 118, 'patch cord', '#86efac', 8.5, 700);
+    // operator -> Ben would be the push, but Ben offline -> to pigeonhole
+    svg.appendChild(rs.line(552, 160, 690, 215, { stroke:'#fbbf24', strokeWidth:1.8, roughness:1 }));
+    arrow(svg, rs, 640, 196, 690, 215, '#fbbf24');
+    makeTxt(svg, 612, 176, 'offline → drop in pigeonhole', '#fcd34d', 8.5, 700);
+    // dashed "would-be" push to Ben
+    svg.appendChild(rs.line(552, 120, 690, 120, { stroke:'#475569', strokeWidth:1.3, roughness:1, strokeLineDash:[6,6] }));
+    makeTxt(svg, 620, 112, 'push (if plugged in)', '#64748b', 8, 600);
+
+    // bottom mechanism bands
+    function band(x,y,w,col,tc,t){ svg.appendChild(rs.rectangle(x,y,w,42,{stroke:col,strokeWidth:1.4,roughness:1,fill:col+'10',fillStyle:'solid'})); makeTxt(svg, x+w/2, y+18, t[0], tc, 9.5, 800); makeTxt(svg, x+w/2, y+33, t[1], '#94a3b8', 8.5, 500); }
+    band(40,  310, 190, '#38bdf8', '#7dd3fc', ['patch cord = WebSocket', 'server can push, no asking']);
+    band(245, 310, 190, '#a78bfa', '#c4b5fd', ['card index = registry', 'who is on which socket now']);
+    band(450, 310, 190, '#fbbf24', '#fcd34d', ['pigeonhole = offline inbox', 'held until they reconnect']);
+    band(655, 310, 185, '#22c55e', '#86efac', ['ticket + receipt', 'sequence order + ✓✓ ticks']);
+
+    makeTxt(svg, 440, 384, 'plugged in → patch straight through · unplugged → pigeonhole, hand over on return · numbered tickets keep order · receipts are the ticks', '#cbd5e1', 10, 600);
+  }
+
+  // ── Architecture: the chat path ───────────────────────────────────────
+  function drawArchDiagram(){
+    var svg = document.getElementById('arch-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.7,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+
+    makeTxt(svg, 440, 24, 'ONE MESSAGE: ANA → BEN', '#e2e8f0', 14, 800);
+
+    // Client A
+    box(30, 55, 140, 50, '#22c55e', '#22c55e10');
+    makeTxt(svg, 100, 76, '📱 Ana', '#86efac', 12, 800);
+    makeTxt(svg, 100, 92, 'client', '#94a3b8', 9, 500);
+    // Conn server A
+    box(215, 55, 160, 50, '#38bdf8', '#38bdf810');
+    makeTxt(svg, 295, 76, '🔌 Conn server A', '#7dd3fc', 11, 800);
+    makeTxt(svg, 295, 92, 'holds Ana’s socket', '#94a3b8', 8.5, 500);
+    // WebSocket between
+    svg.appendChild(rs.line(170, 80, 215, 80, { stroke:'#22c55e', strokeWidth:2, roughness:0.7 }));
+    makeTxt(svg, 192, 70, 'WS', '#86efac', 8, 700);
+
+    // Message service (center hub)
+    box(360, 150, 190, 60, '#f59e0b', '#fbbf2410');
+    makeTxt(svg, 455, 174, '📨 Message service', '#fcd34d', 11, 800);
+    makeTxt(svg, 455, 190, 'assign seq · dedupe · route', '#94a3b8', 8.5, 500);
+    arrow(svg, rs, 295, 105, 430, 148, '#38bdf8');
+
+    // Message store
+    box(30, 250, 200, 50, '#64748b', '#1e293b');
+    makeTxt(svg, 130, 271, '🗄️ Message store (Cassandra)', '#cbd5e1', 9.5, 800);
+    makeTxt(svg, 130, 287, 'durable log, ordered by seq', '#94a3b8', 8, 500);
+    arrow(svg, rs, 400, 210, 180, 248, '#64748b');
+
+    // Session registry
+    box(360, 285, 190, 50, '#a78bfa', '#a78bfa12');
+    makeTxt(svg, 455, 306, '📍 Session registry (Redis)', '#c4b5fd', 9.5, 800);
+    makeTxt(svg, 455, 322, 'user → connection server', '#94a3b8', 8, 500);
+    arrow(svg, rs, 455, 210, 455, 283, '#a78bfa');
+
+    // Offline inbox + push
+    box(620, 285, 230, 50, '#fbbf24', '#fbbf2410');
+    makeTxt(svg, 735, 306, '📮 Offline inbox + 🔔 push (APNs/FCM)', '#fcd34d', 9, 800);
+    makeTxt(svg, 735, 322, 'if Ben is offline', '#94a3b8', 8, 500);
+    arrow(svg, rs, 550, 300, 618, 305, '#fbbf24');
+
+    // Conn server B (online path)
+    box(620, 150, 160, 55, '#38bdf8', '#38bdf810');
+    makeTxt(svg, 700, 173, '🔌 Conn server B', '#7dd3fc', 11, 800);
+    makeTxt(svg, 700, 189, 'holds Ben’s socket', '#94a3b8', 8.5, 500);
+    arrow(svg, rs, 550, 178, 618, 178, '#22c55e');
+    makeTxt(svg, 585, 168, 'online → route', '#86efac', 8, 700);
+
+    // Client B
+    box(620, 420, 160, 50, '#22c55e', '#22c55e10');
+    makeTxt(svg, 700, 441, '📱 Ben', '#86efac', 12, 800);
+    makeTxt(svg, 700, 457, 'client', '#94a3b8', 9, 500);
+    svg.appendChild(rs.line(700, 205, 700, 420, { stroke:'#22c55e', strokeWidth:2, roughness:0.7 }));
+    makeTxt(svg, 715, 320, 'WS push', '#86efac', 8.5, 700, false, 'start');
+
+    // return ack (ticks) dashed back
+    svg.appendChild(rs.line(620, 435, 170, 100, { stroke:'#475569', strokeWidth:1.2, roughness:1, strokeLineDash:[5,5] }));
+    makeTxt(svg, 380, 430, '✓✓ ack (delivered / read) flows back to Ana', '#94a3b8', 9, 700);
+
+    makeTxt(svg, 440, 500, 'online → push down the socket on Ben’s connection server · offline → store in the inbox + send a push notification · every message gets a per-conversation sequence number', '#cbd5e1', 9.5, 600);
+  }
+
+  // ── Message lifecycle: ticks state machine + ordering ─────────────────
+  function drawLifecycleDiagram(){
+    var svg = document.getElementById('life-diagram');
+    if (!svg || typeof rough === 'undefined') return;
+    var rs = rough.svg(svg);
+    function box(x,y,w,h,col,fill){ svg.appendChild(rs.rectangle(x,y,w,h,{stroke:col,strokeWidth:1.7,roughness:1,fill:fill||'#1e293b',fillStyle:'solid'})); }
+
+    makeTxt(svg, 440, 26, 'A MESSAGE’S LIFE — TICKS ARE A STATE MACHINE', '#e2e8f0', 14, 800);
+
+    var states = [
+      { x:30,  col:'#64748b', tc:'#cbd5e1', t:'① client sends', s:'msg_id attached', g:'' },
+      { x:245, col:'#94a3b8', tc:'#cbd5e1', t:'② server stores', s:'assign seq, dedupe', g:'✓ sent' },
+      { x:460, col:'#38bdf8', tc:'#7dd3fc', t:'③ reached device', s:'device acks back', g:'✓✓ delivered' },
+      { x:675, col:'#38bdf8', tc:'#7dd3fc', t:'④ recipient reads', s:'read receipt back', g:'✓✓ read (blue)' }
+    ];
+    states.forEach(function(st, i){
+      box(st.x, 70, 175, 66, st.col, st.col + '12');
+      makeTxt(svg, st.x + 87, 92, st.t, st.tc, 10.5, 800);
+      makeTxt(svg, st.x + 87, 108, st.s, '#94a3b8', 8.5, 500);
+      if (st.g) makeTxt(svg, st.x + 87, 126, st.g, st.tc, 9.5, 800);
+      if (i < states.length - 1) arrow(svg, rs, st.x + 175, 103, st.x + 215, 103, '#64748b');
+    });
+    // ack-back band
+    svg.appendChild(rs.line(762, 150, 120, 150, { stroke:'#475569', strokeWidth:1.3, roughness:1, strokeLineDash:[5,5] }));
+    makeTxt(svg, 440, 166, 'each tick = an acknowledgement travelling the reverse path back to the sender', '#94a3b8', 9, 600);
+
+    // ordering strip
+    makeTxt(svg, 440, 210, 'ORDERING — the client re-sorts by sequence number', '#fcd34d', 12, 800);
+    function chip(x, label, col, tc){ box(x, 228, 58, 40, col, col + '15'); makeTxt(svg, x + 29, 253, label, tc, 12, 800, true); }
+    // arrival order (scrambled)
+    makeTxt(svg, 150, 222, 'network arrival (scrambled)', '#fca5a5', 9, 700);
+    chip(90,  '#3', '#fb7185', '#fca5a5');
+    chip(158, '#1', '#fb7185', '#fca5a5');
+    chip(226, '#2', '#fb7185', '#fca5a5');
+    arrow(svg, rs, 300, 248, 360, 248, '#64748b');
+    box(365, 226, 150, 44, '#a78bfa', '#a78bfa12');
+    makeTxt(svg, 440, 244, 'buffer &amp; sort', '#c4b5fd', 10, 800);
+    makeTxt(svg, 440, 260, 'by seq number', '#94a3b8', 8.5, 500);
+    arrow(svg, rs, 515, 248, 575, 248, '#64748b');
+    // display order (correct)
+    makeTxt(svg, 700, 222, 'display (in order)', '#86efac', 9, 700);
+    chip(585, '#1', '#22c55e', '#86efac');
+    chip(653, '#2', '#22c55e', '#86efac');
+    chip(721, '#3', '#22c55e', '#86efac');
+
+    // idempotency note
+    svg.appendChild(rs.rectangle(30, 292, 820, 40, {stroke:'#f59e0b', strokeWidth:1.4, roughness:1, fill:'#fbbf2408', fillStyle:'solid'}));
+    makeTxt(svg, 440, 316, '🔁 a retry carries the SAME msg_id → the server deduplicates (re-acks, assigns no new seq) → at-least-once delivery + idempotent handling = exactly-once effect', '#fcd34d', 9.5, 700);
+  }
+
+  function drawAll(){ drawAnchorDiagram(); drawArchDiagram(); drawLifecycleDiagram(); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(drawAll, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', drawAll);
+  }
+})();
+</script>
+
+</body>
+</html>
